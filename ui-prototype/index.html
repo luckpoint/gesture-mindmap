@@ -1,0 +1,1403 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>マインドマップ試作</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Maru+Gothic:wght@500;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* Hallmark · app-scope: mind-map canvas · tone: soft · anchor hue: coral 35
+ * genre: playful (soft end) · theme: Coral-derived · fonts: Zen Maru Gothic + BIZ UDPGothic
+ * canvas: bounded-infinite ±8000 · zoom 25–200% · enrichment: none
+ * pre-emit critique: P4 H4 E4 S5 R5 V4
+ */
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: clip; }
+body {
+  --side: 0px; --chat-w: 360px;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- canvas ---------- */
+#viewport {
+  position: fixed; inset: 0 var(--side) 0 0;
+  touch-action: none; outline: none;
+  background-color: var(--color-paper);
+  background-image: radial-gradient(circle, var(--color-dot) 1.3px, transparent 1.6px);
+  cursor: default;
+}
+#viewport.is-panning { cursor: grabbing; }
+body.hand-on #viewport, body.hand-on .node { cursor: none; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.edge { fill: none; stroke: var(--b); stroke-linecap: round; }
+.edge.is-old { stroke-dasharray: 2 10; opacity: 0.45; }
+.edge.is-preview { stroke: var(--color-accent); stroke-width: 3; stroke-dasharray: 10 8; }
+
+.node {
+  position: absolute; left: 0; top: 0;
+  transform: translate(var(--x), var(--y)) translate(-50%, -50%) scale(var(--lift, 1));
+  width: max-content; max-width: 260px;
+  padding: 10px 18px;
+  background: var(--color-surface);
+  border: var(--rule-2) solid var(--b);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  font-family: var(--font-display); font-weight: 500;
+  font-size: var(--text-lg); line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere; text-align: center;
+  cursor: grab; user-select: none; -webkit-user-select: none;
+  transition: box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-med) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.node.is-root {
+  max-width: 360px;
+  padding: 16px 28px;
+  background: var(--color-accent-soft);
+  border: var(--rule-3) solid var(--color-ink);
+  font-size: var(--text-xl); font-weight: 700;
+  border-radius: var(--radius-lg);
+}
+.node__text { display: block; min-width: 4em; outline: none; }
+.node__text[contenteditable="plaintext-only"] { cursor: text; user-select: text; -webkit-user-select: text; }
+.node__text:empty::before { content: attr(data-placeholder); color: var(--color-ink-3); }
+.node.is-selected { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
+.node.is-editing { outline: var(--rule-3) solid var(--color-focus); outline-offset: 4px; cursor: text; }
+.node.is-dragging, .node.is-grabbed { --lift: 1.04; box-shadow: var(--shadow-2); cursor: grabbing; }
+.node.is-grabbable { outline: var(--rule-2) dashed var(--color-accent); outline-offset: 5px; }
+.node.is-grabbed { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
+.node.is-lost { opacity: 0.55; outline: var(--rule-2) dashed var(--color-ink-3); outline-offset: 4px; }
+.node.is-source { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
+.node.is-invalid { opacity: 0.32; }
+.node.is-candidate { background: var(--color-accent-soft); outline: var(--rule-3) dashed var(--color-accent); outline-offset: 5px; }
+.node[data-tag]::before {
+  content: attr(data-tag);
+  position: absolute; left: 50%; top: 0; transform: translate(-50%, calc(-100% - 10px));
+  padding: 2px 10px; border-radius: var(--radius-pill);
+  background: var(--color-ink); color: var(--color-paper);
+  font: 700 var(--text-xs)/1.6 var(--font-ui); white-space: nowrap;
+}
+.node.is-candidate::before, .node.is-grabbed::before, .node.is-grabbable::before, .node.is-source::before { background: var(--color-accent-strong); color: var(--color-on-accent); }
+
+.edge-hint {
+  position: fixed; pointer-events: none; opacity: 0;
+  display: grid; place-items: center;
+  color: var(--color-accent-strong); font-weight: 700; font-size: var(--text-sm);
+  transition: opacity var(--dur-med) var(--ease-out);
+}
+.edge-hint.is-on { opacity: 1; }
+.edge-hint[data-side="left"]   { left: 0; top: 0; bottom: 0; width: 56px; background: linear-gradient(to right, var(--color-accent-soft), transparent); writing-mode: vertical-rl; }
+.edge-hint[data-side="right"]  { right: var(--side); top: 0; bottom: 0; width: 56px; background: linear-gradient(to left, var(--color-accent-soft), transparent); writing-mode: vertical-rl; }
+.edge-hint[data-side="top"]    { left: 0; right: 0; top: 0; height: 120px; background: linear-gradient(to bottom, var(--color-accent-soft), transparent); place-items: end center; padding-bottom: 12px; }
+.edge-hint[data-side="bottom"] { left: 0; right: 0; bottom: 0; height: 160px; background: linear-gradient(to top, var(--color-accent-soft), transparent); place-items: start center; padding-top: 12px; }
+
+/* ---------- floating panels ---------- */
+.panel {
+  background: var(--color-surface);
+  border: var(--rule-1) solid var(--color-rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; min-width: 44px; padding: 0 12px;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--color-ink);
+  font-weight: 700; font-size: var(--text-sm); white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.btn:hover { background: var(--color-paper-2); }
+.btn:focus-visible { outline: var(--rule-3) solid var(--color-focus); outline-offset: 2px; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.38; cursor: default; transform: none; background: transparent; }
+.btn--primary { background: var(--color-accent); color: var(--color-on-accent); }
+.btn--primary:hover { background: var(--color-accent-strong); }
+.btn--quiet { color: var(--color-ink-2); }
+.btn--danger { color: var(--color-danger); }
+.btn--danger:hover { background: var(--color-danger-soft); }
+.btn[aria-pressed="true"] { background: var(--color-ink); color: var(--color-paper); }
+.btn--icon { padding: 0; }
+
+.topbar {
+  position: fixed; top: var(--space-sm); left: var(--space-sm); right: calc(var(--space-sm) + var(--side));
+  display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-xs);
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.cluster { display: flex; align-items: center; gap: 2px; padding: 4px; min-width: 0; }
+.title {
+  min-width: 0; width: 15em; max-width: 40vw;
+  height: 44px; padding: 0 12px;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-ink);
+  font: 700 var(--text-lg) var(--font-display);
+  text-overflow: ellipsis;
+}
+.title:hover { background: var(--color-paper-2); }
+.title:focus-visible { outline: var(--rule-3) solid var(--color-focus); outline-offset: 0; background: var(--color-surface); }
+.save { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 6px; color: var(--color-ink-2); font-size: var(--text-xs); white-space: nowrap; }
+.save__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-ok); flex: none; }
+.save[data-state="saving"] .save__dot { background: var(--color-ink-3); }
+.save[data-state="error"] { color: var(--color-danger); font-weight: 700; }
+.save[data-state="error"] .save__dot { background: var(--color-danger); }
+.sep { width: 1px; height: 24px; background: var(--color-rule); margin: 0 4px; }
+
+.menu { position: relative; }
+.menu__list {
+  position: absolute; right: 0; top: calc(100% + 8px);
+  display: grid; padding: 6px; min-width: 200px;
+}
+.menu__list .btn { justify-content: flex-start; }
+
+.dock {
+  position: fixed; left: calc((100% - var(--side)) / 2); bottom: max(var(--space-md), env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex; gap: 4px; padding: 6px;
+}
+.dock__btn { flex-direction: column; gap: 2px; min-height: 60px; min-width: 84px; padding: 6px 12px; font-size: var(--text-xs); border-radius: var(--radius-md); }
+.dock__btn .i { width: 24px; height: 24px; }
+.dock__btn.btn--primary { min-width: 104px; }
+
+.zoom { position: fixed; right: calc(var(--space-md) + var(--side)); bottom: max(var(--space-md), env(safe-area-inset-bottom)); display: flex; align-items: center; padding: 4px; gap: 2px; }
+.zoom__label { min-width: 64px; font-variant-numeric: tabular-nums; }
+
+.node-menu {
+  position: fixed; left: 0; top: 0;
+  display: flex; gap: 2px; padding: 4px;
+  border-radius: var(--radius-md); box-shadow: var(--shadow-2);
+  z-index: 3;
+}
+
+.banner {
+  position: fixed; left: calc((100% - var(--side)) / 2); top: 72px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--space-xs);
+  padding: 6px 6px 6px 16px; max-width: calc(100vw - 24px);
+  background: var(--color-accent-soft); border-color: var(--color-accent);
+  font-size: var(--text-sm); z-index: 2;
+}
+.banner__msg { min-width: 0; }
+
+.toast {
+  position: fixed; left: calc((100% - var(--side)) / 2); bottom: calc(max(var(--space-md), env(safe-area-inset-bottom)) + 88px);
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: var(--space-xs);
+  padding: 6px 6px 6px 16px; max-width: calc(100vw - 24px);
+  background: var(--color-ink); color: var(--color-paper); border-color: var(--color-ink);
+  font-size: var(--text-sm); z-index: 4;
+}
+.toast:not(:has(.btn)) { padding-right: 16px; min-height: 44px; }
+.toast .btn { color: var(--color-paper); }
+.toast .btn:hover { background: var(--color-ink-2); }
+
+/* ---------- hand ---------- */
+.hand-cursor {
+  position: fixed; left: 0; top: 0; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+  border: var(--rule-3) solid var(--color-ink-2); border-radius: 50%;
+  pointer-events: none; z-index: 5;
+  display: grid; place-items: center;
+  transition: width var(--dur-fast) var(--ease-out), height var(--dur-fast) var(--ease-out), margin var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.hand-cursor::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; color: var(--color-ink-2); }
+.hand-cursor[data-state="hover"] { border-color: var(--color-accent); }
+.hand-cursor[data-state="grab"] { width: 26px; height: 26px; margin: -13px 0 0 -13px; border-color: var(--color-accent-strong); background: var(--color-accent); }
+.hand-cursor[data-state="grab"]::after { color: var(--color-on-accent); }
+.hand-cursor[data-state="lost"] { border-style: dashed; border-color: var(--color-ink-3); }
+.hand-cursor[data-state="nohand"] { display: none; }
+.hand-cursor__label {
+  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  padding: 2px 10px; border-radius: var(--radius-pill);
+  background: var(--color-ink); color: var(--color-paper);
+  font-size: var(--text-xs); font-weight: 700; white-space: nowrap;
+}
+.hand-cursor__label:empty { display: none; }
+
+.cam {
+  position: fixed; left: var(--space-md); bottom: max(var(--space-md), env(safe-area-inset-bottom));
+  width: 208px; margin: 0; padding: 6px; z-index: 1;
+}
+.cam__view { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-sm); background: var(--color-cam); overflow: hidden; display: grid; place-items: center; }
+.cam__view svg { width: 70%; height: 80%; stroke: var(--color-cam-line); fill: var(--color-cam-line); }
+.cam__msg { color: var(--color-paper); font-size: var(--text-xs); font-weight: 700; text-align: center; padding: 0 12px; line-height: 1.6; }
+.cam figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 4px 2px 0 6px; font-size: var(--text-xs); color: var(--color-ink-2); }
+.cam.is-collapsed .cam__view { display: none; }
+
+/* ---------- chat ---------- */
+.chat {
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--chat-w);
+  display: flex; flex-direction: column;
+  background: var(--color-surface); border-left: var(--rule-1) solid var(--color-rule);
+  z-index: 6;
+}
+.chat__head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px var(--space-md); border-bottom: var(--rule-1) solid var(--color-rule); }
+.chat__head h2 { margin: 0; font: 700 var(--text-md) var(--font-display); }
+.chat__log { flex: 1; overflow: auto; margin: 0; padding: var(--space-md); list-style: none; display: flex; flex-direction: column; gap: var(--space-xs); }
+.chat__empty { margin: auto 0; color: var(--color-ink-2); font-size: var(--text-sm); line-height: 1.8; }
+.chat__empty b { font-family: var(--font-display); color: var(--color-ink); }
+.msg { max-width: 88%; padding: 8px 12px; border-radius: var(--radius-md); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg--user { align-self: flex-end; background: var(--color-accent-soft); }
+.msg--app { align-self: flex-start; background: var(--color-paper-2); }
+.msg__actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.msg__actions .btn { min-height: 36px; background: var(--color-surface); border: var(--rule-1) solid var(--color-rule); white-space: normal; text-align: left; }
+.chat__foot { padding: var(--space-xs) var(--space-sm) max(var(--space-sm), env(safe-area-inset-bottom)); border-top: var(--rule-1) solid var(--color-rule); }
+.chat__target { margin: 0 4px 6px; color: var(--color-ink-2); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat__target b { color: var(--color-ink); font-family: var(--font-display); }
+.chat__form { display: flex; gap: 4px; }
+.chat__input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 12px;
+  border: var(--rule-2) solid var(--color-rule); border-radius: var(--radius-sm);
+  background: var(--color-paper); color: var(--color-ink);
+  font: 16px var(--font-ui);
+}
+.chat__input:focus-visible { outline: var(--rule-3) solid var(--color-focus); outline-offset: 0; }
+.chat__note { margin: 6px 4px 0; color: var(--color-ink-3); font-size: var(--text-xs); }
+@media (min-width: 901px) { body.chat-open { --side: var(--chat-w); } }
+@media (max-width: 900px) {
+  .chat {
+    top: auto; left: 0; bottom: var(--kb, 0px); width: auto; height: min(60vh, 520px);
+    border-left: 0; border-top: var(--rule-1) solid var(--color-rule);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-2);
+    animation: sheet-up var(--dur-med) var(--ease-out);
+  }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+
+/* ---------- dev panel ---------- */
+.dev { position: fixed; right: calc(var(--space-sm) + var(--side)); top: 72px; width: 272px; padding: var(--space-md); z-index: 3; max-height: calc(100vh - 180px); overflow: auto; }
+.dev h2 { margin: 0 0 2px; font-size: var(--text-md); }
+.dev p { margin: 0 0 var(--space-sm); color: var(--color-ink-2); font-size: var(--text-xs); line-height: 1.6; }
+.dev h3 { margin: var(--space-sm) 0 4px; font-size: var(--text-xs); color: var(--color-ink-2); }
+.dev__row { display: flex; flex-wrap: wrap; gap: 4px; }
+.dev__row .btn { min-height: 36px; background: var(--color-paper-2); font-size: var(--text-xs); }
+.dev__row .btn:hover { background: var(--color-rule); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 720px) {
+  .btn__label--wide { display: none; }
+  .node-menu .btn__label { display: none; }
+  .zoom { bottom: calc(max(var(--space-md), env(safe-area-inset-bottom)) + 84px); right: var(--space-sm); }
+  .cam { bottom: calc(max(var(--space-md), env(safe-area-inset-bottom)) + 84px); width: 160px; }
+}
+@media (max-width: 560px) {
+  .dock { left: var(--space-sm); right: var(--space-sm); transform: none; justify-content: space-between; }
+  .dock__btn, .dock__btn.btn--primary { min-width: 0; flex: 1 1 0; padding: 6px 4px; }
+  .save__text { display: none; }
+  .save { padding-right: 6px; }
+  .title { width: 9em; font-size: var(--text-md); }
+  .zoom__label { min-width: 52px; }
+  .dev { left: var(--space-sm); right: var(--space-sm); width: auto; }
+}
+@media (max-width: 380px) {
+  .cluster--tools .btn--icon:nth-of-type(2) { display: none; }
+  .title { width: 7em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-child" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><path d="M9 12h4M18 8v8M14 12h8"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V6a1.5 1.5 0 0 1 3 0v5M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v7c0 4-2.5 8-6.5 8-3 0-4.5-2-6-4.5L3 13a1.5 1.5 0 0 1 2.5-1.6L8 14"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><circle cx="5" cy="19" r="2"/><path d="M7 18c1-6 5-10 12-10M15 4l4 4-4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></symbol>
+</svg>
+
+<main id="viewport" tabindex="0" aria-label="マップ。Tabで子を追加、Enterで兄弟を追加、矢印で選択を移動">
+  <div id="world">
+    <svg id="edges" width="1" height="1"></svg>
+    <div id="nodes"></div>
+  </div>
+</main>
+<div class="edge-hint" id="edgeHint" aria-hidden="true">ここがキャンバスの端です</div>
+
+<header class="topbar">
+  <div class="cluster panel">
+    <input class="title" id="title" aria-label="マップの名前" autocomplete="off" spellcheck="false">
+    <div class="save" id="save" data-state="saved" role="status">
+      <span class="save__dot"></span><span class="save__text" id="saveText">保存済み</span>
+    </div>
+    <button class="btn btn--danger" id="saveExport" hidden>書き出す</button>
+  </div>
+  <div class="cluster cluster--tools panel">
+    <button class="btn btn--icon" id="undo" aria-label="元に戻す（⌘Z）" title="元に戻す（⌘Z）" disabled><svg class="i"><use href="#i-undo"/></svg></button>
+    <button class="btn btn--icon" id="redo" aria-label="やり直す（⇧⌘Z）" title="やり直す（⇧⌘Z）" disabled><svg class="i"><use href="#i-redo"/></svg></button>
+    <span class="sep"></span>
+    <div class="menu">
+      <button class="btn" id="fileBtn" aria-expanded="false" aria-controls="fileMenu"><svg class="i"><use href="#i-file"/></svg><span class="btn__label--wide">ファイル</span></button>
+      <div class="menu__list panel" id="fileMenu" hidden>
+        <button class="btn" id="exportBtn"><svg class="i"><use href="#i-down"/></svg>書き出す（JSON）</button>
+        <button class="btn" id="importBtn"><svg class="i"><use href="#i-up"/></svg>読み込む</button>
+      </div>
+    </div>
+    <button class="btn btn--quiet" id="devBtn" aria-expanded="false" aria-controls="dev"><svg class="i"><use href="#i-flask"/></svg><span class="btn__label--wide">検証</span></button>
+  </div>
+</header>
+<input type="file" id="fileInput" accept="application/json,.json" hidden>
+
+<div class="node-menu panel" id="nodeMenu" role="toolbar" aria-label="選んだことばの操作" hidden>
+  <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label">子を追加</span></button>
+  <button class="btn" data-act="edit"><svg class="i"><use href="#i-edit"/></svg><span class="btn__label">書きかえ</span></button>
+  <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label">つなぎ替え</span></button>
+  <button class="btn btn--danger btn--icon" data-act="delete" aria-label="消す"><svg class="i"><use href="#i-trash"/></svg></button>
+</div>
+
+<div class="banner panel" id="modeBanner" role="status" hidden>
+  <span class="banner__msg" id="modeMsg"></span>
+  <button class="btn btn--primary" id="modeOk" disabled>ここにつなぐ</button>
+  <button class="btn" id="modeCancel">やめる</button>
+</div>
+
+<div class="toast panel" id="toast" role="status" aria-live="polite" hidden></div>
+
+<nav class="dock panel" aria-label="おもな操作">
+  <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
+  <button class="btn btn--primary dock__btn" id="chatBtn" aria-pressed="false" aria-controls="chat"><svg class="i"><use href="#i-chat"/></svg>チャット</button>
+  <button class="btn dock__btn" id="handBtn" aria-pressed="false"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
+  <button class="btn dock__btn" id="fitBtn"><svg class="i"><use href="#i-fit"/></svg>全体を表示</button>
+</nav>
+
+<div class="zoom panel" role="group" aria-label="拡大と縮小">
+  <button class="btn btn--icon" id="zoomOut" aria-label="縮小"><svg class="i"><use href="#i-minus"/></svg></button>
+  <button class="btn zoom__label" id="zoomLabel" title="100%にもどす">100%</button>
+  <button class="btn btn--icon" id="zoomIn" aria-label="拡大"><svg class="i"><use href="#i-plus"/></svg></button>
+</div>
+
+<figure class="cam panel" id="cam" hidden>
+  <div class="cam__view">
+    <svg id="camHand" viewBox="0 0 100 100" aria-hidden="true">
+      <g stroke-width="2.5" fill="none" stroke-linecap="round">
+        <path d="M50 92 L36 74 L28 58 L22 46 L18 36"/><path d="M50 92 L48 62 L48 44 L48 32 L48 22"/>
+        <path d="M50 92 L58 62 L60 44 L61 32"/><path d="M50 92 L66 66 L70 52 L72 42"/><path d="M50 92 L76 72 L82 62 L86 54"/>
+      </g>
+      <g><circle cx="18" cy="36" r="4"/><circle cx="48" cy="22" r="4"/><circle cx="50" cy="92" r="3"/><circle cx="36" cy="74" r="3"/><circle cx="48" cy="44" r="3"/><circle cx="61" cy="32" r="3"/><circle cx="72" cy="42" r="3"/><circle cx="86" cy="54" r="3"/></g>
+    </svg>
+    <span class="cam__msg" id="camMsg" hidden>カメラに手を<br>映してください</span>
+  </div>
+  <figcaption>
+    <span>カメラ（保存しません）</span>
+    <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px">隠す</button>
+  </figcaption>
+</figure>
+<div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
+
+<aside class="chat" id="chat" aria-label="チャット" hidden>
+  <div class="chat__head">
+    <h2>チャット</h2>
+    <button class="btn btn--icon" id="chatClose" aria-label="チャットを閉じる"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
+  <ol class="chat__log" id="chatLog" aria-live="polite"></ol>
+  <div class="chat__foot">
+    <p class="chat__target">選択中：<b id="chatTarget"></b></p>
+    <form class="chat__form" id="chatForm">
+      <input class="chat__input" id="chatInput" autocomplete="off" enterkeyhint="send" aria-label="話すか書いて送る" placeholder="話すか、書いて送る">
+      <button class="btn btn--primary btn--icon" aria-label="送る"><svg class="i"><use href="#i-send"/></svg></button>
+    </form>
+    <p class="chat__note">声はキーボードの音声入力を使ってください</p>
+  </div>
+</aside>
+
+<aside class="dev panel" id="dev" aria-label="検証用の表示" hidden>
+  <h2>検証用の表示</h2>
+  <p>試作の確認用です。手と保存の状態を切り替えて見られます。手の操作中は、マウスを押す＝指でつまむ。</p>
+  <h3>手で操作</h3>
+  <div class="dev__row">
+    <button class="btn" data-dev="h-nohand">手が映っていない</button>
+    <button class="btn" data-dev="h-lost">追跡が途切れる</button>
+  </div>
+  <h3>保存</h3>
+  <div class="dev__row">
+    <button class="btn" data-dev="s-saving">保存中</button>
+    <button class="btn" data-dev="s-error">失敗</button>
+    <button class="btn" data-dev="s-saved">保存済み</button>
+  </div>
+  <h3>キャンバス</h3>
+  <div class="dev__row">
+    <button class="btn" data-dev="edge">端まで移動</button>
+    <button class="btn" data-dev="reset">見本のマップに戻す</button>
+  </div>
+</aside>
+
+<script>
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, GRACE = 300, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat';
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
+const els = new Map();
+const W = () => vp.clientWidth || innerWidth;
+// The bottom sheet covers the canvas; the side panel does not.
+const H = () => chat.open && $('#chat').offsetLeft === 0 ? $('#chat').getBoundingClientRect().top : innerHeight;
+
+let map = load() || sample();
+let view = { x: 0, y: 0, s: 1 };
+let sel = map.root, editing = null, mode = null, hand = null, gesture = null;
+let history = [], future = [], forceSaveFail = false;
+let chat = { open: false, log: [], pending: null };
+let saveTimer, toastTimer, hintTimer, handTimer;
+
+/* ---------- model ---------- */
+function sample() {
+  const list = [
+    ['root', '週末にやりたいこと', null, 0, 0],
+    ['a', '公園で遊ぶ', 'root', 310, -130], ['a1', 'ブランコ', 'a', 540, -220],
+    ['b', '図書館に行く', 'root', -320, -110], ['b1', '恐竜の本', 'b', -540, -200],
+    ['c', 'ホットケーキを作る', 'root', 20, 220], ['c1', 'バナナをのせる', 'c', 260, 330],
+  ];
+  const nodes = Object.fromEntries(list.map(([id, text, parent, x, y], order) => [id, { id, text, parent, x, y, order }]));
+  return { version: 1, title: '週末のマップ', root: 'root', seq: list.length, nodes };
+}
+function valid(m) {
+  const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!record(m) || m.version !== 1 || typeof m.title !== 'string' ||
+      typeof m.root !== 'string' || !m.root || !record(m.nodes) ||
+      !Number.isSafeInteger(m.seq) || m.seq < 0 || m.seq >= Number.MAX_SAFE_INTEGER ||
+      !Object.hasOwn(m.nodes, m.root)) return false;
+  const ids = Object.keys(m.nodes);
+  for (const id of ids) {
+    const n = m.nodes[id];
+    if (!id || !record(n) || n.id !== id || typeof n.text !== 'string' ||
+        !Number.isFinite(n.x) || !Number.isFinite(n.y) ||
+        !Number.isSafeInteger(n.order) || n.order < 0 || n.order > m.seq) return false;
+    if (id === m.root) {
+      if (n.parent !== null) return false;
+    } else if (typeof n.parent !== 'string' || !Object.hasOwn(m.nodes, n.parent)) return false;
+  }
+  // Every branch must reach the one root. Already checked paths can be reused.
+  const reached = new Set([m.root]);
+  for (const id of ids) {
+    const path = new Set();
+    let cur = id;
+    while (!reached.has(cur)) {
+      if (path.has(cur)) return false;
+      path.add(cur);
+      cur = m.nodes[cur].parent;
+    }
+    for (const nodeId of path) reached.add(nodeId);
+  }
+  return true;
+}
+function load() { try { const m = JSON.parse(localStorage.getItem(KEY)); return valid(m) ? m : null; } catch { return null; } }
+let treeCache = null;
+function invalidateTree() { treeCache = null; }
+function treeInfo() {
+  if (treeCache?.map === map) return treeCache;
+  const children = new Map(), colors = new Map([[map.root, 'var(--color-ink)']]), depths = new Map([[map.root, 0]]);
+  for (const n of Object.values(map.nodes)) {
+    if (!children.has(n.parent)) children.set(n.parent, []);
+    children.get(n.parent).push(n);
+  }
+  for (const list of children.values()) list.sort((a, b) => a.order - b.order);
+  const roots = children.get(map.root) || [], queue = [map.root];
+  roots.forEach((n, i) => colors.set(n.id, `var(--branch-${i % 6 + 1})`));
+  for (let i = 0; i < queue.length; i++) {
+    const id = queue[i];
+    for (const child of children.get(id) || []) {
+      depths.set(child.id, depths.get(id) + 1);
+      if (id !== map.root) colors.set(child.id, colors.get(id));
+      queue.push(child.id);
+    }
+  }
+  return treeCache = { map, children, colors, depths };
+}
+const kids = id => treeInfo().children.get(id) || [];
+function subtree(id) {
+  const out = new Set([id]);
+  for (const n of Object.values(map.nodes)) {
+    let cur = n;
+    while (cur && cur.parent != null) { if (cur.parent === id) { out.add(n.id); break; } cur = map.nodes[cur.parent]; }
+  }
+  return out;
+}
+function branchColor(id) { return treeInfo().colors.get(id); }
+function depth(id) { return treeInfo().depths.get(id); }
+function size(n) {
+  const el = els.get(n.id);
+  return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: Math.min(260, n.text.length * 18 + 40), h: 52 };
+}
+function overlaps(pt, w) {
+  return Object.values(map.nodes).some(n => {
+    const s = size(n);
+    return Math.abs(n.x - pt.x) < (s.w + w) / 2 + 12 && Math.abs(n.y - pt.y) < (s.h + 52) / 2 + 32;
+  });
+}
+function place(pid, w = 160) {
+  const p = map.nodes[pid];
+  let base = 0;
+  if (p.parent != null) {
+    const g = map.nodes[p.parent];
+    base = Math.atan2(p.y - g.y, p.x - g.x);
+  } else {
+    const angs = kids(pid).map(c => Math.atan2(c.y - p.y, c.x - p.x)).sort((a, b) => a - b);
+    if (angs.length === 1) base = angs[0] + Math.PI;
+    let gap = -1;
+    angs.forEach((a, i) => {
+      const next = i === angs.length - 1 ? angs[0] + Math.PI * 2 : angs[i + 1];
+      if (angs.length > 1 && next - a > gap) { gap = next - a; base = a + gap / 2; }
+    });
+  }
+  const dist = p.parent == null ? 250 : 200;
+  for (let ring = 0; ring < 4; ring++)
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7]) {
+      const a = base + k * 0.4, d = dist + ring * 100;
+      const pt = { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d };
+      if (!overlaps(pt, w)) return pt;
+    }
+  return { x: p.x + Math.cos(base) * dist, y: p.y + Math.sin(base) * dist };
+}
+function addNode(pid, text, pos = place(pid, Math.max(160, size({ text }).w))) {
+  const id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  map.nodes[id] = { id, text, parent: pid, x: Math.round(pos.x), y: Math.round(pos.y), order: ++map.seq };
+  invalidateTree();
+  return id;
+}
+
+/* ---------- history & save ---------- */
+function pushHistory(snapshot, target = history) {
+  target.push(snapshot);
+  if (target.length > 200) target.splice(0, target.length - 200);
+}
+function commit(fn) {
+  pushHistory(JSON.stringify(map));
+  future = [];
+  fn();
+  changed();
+}
+function changed() { render(); renderChatLog(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length; }
+function restore(from, to) {
+  if (!from.length) return;
+  if (editing) finishEdit();
+  pushHistory(JSON.stringify(map), to);
+  map = JSON.parse(from.pop());
+  if (!map.nodes[sel]) sel = null;
+  $('#title').value = map.title;
+  changed();
+}
+const undo = () => restore(history, future), redo = () => restore(future, history);
+function scheduleSave() {
+  setSave('saving');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { if (forceSaveFail) throw 0; localStorage.setItem(KEY, JSON.stringify(map)); setSave('saved'); }
+    catch { setSave('error'); }
+  }, 500);
+}
+function setSave(state) {
+  $('#save').dataset.state = state;
+  $('#saveText').textContent = { saving: '保存中…', saved: '保存済み', error: '保存できませんでした' }[state];
+  $('#saveExport').hidden = state !== 'error';
+}
+
+/* ---------- view ---------- */
+function applyView() {
+  world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
+  let g = 28 * view.s;
+  while (g < 16) g *= 2;
+  vp.style.backgroundSize = `${g}px ${g}px`;
+  vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
+  $('#zoomLabel').textContent = Math.round(view.s * 100) + '%';
+  positionMenu();
+}
+function clampView(v = view, hint = true) {
+  const cx = (W() / 2 - v.x) / v.s, cy = (innerHeight / 2 - v.y) / v.s;
+  const nx = clamp(cx, -BOUND, BOUND), ny = clamp(cy, -BOUND, BOUND);
+  if (hint && nx !== cx) edgeHint(cx < 0 ? 'left' : 'right');
+  if (hint && ny !== cy) edgeHint(cy < 0 ? 'top' : 'bottom');
+  v.x = W() / 2 - nx * v.s;
+  v.y = innerHeight / 2 - ny * v.s;
+  return v;
+}
+function edgeHint(side) {
+  const h = $('#edgeHint');
+  h.dataset.side = side;
+  h.classList.add('is-on');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => h.classList.remove('is-on'), 1200);
+}
+function zoomAt(sx, sy, s) {
+  s = clamp(s, ZMIN, ZMAX);
+  const wx = (sx - view.x) / view.s, wy = (sy - view.y) / view.s;
+  view = clampView({ x: sx - wx * s, y: sy - wy * s, s });
+  applyView();
+}
+let animId = 0;
+function animateTo(target) {
+  const my = ++animId;
+  target = clampView({ ...target, s: clamp(target.s, ZMIN, ZMAX) }, false);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { view = target; applyView(); return; }
+  const from = { ...view }, t0 = performance.now();
+  const step = now => {
+    if (my !== animId) return;
+    const k = Math.min(1, (now - t0) / 280), e = 1 - (1 - k) ** 3;
+    view = { x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e, s: from.s + (target.s - from.s) * e };
+    applyView();
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function centerOn(pt, s = view.s) { return { x: W() / 2 - pt.x * s, y: H() / 2 - pt.y * s, s }; }
+function fitAll() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of Object.values(map.nodes)) {
+    const { w, h } = size(n);
+    x0 = Math.min(x0, n.x - w / 2); x1 = Math.max(x1, n.x + w / 2);
+    y0 = Math.min(y0, n.y - h / 2 - 30); y1 = Math.max(y1, n.y + h / 2);
+  }
+  const top = 80, bottom = innerWidth <= 720 ? 170 : 110, side = 40;
+  const w = W() - side * 2, h = H() - top - bottom;
+  const s = clamp(Math.min(w / (x1 - x0), h / (y1 - y0)), ZMIN, 1.25);
+  animateTo({ s, x: W() / 2 - (x0 + x1) / 2 * s, y: top + h / 2 - (y0 + y1) / 2 * s });
+}
+function ensureVisible(pt) {
+  const sx = pt.x * view.s + view.x, sy = pt.y * view.s + view.y;
+  if (sx < 140 || sx > W() - 140 || sy < 120 || sy > H() - 180) animateTo(centerOn(pt));
+}
+
+/* ---------- render ---------- */
+function nodeEl(id) {
+  let el = els.get(id);
+  if (!el) {
+    el = Object.assign(document.createElement('div'), { className: 'node', innerHTML: '<span class="node__text"></span>' });
+    el.dataset.id = id;
+    nodesEl.append(el);
+    els.set(id, el);
+  }
+  return el;
+}
+function tagFor(id) {
+  if (hand?.grab === id) return hand.state === 'lost' ? '手が見えません' : 'つかみ中';
+  if (hand?.hover === id) return 'つかめる';
+  if (mode?.id === id) return 'つなぎ替え中';
+  if (mode?.candidate === id) return 'ここにつなぐ';
+  return '';
+}
+let dragFrame = null;
+function cancelDragRender() {
+  if (dragFrame !== null) cancelAnimationFrame(dragFrame);
+  dragFrame = null;
+}
+function scheduleDragRender(g) {
+  if (dragFrame !== null) return;
+  dragFrame = requestAnimationFrame(() => {
+    dragFrame = null;
+    if (gesture !== g) return;
+    for (const id of g.orig.keys()) renderNode(map.nodes[id], null);
+    for (const id of g.edgeIds) renderEdge(map.nodes[id]);
+    positionMenu();
+  });
+}
+function renderNode(n, blocked) {
+  const el = nodeEl(n.id), t = el.firstChild;
+  if (editing?.id !== n.id && t.textContent !== n.text) t.textContent = n.text;
+  el.style.setProperty('--x', n.x + 'px');
+  el.style.setProperty('--y', n.y + 'px');
+  el.style.setProperty('--b', branchColor(n.id));
+  const c = el.classList;
+  c.toggle('is-root', n.id === map.root);
+  c.toggle('is-selected', n.id === sel && !mode && !editing && !hand?.grab);
+  c.toggle('is-editing', editing?.id === n.id);
+  c.toggle('is-dragging', gesture?.type === 'node' && gesture.moved && gesture.id === n.id && !hand);
+  c.toggle('is-grabbable', hand?.hover === n.id && !hand.grab);
+  c.toggle('is-grabbed', hand?.grab === n.id && hand.state !== 'lost');
+  c.toggle('is-lost', hand?.grab === n.id && hand.state === 'lost');
+  c.toggle('is-source', mode?.id === n.id);
+  c.toggle('is-invalid', !!blocked && blocked.has(n.id) && n.id !== mode.id);
+  c.toggle('is-candidate', mode?.candidate === n.id);
+  const tag = tagFor(n.id);
+  tag ? el.dataset.tag = tag : delete el.dataset.tag;
+}
+function render() {
+  cancelDragRender();
+  for (const [id, el] of els) if (!map.nodes[id]) { el.remove(); els.delete(id); }
+  const blocked = mode?.blocked || null;
+  for (const n of Object.values(map.nodes)) renderNode(n, blocked);
+  renderEdges();
+  positionMenu();
+  $('#chatTarget').textContent = (map.nodes[sel] || map.nodes[map.root]).text;
+}
+function curve(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  return Math.abs(dx) >= Math.abs(dy)
+    ? `M${a.x},${a.y} C${a.x + dx / 2},${a.y} ${a.x + dx / 2},${b.y} ${b.x},${b.y}`
+    : `M${a.x},${a.y} C${a.x},${a.y + dy / 2} ${b.x},${a.y + dy / 2} ${b.x},${b.y}`;
+}
+const edgeEls = new Map();
+function createEdge(className) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('class', className);
+  edgesEl.append(el);
+  return el;
+}
+function renderEdge(n) {
+  if (n.parent == null) return;
+  let el = edgeEls.get(n.id);
+  if (!el) { el = createEdge('edge'); edgeEls.set(n.id, el); }
+  el.classList.toggle('is-old', !!(mode?.id === n.id && mode.candidate));
+  el.style.setProperty('--b', branchColor(n.id));
+  el.style.strokeWidth = [0, 5, 3.5][depth(n.id)] || 2.5;
+  el.setAttribute('d', curve(map.nodes[n.parent], n));
+}
+let previewEdge = null;
+function renderEdges() {
+  for (const [id, el] of edgeEls) {
+    if (!map.nodes[id] || map.nodes[id].parent == null) { el.remove(); edgeEls.delete(id); }
+  }
+  for (const n of Object.values(map.nodes)) renderEdge(n);
+  if (mode?.candidate) {
+    previewEdge ||= createEdge('edge is-preview');
+    previewEdge.setAttribute('d', curve(map.nodes[mode.candidate], map.nodes[mode.id]));
+  } else { previewEdge?.remove(); previewEdge = null; }
+}
+function positionMenu() {
+  const menu = $('#nodeMenu'), n = sel && map.nodes[sel];
+  if (!n || editing || mode || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
+  menu.hidden = false;
+  for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
+  const el = els.get(sel), half = el.offsetHeight / 2;
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let y = (n.y - half) * view.s + view.y - mh - 40;
+  if (y < 72) y = (n.y + half) * view.s + view.y + 16;
+  const x = clamp(n.x * view.s + view.x - mw / 2, 8, W() - mw - 8);
+  menu.style.transform = `translate(${x}px, ${y}px)`;
+}
+
+/* ---------- selection & editing ---------- */
+function select(id) { sel = id; render(); }
+function startEdit(id, isNew = false) {
+  editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
+  sel = id;
+  render();
+  const t = els.get(id).firstChild;
+  t.dataset.placeholder = 'ことばを入れる';
+  t.contentEditable = 'plaintext-only';
+  t.focus();
+  const r = document.createRange();
+  r.selectNodeContents(t);
+  getSelection().removeAllRanges();
+  getSelection().addRange(r);
+}
+function finishEdit() {
+  if (!editing) return;
+  const { id, isNew, orig, pid } = editing;
+  editing = null;
+  const t = els.get(id)?.firstChild;
+  const text = (t?.textContent || '').trim();
+  if (t) t.contentEditable = 'false';
+  if (isNew) {
+    if (!text) { map = JSON.parse(history.pop()); sel = pid; }
+    else map.nodes[id].text = text;
+    changed();
+  } else if (text && text !== orig) {
+    commit(() => { map.nodes[id].text = text; });
+  } else {
+    if (t) t.textContent = orig;
+    render();
+  }
+}
+function cancelEdit() {
+  if (!editing) return;
+  els.get(editing.id).firstChild.textContent = editing.isNew ? '' : editing.orig;
+  finishEdit();
+}
+function addChildAndEdit(pid) {
+  if (editing) finishEdit();
+  if (!map.nodes[pid]) pid = map.root;
+  let id;
+  commit(() => { id = addNode(pid, ''); });
+  ensureVisible(map.nodes[id]);
+  startEdit(id, true);
+}
+function addSiblingAndEdit() {
+  const n = map.nodes[sel];
+  addChildAndEdit(!n || n.parent == null ? map.root : n.parent);
+}
+function removeNode(id) {
+  if (id === map.root) return;
+  const pid = map.nodes[id].parent;
+  commit(() => { for (const d of subtree(id)) delete map.nodes[d]; invalidateTree(); });
+  sel = pid;
+  render();
+  toast('消しました', '元に戻す', undo);
+}
+function navigate(key) {
+  const s = map.nodes[sel] || map.nodes[map.root];
+  let best = null, bs = Infinity;
+  for (const n of Object.values(map.nodes)) {
+    if (n.id === s.id) continue;
+    const dx = n.x - s.x, dy = n.y - s.y;
+    const [a, b] = { ArrowRight: [dx, dy], ArrowLeft: [-dx, dy], ArrowDown: [dy, dx], ArrowUp: [-dy, dx] }[key];
+    if (a <= 10) continue;
+    const score = a + Math.abs(b) * 2;
+    if (score < bs) { bs = score; best = n.id; }
+  }
+  if (best) { select(best); ensureVisible(map.nodes[best]); }
+}
+function nudge(key) {
+  const id = sel || map.root;
+  const [dx, dy] = { ArrowRight: [24, 0], ArrowLeft: [-24, 0], ArrowDown: [0, 24], ArrowUp: [0, -24] }[key];
+  commit(() => { for (const d of subtree(id)) { map.nodes[d].x += dx; map.nodes[d].y += dy; } });
+}
+
+/* ---------- reparent ---------- */
+function startReparent(id) {
+  if (id === map.root) return;
+  mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
+  $('#modeMsg').innerHTML = `「<b></b>」をどこにつなぐ？`;
+  $('#modeMsg b').textContent = map.nodes[id].text;
+  $('#modeBanner').hidden = false;
+  $('#modeOk').disabled = true;
+  render();
+}
+function endReparent() { mode = null; $('#modeBanner').hidden = true; render(); }
+function setCandidate(id) {
+  if (!mode) return;
+  if (mode.blocked.has(id)) id = null;
+  if (mode.candidate === id) return;
+  mode.candidate = id;
+  $('#modeOk').disabled = !id;
+  render();
+}
+function confirmReparent() {
+  const { id, candidate } = mode;
+  endReparent();
+  if (!candidate || map.nodes[id].parent === candidate) return;
+  commit(() => { map.nodes[id].parent = candidate; map.nodes[id].order = ++map.seq; invalidateTree(); });
+  sel = id;
+  render();
+  toast('つなぎ替えました', '元に戻す', undo);
+}
+
+/* ---------- chat ---------- */
+// Rule-based stand-in for the LLM interpreter. Each verb pattern anchors at the
+// end of the sentence; the text before it names the target node.
+const MOVE = /の(?:子|下)に(?:移|つなぎ[替か]え|つない)[^に]*$/;
+const RENAME = /に(?:変え|変更|書きかえ|書き換え|直)[^に]*$/;
+const REMOVE = /^(.+)を(?:消|削除)[^を]*$/;
+const ADD = /を(?:追加|足|加え)[^を]*$/;
+function unquote(s) {
+  const m = s.trim().match(/^[「『"“]([^「『」』"“”]*)[」』"”]$/);
+  return (m ? m[1] : s).trim();
+}
+function findNodes(name, partial) {
+  name = unquote(name);
+  if (!name) return [];
+  if (/^(?:これ|ここ|それ|選択中)$/.test(name)) return map.nodes[sel] ? [sel] : [];
+  return Object.values(map.nodes).filter(n => partial ? n.text.includes(name) : n.text === name).map(n => n.id);
+}
+const resolve = name => { const ids = findNodes(name, false); return ids.length ? ids : findNodes(name, true); };
+// Prefer an exact node name at any split point before falling back to partial matches.
+function splitTarget(body, seps) {
+  for (const partial of [false, true])
+    for (const sep of seps)
+      for (let i = body.indexOf(sep); i > 0; i = body.indexOf(sep, i + 1)) {
+        const ids = findNodes(body.slice(0, i), partial);
+        if (ids.length) return { ids, rest: unquote(body.slice(i + sep.length)) };
+      }
+  return null;
+}
+function interpret(text) {
+  const here = map.nodes[sel] ? sel : map.root;
+  const unknown = () => ask('どのことばのことか分かりませんでした', [{ label: 'そのまま追加', run: () => addTo(here, text) }]);
+  let m, t;
+  if ((m = text.match(MOVE))) {
+    if (!(t = splitTarget(text.slice(0, m.index), ['を']))) return unknown();
+    return pick(t.ids, id => pick(resolve(t.rest), to => moveTo(id, to), t.rest));
+  }
+  if ((m = text.match(RENAME))) {
+    if (!(t = splitTarget(text.slice(0, m.index), ['を']))) return unknown();
+    return pick(t.ids, id => rename(id, t.rest));
+  }
+  if ((m = text.match(REMOVE))) {
+    const ids = resolve(m[1]);
+    return ids.length ? pick(ids, askRemove) : unknown();
+  }
+  if ((m = text.match(ADD))) {
+    const body = text.slice(0, m.index);
+    t = splitTarget(body, ['の子に', 'の下に', 'に']);
+    return t ? pick(t.ids, pid => addTo(pid, t.rest)) : addTo(here, unquote(body));
+  }
+  addTo(here, unquote(text));
+}
+function label(id) {
+  const n = map.nodes[id], p = map.nodes[n.parent];
+  return p ? `${n.text}（${p.text}）` : n.text;
+}
+function pick(ids, next, name) {
+  if (!ids.length) return reply(`「${unquote(name)}」が見つかりませんでした`);
+  if (ids.length === 1) return next(ids[0]);
+  ask('どれのことですか？', ids.map(id => ({ label: label(id), run: () => next(id) })));
+}
+function ask(text, choices) {
+  const msg = { role: 'app', text };
+  chat.pending = { msg, choices: [...choices, { label: 'やめる', run: () => reply('やめました') }] };
+  chat.log.push(msg);
+}
+function reply(text, undoSnap) { chat.log.push({ role: 'app', text, undoSnap }); }
+function applied(id, text) {
+  sel = id;
+  render();
+  ensureVisible(map.nodes[id]);
+  reply(text, history.at(-1));
+}
+function addTo(pid, text) {
+  if (!text) return reply('追加することばが分かりませんでした');
+  let id;
+  commit(() => { id = addNode(pid, text); });
+  applied(id, `「${map.nodes[pid].text}」に追加しました：${text}`);
+}
+function rename(id, text) {
+  if (!text) return reply('新しいことばが分かりませんでした');
+  const before = map.nodes[id].text;
+  commit(() => { map.nodes[id].text = text; });
+  applied(id, `書きかえました：${before} → ${text}`);
+}
+function moveTo(id, to) {
+  if (id === map.root) return reply('中心はつなぎ替えできません');
+  if (subtree(id).has(to)) return reply(`「${map.nodes[id].text}」の中にはつなげません`);
+  if (map.nodes[id].parent === to) return reply('もうそこにつながっています');
+  commit(() => { map.nodes[id].parent = to; map.nodes[id].order = ++map.seq; invalidateTree(); });
+  applied(id, `「${map.nodes[to].text}」につなぎ替えました：${map.nodes[id].text}`);
+}
+function askRemove(id) {
+  if (id === map.root) return reply('中心は消せません');
+  const count = subtree(id).size, n = map.nodes[id];
+  ask(`「${n.text}」${count > 1 ? `と、その先の${count - 1}個` : ''}を消しますか？`, [{ label: '消す', run: () => {
+    const pid = n.parent;
+    commit(() => { for (const d of subtree(id)) delete map.nodes[d]; invalidateTree(); });
+    applied(pid, `消しました：${n.text}`);
+  } }]);
+}
+function send(text) {
+  if (editing) finishEdit();
+  if (mode) endReparent();
+  chat.pending = null;
+  chat.log.push({ role: 'user', text });
+  interpret(text);
+  renderChatLog();
+}
+function choose(choice) {
+  chat.pending = null;
+  choice.run();
+  renderChatLog();
+}
+function renderChatLog() {
+  const log = $('#chatLog');
+  log.innerHTML = chat.log.length ? '' : '<li class="chat__empty">思いついたことを送ると、選択中のことばの先に追加します。<br>指示もできます。<br><b>図書館に行くの子に本を借りるを追加</b><br><b>ブランコを図書館に行くの下に移して</b><br><b>公園で遊ぶを午前中に公園で遊ぶに変えて</b><br><b>ブランコを消して</b></li>';
+  for (const msg of chat.log) {
+    const li = Object.assign(document.createElement('li'), { className: `msg msg--${msg.role}`, textContent: msg.text });
+    const choices = chat.pending?.msg === msg ? chat.pending.choices : [];
+    // Only the newest change can be undone from here; older ones would undo something else.
+    const actions = msg.undoSnap && history.at(-1) === msg.undoSnap ? [{ label: '元に戻す', run: undo }] : choices;
+    if (actions.length) {
+      const row = Object.assign(document.createElement('div'), { className: 'msg__actions' });
+      for (const a of actions) {
+        const b = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: a.label });
+        b.onclick = () => a.run === undo ? undo() : choose(a);
+        row.append(b);
+      }
+      li.append(row);
+    }
+    log.append(li);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+function setChatOpen(open) {
+  chat.open = open;
+  document.body.classList.toggle('chat-open', open);
+  $('#chat').hidden = !open;
+  $('#chatBtn').setAttribute('aria-pressed', open);
+}
+function toggleChat(open = !chat.open) {
+  const before = W();
+  setChatOpen(open);
+  view.x += (W() - before) / 2;
+  clampView(view, false);
+  applyView();
+  open ? $('#chatInput').focus() : vp.focus();
+  try { open ? localStorage.setItem(CHAT_KEY, '1') : localStorage.removeItem(CHAT_KEY); } catch {}
+}
+
+/* ---------- hand (mock) ---------- */
+function toggleHand() {
+  if (hand) {
+    if (gesture?.hand) revertGesture();
+    hand = null;
+    clearTimeout(handTimer);
+    document.body.classList.remove('hand-on');
+    $('#cam').hidden = true;
+    $('#handCursor').hidden = true;
+    $('#handBtn').setAttribute('aria-pressed', 'false');
+    render();
+    return;
+  }
+  hand = { state: 'nohand', x: W() / 2, y: innerHeight / 2, hover: null, grab: null };
+  document.body.classList.add('hand-on');
+  $('#cam').hidden = false;
+  $('#handCursor').hidden = false;
+  $('#handBtn').setAttribute('aria-pressed', 'true');
+  toast('左右は鏡のように動きます。指をつまむとつかめます');
+  handTimer = setTimeout(() => setHandState('ready'), 1400);
+  updateHand();
+}
+function setHandState(state) {
+  if (!hand) return;
+  hand.state = state;
+  if (state !== 'ready') hand.hover = null;
+  updateHand();
+  render();
+}
+function updateHand() {
+  if (!hand) return;
+  const c = $('#handCursor');
+  c.style.transform = `translate(${hand.x}px, ${hand.y}px)`;
+  c.dataset.state = hand.state === 'ready' ? (hand.grab ? 'grab' : hand.hover ? 'hover' : 'ready') : hand.state;
+  $('#handLabel').textContent = hand.state === 'lost' ? '手が見えません' : '';
+  $('#camHand').style.display = hand.state === 'ready' ? '' : 'none';
+  $('#camMsg').hidden = hand.state === 'ready';
+  $('#camMsg').innerHTML = hand.state === 'lost' ? '手が見えなく<br>なりました' : 'カメラに手を<br>映してください';
+}
+function loseHand() {
+  if (!hand) { toast('先に「手で操作」をオンにしてください'); return; }
+  setHandState('lost');
+  const g = gesture;
+  if (g?.hand) {
+    setTimeout(() => {
+      if (gesture !== g) return;
+      revertGesture();
+      toast('手が見えなくなったので、元の位置にもどしました');
+    }, GRACE);
+  }
+  setTimeout(() => { if (hand?.state === 'lost') setHandState('ready'); }, 1800);
+}
+function revertGesture() {
+  if (gesture?.type === 'node') for (const [id, p] of gesture.orig) Object.assign(map.nodes[id], p);
+  if (hand) hand.grab = null;
+  gesture = null;
+  render();
+  updateHand();
+}
+
+/* ---------- pointer ---------- */
+const pts = new Map();
+vp.addEventListener('pointerdown', e => {
+  if (e.target.isContentEditable) return;
+  animId++;
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  vp.setPointerCapture(e.pointerId);
+  if (pts.size === 2) {
+    if (gesture?.type === 'node') revertGesture();
+    const [a, b] = [...pts.values()];
+    gesture = { type: 'pinch', d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), s0: view.s, wx: ((a.x + b.x) / 2 - view.x) / view.s, wy: ((a.y + b.y) / 2 - view.y) / view.s };
+    return;
+  }
+  if (editing) finishEdit();
+  vp.focus({ preventScroll: true });
+  const id = e.target.closest('.node')?.dataset.id;
+  if (mode) {
+    if (!id) return;
+    if (e.pointerType === 'mouse' || mode.candidate === id) { setCandidate(id); if (mode.candidate) confirmReparent(); }
+    else setCandidate(id);
+    return;
+  }
+  if (hand && e.pointerType === 'mouse') {
+    if (hand.state !== 'ready' || !id) return;
+    hand.grab = id;
+    hand.hover = null;
+  }
+  if (id) {
+    sel = id;
+    const orig = new Map([...subtree(id)].map(d => [d, { x: map.nodes[d].x, y: map.nodes[d].y }]));
+    const edgeIds = new Set();
+    for (const d of orig.keys()) {
+      if (map.nodes[d].parent != null) edgeIds.add(d);
+      for (const child of kids(d)) edgeIds.add(child.id);
+    }
+    gesture = { type: 'node', edgeIds, id, sx: e.clientX, sy: e.clientY, moved: false, pre: JSON.stringify(map), orig, hand: !!hand };
+    render();
+    updateHand();
+  } else if (!hand) {
+    gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
+  }
+});
+vp.addEventListener('pointermove', e => {
+  if (hand && e.pointerType === 'mouse') {
+    hand.x = e.clientX; hand.y = e.clientY;
+    const over = hand.state === 'ready' && !hand.grab ? e.target.closest('.node')?.dataset.id || null : hand.hover;
+    if (over !== hand.hover) { hand.hover = over; render(); }
+    updateHand();
+  }
+  if (mode && e.pointerType === 'mouse') setCandidate(e.target.closest('.node')?.dataset.id || null);
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const g = gesture;
+  if (!g) return;
+  if (g.type === 'pinch') {
+    if (pts.size < 2) { gesture = null; return; }
+    const [a, b] = [...pts.values()];
+    const s = clamp(g.s0 * Math.hypot(a.x - b.x, a.y - b.y) / g.d0, ZMIN, ZMAX);
+    view = clampView({ x: (a.x + b.x) / 2 - g.wx * s, y: (a.y + b.y) / 2 - g.wy * s, s });
+    applyView();
+    return;
+  }
+  const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
+  if (!g.moved && Math.hypot(dx, dy) < 4) return;
+  g.moved = true;
+  if (g.type === 'pan') {
+    vp.classList.add('is-panning');
+    view = clampView({ x: g.vx + dx, y: g.vy + dy, s: view.s });
+    applyView();
+  } else if (g.type === 'node' && hand?.state !== 'lost') {
+    let wx = dx / view.s, wy = dy / view.s;
+    for (const p of g.orig.values()) { wx = clamp(wx, -BOUND - p.x, BOUND - p.x); wy = clamp(wy, -BOUND - p.y, BOUND - p.y); }
+    for (const [id, p] of g.orig) { map.nodes[id].x = Math.round(p.x + wx); map.nodes[id].y = Math.round(p.y + wy); }
+    scheduleDragRender(g);
+  }
+});
+function endPointer(e) {
+  pts.delete(e.pointerId);
+  const g = gesture;
+  vp.classList.remove('is-panning');
+  if (!g) return;
+  // Lifting either finger ends the pinch. The remaining finger cannot start
+  // a pan or move a node until a new gesture begins.
+  if (g.type === 'pinch') { gesture = null; return; }
+  gesture = null;
+  if (hand) hand.grab = null;
+  if (g.type === 'node' && g.moved) {
+    pushHistory(g.pre);
+    future = [];
+    changed();
+  } else if (g.type === 'pan' && !g.moved) {
+    select(null);
+  } else render();
+  updateHand();
+}
+vp.addEventListener('pointerup', endPointer);
+vp.addEventListener('pointercancel', e => { if (gesture?.type === 'node') revertGesture(); endPointer(e); });
+vp.addEventListener('dblclick', e => {
+  const id = e.target.closest('.node')?.dataset.id;
+  if (id && !mode && !hand) startEdit(id);
+});
+vp.addEventListener('wheel', e => {
+  e.preventDefault();
+  animId++;
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, view.s * Math.exp(-e.deltaY * 0.01));
+  else { view = clampView({ x: view.x - e.deltaX, y: view.y - e.deltaY, s: view.s }); applyView(); }
+}, { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+/* ---------- keyboard ---------- */
+nodesEl.addEventListener('keydown', e => {
+  if (!editing || !e.target.isContentEditable) return;
+  e.stopPropagation();
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finishEdit(); vp.focus(); }
+  else if (e.key === 'Tab') { e.preventDefault(); const id = editing.id; finishEdit(); if (map.nodes[id]) addChildAndEdit(id); }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); vp.focus(); }
+});
+nodesEl.addEventListener('focusout', e => { if (editing && e.target.isContentEditable) finishEdit(); });
+addEventListener('keydown', e => {
+  if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
+  const mod = e.metaKey || e.ctrlKey, k = e.key;
+  if (mod && k.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && k.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (k === 'Escape') {
+    if (mode) endReparent();
+    else if (!$('#fileMenu').hidden) toggleFileMenu(false);
+    else if (document.activeElement === vp) $('#addChild').focus();
+    else vp.focus();
+    return;
+  }
+  if (e.target !== vp && e.target !== document.body) return;
+  if (mode) {
+    if (k === 'Enter' && mode.candidate) { e.preventDefault(); confirmReparent(); }
+    else if (k.startsWith('Arrow')) {
+      e.preventDefault();
+      const from = sel; sel = mode.candidate || mode.id; navigate(k);
+      setCandidate(sel); sel = from;
+    }
+    return;
+  }
+  if (k === 'Tab' && !e.shiftKey) { e.preventDefault(); addChildAndEdit(sel || map.root); }
+  else if (k === 'Enter') { e.preventDefault(); addSiblingAndEdit(); }
+  else if (k === 'F2' && sel) { e.preventDefault(); startEdit(sel); }
+  else if ((k === 'Delete' || k === 'Backspace') && sel && sel !== map.root) { e.preventDefault(); removeNode(sel); }
+  else if (k.startsWith('Arrow')) { e.preventDefault(); e.altKey ? nudge(k) : navigate(k); }
+  else if (e.code === 'Digit1' && e.shiftKey) { e.preventDefault(); fitAll(); }
+});
+
+/* ---------- chrome ---------- */
+function toast(msg, label, action) {
+  const t = $('#toast');
+  t.textContent = msg;
+  if (label) {
+    const b = Object.assign(document.createElement('button'), { className: 'btn', textContent: label });
+    b.onclick = () => { action(); t.hidden = true; };
+    t.append(b);
+  }
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3600);
+}
+function toggleFileMenu(open) {
+  $('#fileMenu').hidden = !open;
+  $('#fileBtn').setAttribute('aria-expanded', open);
+}
+function exportJson() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(map, null, 2)], { type: 'application/json' }));
+  a.download = `${map.title || 'map'}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toggleFileMenu(false);
+}
+$('#nodeMenu').addEventListener('click', e => {
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (!act || !sel) return;
+  ({ child: () => addChildAndEdit(sel), edit: () => startEdit(sel), reparent: () => startReparent(sel), delete: () => removeNode(sel) })[act]();
+});
+$('#addChild').onclick = () => addChildAndEdit(sel || map.root);
+$('#chatBtn').onclick = () => toggleChat();
+$('#chatClose').onclick = () => toggleChat(false);
+$('#chatForm').onsubmit = e => {
+  e.preventDefault();
+  const text = $('#chatInput').value.trim();
+  $('#chatInput').value = '';
+  if (text) send(text);
+};
+$('#chatInput').onkeydown = e => {
+  // Safari reports the IME confirming Enter as keyCode 229; it must not submit.
+  if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) e.preventDefault();
+  if (e.key === 'Escape') vp.focus();
+};
+$('#handBtn').onclick = toggleHand;
+$('#fitBtn').onclick = fitAll;
+$('#zoomIn').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
+$('#zoomOut').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s / 1.25);
+$('#zoomLabel').onclick = () => zoomAt(W() / 2, innerHeight / 2, 1);
+$('#undo').onclick = undo;
+$('#redo').onclick = redo;
+$('#modeOk').onclick = confirmReparent;
+$('#modeCancel').onclick = endReparent;
+$('#fileBtn').onclick = () => toggleFileMenu($('#fileMenu').hidden);
+$('#exportBtn').onclick = exportJson;
+$('#saveExport').onclick = exportJson;
+$('#importBtn').onclick = () => { toggleFileMenu(false); $('#fileInput').click(); };
+function importMap(m) {
+  if (!valid(m)) throw new Error('マップの形式が正しくありません');
+  if (editing || gesture || mode) throw new Error('操作を終えてから読み込んでください');
+  const previous = { map, sel, history, future, view: { ...view }, stored: localStorage.getItem(KEY) };
+  // Save before publishing. A failed write must not replace the working map.
+  if (forceSaveFail) throw new Error('保存できませんでした');
+  localStorage.setItem(KEY, JSON.stringify(m));
+  clearTimeout(saveTimer);
+  try {
+    map = m;
+    sel = map.root;
+    history = [];
+    future = [];
+    $('#title').value = map.title;
+    render();
+    fitAll();
+    $('#undo').disabled = true;
+    $('#redo').disabled = true;
+    setSave('saved');
+  } catch (error) {
+    map = previous.map;
+    sel = previous.sel;
+    history = previous.history;
+    future = previous.future;
+    view = previous.view;
+    animId++;
+    try {
+      if (previous.stored === null) localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, previous.stored);
+    } finally {
+      $('#title').value = map.title;
+      render();
+      applyView();
+      // Also resume any save that was pending for the original working map.
+      scheduleSave();
+      $('#undo').disabled = !history.length;
+      $('#redo').disabled = !future.length;
+    }
+    throw error;
+  }
+}
+let importRequest = 0;
+$('#fileInput').onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  const request = ++importRequest;
+  try {
+    const m = JSON.parse(await f.text());
+    if (request !== importRequest) return;
+    importMap(m);
+    toast('読み込みました');
+  } catch { if (request === importRequest) toast('読み込めませんでした。作業中のマップを維持しています'); }
+};
+$('#title').oninput = e => { map.title = e.target.value; scheduleSave(); };
+$('#title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) vp.focus(); };
+$('#devBtn').onclick = () => {
+  const open = $('#dev').hidden;
+  $('#dev').hidden = !open;
+  $('#devBtn').setAttribute('aria-expanded', open);
+};
+$('#camToggle').onclick = () => {
+  const c = $('#cam').classList.toggle('is-collapsed');
+  $('#camToggle').textContent = c ? '表示' : '隠す';
+};
+$('#dev').addEventListener('click', e => {
+  const d = e.target.closest('[data-dev]')?.dataset.dev;
+  if (!d) return;
+  if (d === 'h-nohand') { if (!hand) toggleHand(); clearTimeout(handTimer); setHandState(hand.state === 'nohand' ? 'ready' : 'nohand'); }
+  if (d === 'h-lost') loseHand();
+  if (d === 's-saving') { clearTimeout(saveTimer); setSave('saving'); }
+  if (d === 's-error') { forceSaveFail = true; scheduleSave(); }
+  if (d === 's-saved') { forceSaveFail = false; scheduleSave(); }
+  if (d === 'edge') { animateTo(centerOn({ x: BOUND, y: 0 })); setTimeout(() => { edgeHint('right'); toast('「全体を表示」で戻れます'); }, 300); }
+  if (d === 'reset') { commit(() => { map = sample(); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
+});
+document.addEventListener('pointerdown', e => {
+  if (!$('#fileMenu').hidden && !e.target.closest('.menu')) toggleFileMenu(false);
+});
+addEventListener('resize', () => { clampView(view, false); applyView(); });
+addEventListener('blur', () => { if (gesture?.type === 'node') revertGesture(); });
+
+$('#title').value = map.title;
+try { if (localStorage.getItem(CHAT_KEY)) setChatOpen(true); } catch {}
+visualViewport?.addEventListener('resize', () => {
+  document.body.style.setProperty('--kb', Math.max(0, innerHeight - visualViewport.height - visualViewport.offsetTop) + 'px');
+});
+renderChatLog();
+view = centerOn(map.nodes[map.root], 1);
+view.y -= 20;
+render();
+applyView();
+</script>
+</body>
+</html>
