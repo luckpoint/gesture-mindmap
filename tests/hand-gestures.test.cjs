@@ -3,11 +3,13 @@ const { test } = require('node:test');
 const { HandController, handFrame, directionalTarget } = require('../ui-prototype/gestures/controller.js');
 
 function setup(options = {}) {
-  const events = [], dragEvents = [], zooms = []; let blocked = false, time = 0;
+  const events = [], dragEvents = [], zooms = [], commands = [], dialogEvents = []; let blocked = false, time = 0, dialog = false;
   const controller = new HandController({
     blocked: () => blocked, activate: () => events.push('activate'),
     navigate: direction => events.push(direction), paint() {},
     zoom: factor => zooms.push(factor),
+    command: action => commands.push(action), dialog: () => dialog,
+    dialogNavigate: step => dialogEvents.push(step), dialogSelect: () => dialogEvents.push('select'),
     bounds: () => ({ left: 0, top: 0, right: 1000, bottom: 800 }),
     begin: (x, y) => { dragEvents.push(['begin', x, y]); return 'a'; },
     move: (x, y) => dragEvents.push(['move', x, y]),
@@ -18,7 +20,7 @@ function setup(options = {}) {
     time += 50;
   };
   const stable = (x = .5, y = .5, extra = {}) => { for (let i = 0; i < 3; i++) feed(x, y, extra); };
-  return { controller, events, dragEvents, zooms, feed, stable, block: value => blocked = value,
+  return { controller, events, dragEvents, zooms, commands, dialogEvents, feed, stable, block: value => blocked = value, dialog: value => dialog = value,
     lost: () => { controller.update(null, time); time += 50; },
     advance: duration => time += duration,
     moves: () => events.filter(e => typeof e === 'object') };
@@ -288,4 +290,83 @@ test('landmarks distinguish fist, index-only point, open hand and pinch across o
   }
   const two = handFrame({ landmarks: [poseLandmarks('open'), poseLandmarks('point')] }, 640, 480);
   assert.equal(two.pose, 'point');
+});
+
+const holdPose = (t, pose, extra = {}) => { for (let i = 0; i < 14; i++) t.feed(.5, .5, { pose, ...extra }); };
+
+for (const [pose, action] of [['peace', 'add'], ['thumbDown', 'delete']]) {
+  test(`${pose} commands require a stable hold, fire once, and rearm through neutral`, () => {
+    const t = setup(); t.stable(); t.stable(.5, .5, { pose });
+    assert.deepEqual(t.commands, []); assert.ok(t.controller.state.progress > 0);
+    holdPose(t, pose); holdPose(t, pose);
+    assert.deepEqual(t.commands, [action]); assert.deepEqual(t.moves(), []);
+    t.lost(); holdPose(t, pose); assert.deepEqual(t.commands, [action]);
+    t.stable(.5, .5, { pose: 'fist' }); holdPose(t, pose);
+    assert.deepEqual(t.commands, [action, action]);
+  });
+}
+
+for (const cause of ['loss', 'gap', 'identity', 'wrist', 'motion', 'pose', 'clock']) test(`${cause} interrupts a command hold`, () => {
+  const t = setup(); t.stable();
+  for (let i = 0; i < 10; i++) t.feed(.5, .5, { pose: 'peace' });
+  if (cause === 'loss') t.lost();
+  if (cause === 'gap') t.advance(1500);
+  if (cause === 'clock') t.advance(-500);
+  if (cause === 'pose') t.feed(.5, .5, { pose: 'fist' });
+  const extra = cause === 'identity' ? { identity: 'Right' } : cause === 'wrist' ? { wrist: { x: .1, y: .1 } } : {};
+  for (let i = 0; i < 4; i++) t.feed(cause === 'motion' ? .6 : .5, .5, { pose: 'peace', ...extra });
+  assert.deepEqual(t.commands, []);
+});
+
+test('pause, ordinary input, two hands and drag transitions cannot issue commands', () => {
+  for (const cause of ['paused', 'blocked', 'two', 'drag', 'zoom']) {
+    const t = setup(); t.stable();
+    if (cause === 'paused') pointHand(t);
+    if (cause === 'blocked') t.block(true);
+    if (cause === 'drag') t.stable(.5, .5, { ratio: .1 });
+    if (cause === 'zoom') t.stable(.5, .5, { hands: 2, distance: .4 });
+    holdPose(t, 'peace', cause === 'two' ? { hands: 2, distance: .4 } : {});
+    assert.deepEqual(t.commands, [], cause);
+    if (cause === 'drag') assert.deepEqual(t.dragEvents.map(e => e[0]), ['begin', 'cancel']);
+  }
+});
+
+test('dialog requires an open hand and a fresh long pinch; never drags or zooms', () => {
+  const t = setup(); t.stable(); t.dialog(true);
+  holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, []);
+  t.stable(); t.feed(.5, .6);
+  assert.deepEqual(t.dialogEvents, [1]);
+  t.stable(.5, .6, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1]);
+  for (let i = 0; i < 12; i++) t.feed(.5, .6, { ratio: .1 });
+  assert.deepEqual(t.dialogEvents, [1, 'select']);
+  holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1, 'select']);
+  holdPose(t, 'peace'); holdPose(t, null, { hands: 2, distance: .5 });
+  assert.deepEqual(t.commands, []); assert.deepEqual(t.zooms, []); assert.deepEqual(t.dragEvents, []);
+  pointHand(t); t.stable(); holdPose(t, null, { ratio: .1 });
+  assert.deepEqual(t.dialogEvents, [1, 'select']);
+});
+
+test('landmarks recognize peace and downward thumb separately from point and fist', () => {
+  const peace = poseLandmarks('point');
+  for (const index of [10, 11, 12]) peace[index] = { x: peace[9].x, y: ({ 10: .48, 11: .4, 12: .3 })[index] };
+  const down = poseLandmarks('fist');
+  down[2] = { x: .5, y: .55 }; down[3] = { x: .5, y: .72 }; down[4] = { x: .5, y: .95 };
+  for (const [points, pose] of [[peace, 'peace'], [down, 'thumbDown']]) {
+    for (const mirror of [false, true]) {
+      assert.equal(handFrame({ landmarks: [points.map(p => ({ x: mirror ? 1 - p.x : p.x, y: p.y }))] }, 640, 480).pose, pose);
+    }
+  }
+  down[4] = { x: .38, y: .6 };
+  assert.equal(handFrame({ landmarks: [down] }, 640, 480).pose, 'fist');
+  const both = handFrame({ landmarks: [peace, poseLandmarks('open')] }, 640, 480);
+  assert.equal(both.hands, 2); assert.notEqual(both.pose, 'peace');
+});
+
+test('point hold cannot inherit time spent in a command pose', () => {
+  const t = setup(); t.stable();
+  t.stable(.5, .5, { pose: 'point' });
+  t.stable(.5, .5, { pose: 'peace' });
+  t.stable(.5, .5, { pose: 'point' });
+  assert.equal(t.controller.paused, false);
+  pointHand(t); assert.equal(t.controller.paused, true);
 });

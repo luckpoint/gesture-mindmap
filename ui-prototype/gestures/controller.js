@@ -23,9 +23,11 @@
   class HandController {
     constructor(io, options = {}) {
       this.io = io;
-      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .45, deadzone: 3, stable: 100, toggleStable: 300, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
+      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .45, deadzone: 3, stable: 100, toggleStable: 300, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
       this.state = { state: 'nohand', initialized: false, hover: null, grab: null, x: 0, y: 0 };
       this.paused = false; this.toggleHeld = false;
+      this.commandHeld = false; this.commandFrame = null; this.commandResetAt = null;
+      this.dialogMode = false;
       this.cancel();
     }
     cancel(preserveToggle = false) {
@@ -38,11 +40,16 @@
       if (!preserveToggle) {
         this.toggleAt = null; this.toggleReleaseAt = null; this.toggleLastAt = null;
       }
+      this.commandPose = null; this.commandAt = null; this.commandPoint = null;
+      this.state.progress = 0;
       this.state.state = this.paused ? 'paused' : 'nohand'; this.io.paint(this.state);
     }
     update(frame, now) {
       const s = this.state, c = this.config;
       if (this.io.blocked()) { this.cancel(); s.state = 'blocked'; this.io.paint(s); return; }
+      const dialog = !!this.io.dialog?.();
+      if (dialog !== this.dialogMode) { this.cancel(); this.dialogMode = dialog; }
+      if (this.updateCommand(frame, now, dialog)) return;
       // A held pointing pose toggles once. Tracking loss never rearms it;
       // require a stable different pose before accepting another toggle.
       if (frame && Number.isFinite(now)) {
@@ -73,6 +80,9 @@
         }
       }
       if (this.paused) { this.cancel(); return; }
+      if (dialog && frame?.hands === 2) {
+        this.cancel(); s.state = 'dialog'; this.io.paint(s); return;
+      }
       if (frame?.hands === 2) {
         const distance = frame.distance;
         if (!Number.isFinite(distance) || distance < .05 || !Number.isFinite(now)) {
@@ -106,6 +116,7 @@
         (this.wrist && Math.hypot(frame.wrist.x - this.wrist.x, frame.wrist.y - this.wrist.y) >= .2);
       if (changed || (this.lastAt !== null && (now - this.lastAt > c.maxGap || now < this.lastAt))) this.cancel();
       this.identity = frame.identity; this.wrist = { ...frame.wrist }; this.lastAt = now;
+      if (dialog) { this.updateDialog(frame, point, now); return; }
       if (this.closed) {
         if (frame.ratio >= c.open) {
           if (this.pinchAt === null) this.pinchAt = now;
@@ -154,6 +165,75 @@
       }
       this.io.paint(s);
     }
+    updateCommand(frame, now, dialog) {
+      const s = this.state, c = this.config, point = frame?.pointer;
+      const valid = frame?.hands !== 2 && [point?.x, point?.y, frame?.wrist?.x, frame?.wrist?.y, frame?.ratio, now].every(Number.isFinite);
+      const previous = this.commandFrame;
+      const discontinuous = !valid || (previous && (now < previous.now || now - previous.now > c.maxGap ||
+        (previous.identity && frame.identity && previous.identity !== frame.identity) ||
+        Math.hypot(frame.wrist.x - previous.wrist.x, frame.wrist.y - previous.wrist.y) >= .2));
+      if (discontinuous) {
+        this.commandPose = null; this.commandAt = null; this.commandResetAt = null; s.progress = 0;
+      }
+      this.commandFrame = valid ? { now, identity: frame.identity, wrist: { ...frame.wrist } } : null;
+      const command = frame?.pose === 'peace' ? 'add' : frame?.pose === 'thumbDown' ? 'delete' : null;
+      const neutral = valid && (frame.pose === 'fist' || (!frame.pose && frame.ratio >= c.open));
+      if (neutral) {
+        if (this.commandResetAt === null) this.commandResetAt = now;
+        if (now - this.commandResetAt >= c.stable) this.commandHeld = false;
+      } else this.commandResetAt = null;
+      if (!valid || !command || this.paused || dialog) {
+        this.commandPose = null; this.commandAt = null; s.progress = 0;
+        return false;
+      }
+      if (s.grab || this.zoomLastAt !== null) {
+        this.commandHeld = true; this.cancel();
+      }
+      if (this.commandHeld) {
+        this.cancel(); s.state = 'commandReset'; this.io.paint(s); return true;
+      }
+      if (this.commandPose !== command || Math.hypot(point.x - this.commandPoint?.x, point.y - this.commandPoint?.y) > c.commandDrift) {
+        this.cancel(); this.commandPose = command; this.commandAt = now; this.commandPoint = { ...point };
+      }
+      s.state = command === 'add' ? 'addWaiting' : 'deleteWaiting';
+      s.progress = Math.min(1, (now - this.commandAt) / c.commandStable);
+      if (s.progress >= 1) {
+        this.commandHeld = true;
+        this.io.command?.(command);
+        s.state = 'commandReset'; s.progress = 0;
+      }
+      this.io.paint(s); return true;
+    }
+    updateDialog(frame, point, now) {
+      const s = this.state, c = this.config;
+      // Opening the dialog or recovering tracking requires a fresh open hand.
+      if (frame.pose) {
+        this.anchor = null; this.pendingAt = null; this.pinchAt = null;
+      } else if (frame.ratio >= c.open) {
+        this.pinchAt = null;
+        if (!this.anchor) {
+          if (this.pendingAt === null) this.pendingAt = now;
+          if (now - this.pendingAt >= c.stable) this.anchor = { ...point };
+        } else if (now - this.lastSwitch < c.cooldown) this.anchor = { ...point };
+        else if (Math.abs(point.y - this.anchor.y) >= c.threshold) {
+          this.io.dialogNavigate?.(point.y > this.anchor.y ? 1 : -1);
+          this.anchor = { ...point }; this.lastSwitch = now;
+        }
+      } else if (this.anchor && frame.ratio <= c.close) {
+        this.anchor = { ...point };
+        if (this.pinchAt === null) this.pinchAt = now;
+        if (now - this.pinchAt >= c.commandStable) {
+          this.anchor = null; this.pendingAt = null; this.pinchAt = null;
+          this.io.dialogSelect?.();
+        }
+      } else {
+        this.pinchAt = null;
+        if (this.anchor) this.anchor = { ...point };
+      }
+      s.state = 'dialog';
+      s.progress = this.pinchAt === null ? 0 : Math.min(1, (now - this.pinchAt) / c.commandStable);
+      this.io.paint(s);
+    }
     rebaseDrag(point, now) {
       this.dragPoint = { ...point }; this.dragAt = now;
       this.dragFiltered = { x: this.state.x, y: this.state.y };
@@ -196,7 +276,12 @@
       return { extended: straight > .7 && distance(tip, p[0]) > distance(pip, p[0]) + size * .15,
         folded: distance(tip, p[0]) <= distance(pip, p[0]) * 1.15 };
     });
-    const pose = fingers[0].extended && fingers.slice(1).every(f => f.folded) ? 'point'
+    const thumbDown = fingers.every(f => f.folded) && (p[4].y - p[2].y) * height > size * .45 &&
+      Math.abs((p[4].x - p[2].x) * width) < (p[4].y - p[2].y) * height * .7 &&
+      (p[4].y - p[3].y) * height > size * .15 && distance(p[4], p[5]) > size * .55;
+    const pose = thumbDown ? 'thumbDown'
+      : fingers[0].extended && fingers[1].extended && fingers.slice(2).every(f => f.folded) ? 'peace'
+      : fingers[0].extended && fingers.slice(1).every(f => f.folded) ? 'point'
       : fingers.every(f => f.folded) ? 'fist' : null;
     return { pointer, tip: p[8], wrist: p[0], ratio: distance(p[4], p[8]) / size,
       pose, identity: category?.score >= .8 ? category.categoryName : null };

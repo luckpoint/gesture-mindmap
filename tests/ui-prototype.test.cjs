@@ -15,14 +15,16 @@ function setup({ renderUI = false, handUI = false } = {}) {
   function element(key) {
     if (!elements.has(key)) elements.set(key, {
       dataset: {}, style: { setProperty(name, value) { this[name] = value; } }, classList: { add() {}, remove() {}, toggle() {} },
-      firstChild: { textContent: '' }, attributes: {}, children: [], isConnected: false,
+      firstChild: { textContent: '', dataset: {}, focus() { context.document.activeElement = this; },
+        closest() { return this.contentEditable === 'plaintext-only' ? this : null; } }, attributes: {}, children: [], isConnected: false,
       offsetWidth: 120, offsetHeight: 50,
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
       append(child) { this.children.push(child); child.isConnected = true; },
       remove() { this.isConnected = false; },
       handlers: {}, hidden: false, value: '', disabled: false,
       addEventListener(name, fn) { this.handlers[name] = fn; },
-      setPointerCapture() {}, focus() {}, setAttribute(name, value) { this.attributes[name] = value; },
+      setPointerCapture() {}, focus() { context.document.activeElement = this; }, setAttribute(name, value) { this.attributes[name] = value; },
+      showModal() { this.open = true; }, close() { this.open = false; },
       querySelector: element,
     });
     return elements.get(key);
@@ -30,7 +32,8 @@ function setup({ renderUI = false, handUI = false } = {}) {
   const context = vm.createContext({
     console, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: true }),
-    document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
+    document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
+    getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
     CameraSession: class { constructor(io) { this.io = io; } start() {} stop() { this.stopped = true; } },
     localStorage: {
       getItem: key => storage.get(key) ?? null,
@@ -45,6 +48,7 @@ function setup({ renderUI = false, handUI = false } = {}) {
     cancelAnimationFrame: id => frames.delete(id),
     addEventListener: (name, fn) => windowHandlers.set(name, fn),
   });
+  context.document.body = element('body');
   // Skip only the initial screen draw; all production handlers are registered.
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
@@ -52,6 +56,7 @@ function setup({ renderUI = false, handUI = false } = {}) {
     ${renderUI ? '' : 'render = () => {};'} fitAll = () => {}; applyView = () => {};
     ${handUI ? '' : 'updateHand = () => {};'} const notices = []; toast = message => notices.push(message);
   `, context);
+  if (renderUI) vm.runInContext('render();', context);
   return { context, elements, storage, timers, frames, intervals, documentHandlers, windowHandlers,
     flushFrame() { const queued = [...frames.values()]; frames.clear(); queued.forEach(fn => fn()); },
     run: code => vm.runInContext(code, context) };
@@ -195,7 +200,7 @@ test('tree metadata is reused for movement and refreshed for structural changes 
   assert.equal(run(`depth('a1') === 4 && branchColor('a1') === branchColor('b')`), true);
   run('undo();');
   assert.equal(run(`depth('a1') === 2 && branchColor('a1') !== branchColor('b')`), true);
-  run(`removeNode('b');`);
+  run(`removeNode('b'); chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(run(`kids(map.root).map(n => n.id).join(',') === 'a,c' && branchColor('c1') === 'var(--branch-2)'`), true);
   run(`importMap(sample());`);
   assert.equal(run(`kids(map.root).length === 3 && branchColor('c1') === 'var(--branch-3)'`), true);
@@ -311,7 +316,7 @@ test('SVG paths survive redraws and obsolete paths are removed', () => {
   assert.equal(run(`previewEdge.isConnected && previewEdge.attributes.d === curve(map.nodes.b1, map.nodes.a)`), true);
   run(`confirmReparent();`);
   assert.equal(run(`previewEdge === null && edgeEls.get('a') === originalEdge && originalEdge.attributes.d === curve(map.nodes.b1, map.nodes.a)`), true);
-  run(`removeNode('a');`);
+  run(`removeNode('a'); chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(run(`!originalEdge.isConnected && !edgeEls.has('a') && !edgeEls.has('a1')`), true);
 });
 
@@ -346,8 +351,8 @@ test('chat renames and reparents, refusing a move into its own branch', () => {
 test('chat deletes only after confirmation and keeps unknown commands out of the map', () => {
   const { run } = setup();
   run(`send('公園で遊ぶを消して');`);
-  assert.equal(run(`!!map.nodes.a && chat.pending.choices[0].label === '消す'`), true);
-  run(`choose(chat.pending.choices[0]);`);
+  assert.equal(run(`!!map.nodes.a && deletion.id === 'a' && deletion.scope === null`), true);
+  run(`chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(run(`!map.nodes.a && !map.nodes.a1 && sel === 'root' && history.length === 1`), true);
   run(`send('すべり台を消して');`);
   assert.equal(run(`Object.keys(map.nodes).length === 5 && chat.pending.choices[0].label === 'そのまま追加'`), true);
@@ -534,4 +539,88 @@ test('camera fist and pause toggle cancel previews, retain map and show resumabl
   assert.equal(t.run('hand.state === "paused" && !gesture && !!cameraSession && JSON.stringify(map) === originalMap'), true);
   t.run(`for (let i = 0; i < 8; i++) poseSample('point'); stableHand(.1);`);
   assert.equal(t.run('hand.state === "ready" && sel === "root" && history.length === 0'), true);
+});
+
+test('single deletion promotes direct children in place, preserves descendants and sibling order, and undoes atomically', () => {
+  const t = setup({ renderUI: true });
+  t.run(`render(); let d, secondChild; commit(() => { d = addNode('a1', '孫', { x: 600, y: -200 }); secondChild = addNode('a', '二つ目', { x: 500, y: 20 }); });
+    const beforeDelete = JSON.stringify(map), beforeHistory = history.length;
+    removeNode('a');`);
+  assert.equal(t.run(`deletion.id === 'a' && deletion.scope === null && JSON.stringify(map) === beforeDelete && $('#deleteConfirm').disabled`), true);
+  assert.equal(t.run(`document.activeElement === $('#deleteCancel')`), true);
+  t.run(`confirmDelete();`); assert.equal(t.run(`JSON.stringify(map) === beforeDelete`), true);
+  t.run(`chooseDeleteScope('single');`);
+  assert.equal(t.run(`edgeEls.get('a1').attributes.d === curve(map.nodes.root, map.nodes.a1) && map.nodes.a1.parent === 'a' && history.length === beforeHistory`), true);
+  t.run(`confirmDelete();`);
+  assert.equal(t.run(`!deletion && !map.nodes.a && map.nodes.a1.parent === 'root' && map.nodes[d].parent === 'a1' && sel === 'root' && valid(map) && history.length === beforeHistory + 1`), true);
+  assert.equal(t.run(`kids('root').map(n => n.id).join(',') === ['a1', secondChild, 'b', 'c'].join(',') && map.nodes[secondChild].parent === 'root'`), true);
+  assert.equal(t.run(`map.nodes.a1.x === 540 && map.nodes.a1.y === -220 && map.nodes[d].x === 600`), true);
+  t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === beforeDelete'), true);
+  t.run('redo();'); assert.equal(t.run(`!map.nodes.a && map.nodes[d].parent === 'a1' && valid(map)`), true);
+});
+
+test('branch deletion removes all descendants only after confirmation; cancellation leaves history and saves untouched', () => {
+  const t = setup();
+  t.run(`const before = JSON.stringify(map); removeNode('a'); chooseDeleteScope('branch'); closeDelete();`);
+  assert.equal(t.run(`JSON.stringify(map) === before && history.length === 0 && !deletion`), true);
+  assert.equal(t.timers.size, 0);
+  t.run(`removeNode('a'); chooseDeleteScope('branch'); confirmDelete();`);
+  assert.equal(t.run(`!map.nodes.a && !map.nodes.a1 && !!map.nodes.b && history.length === 1 && sel === 'root'`), true);
+  t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === before'), true);
+});
+
+test('leaf deletion, root protection, stale confirmation and fixed target', () => {
+  const t = setup();
+  t.run(`removeNode('root');`); assert.equal(t.run('deletion'), null);
+  t.run(`removeNode('a1'); sel = 'b'; confirmDelete();`);
+  assert.equal(t.run(`!map.nodes.a1 && !!map.nodes.b && sel === 'a'`), true);
+  t.run(`undo(); removeNode('a'); chooseDeleteScope('branch'); map.nodes.a.text = '変更後'; confirmDelete();`);
+  assert.equal(t.run(`!!map.nodes.a && deletion.scope === null && $('#deleteTitle').textContent.includes('変更後')`), true);
+  // A queued native close event from the old dialog must not dismiss the refreshed one.
+  t.elements.get('#deleteDialog').handlers.close();
+  assert.equal(t.run(`!!deletion && $('#deleteDialog').open`), true);
+  assert.throws(() => t.run('importMap(sample());'), /操作を終えて/);
+  t.run(`closeDelete();`);
+});
+
+test('delete key opens the shared dialog; Escape cancels without deleting', () => {
+  const t = setup(); t.run(`sel = 'a';`);
+  const target = t.elements.get('#viewport');
+  t.windowHandlers.get('keydown')({ key: 'Delete', target, preventDefault() {} });
+  assert.equal(t.run(`deletion.id === 'a' && !!map.nodes.a`), true);
+  t.windowHandlers.get('keydown')({ key: 'Escape', target, preventDefault() {} });
+  assert.equal(t.run('!deletion && !!map.nodes.a && history.length === 0'), true);
+});
+
+test('peace adds and edits one child per hold; empty edit cancels and committed text is undoable', () => {
+  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  t.run(`
+    const commandSample = pose => { cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
+    for (let i = 0; i < 14; i++) commandSample('peace');
+    const newId = editing.id;
+  `);
+  assert.equal(t.run(`editing.isNew && map.nodes[newId].parent === 'root' && Object.keys(map.nodes).length === 8`), true);
+  t.run(`for (let i = 0; i < 20; i++) commandSample('peace'); els.get(newId).firstChild.textContent = '新しい考え'; finishEdit();
+    for (let i = 0; i < 14; i++) commandSample('peace');`);
+  assert.equal(t.run(`!editing && history.length === 1 && map.nodes[newId].text === '新しい考え'`), true);
+  t.run(`undo();`); assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
+  t.run(`stableHand(); for (let i = 0; i < 14; i++) commandSample('peace'); cancelEdit();`);
+  assert.equal(t.run('JSON.stringify(map) === originalMap && !editing && history.length === 0'), true);
+});
+
+test('thumb-down opens confirmation once, permits hand choice and fresh pinch confirmation, and suppresses map gestures', () => {
+  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  t.run(`sel = 'a';
+    const dialogSample = (pose = null, ratio = .8, y = .5) => { cameraSession.io.frame({ pointer: { x: .5, y }, wrist: { x: .5, y: .7 }, ratio, pose }, handTime); handTime += 50; };
+    for (let i = 0; i < 14; i++) dialogSample('thumbDown');
+  `);
+  assert.equal(t.run(`deletion.id === 'a' && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`), true);
+  t.run(`for (let i = 0; i < 20; i++) dialogSample('thumbDown');
+    for (let i = 0; i < 3; i++) dialogSample(); dialogSample(null, .8, .4);
+    for (let i = 0; i < 14; i++) dialogSample(null, .1, .4);`);
+  assert.equal(t.run(`deletion.scope === 'branch' && !!map.nodes.a && !gesture`), true);
+  t.run(`for (let i = 0; i < 3; i++) dialogSample(); dialogSample(null, .8, .6);
+    for (let i = 0; i < 6; i++) dialogSample(null, .8, .6); dialogSample(null, .8, .7);
+    for (let i = 0; i < 14; i++) dialogSample(null, .1, .7);`);
+  assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });

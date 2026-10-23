@@ -26,6 +26,23 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 button { font: inherit; color: inherit; }
+.delete-dialog { width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--color-rule); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-2); }
+.delete-dialog::backdrop { background: oklch(31% 0.022 60 / .23); }
+.delete-dialog h2 { margin: 0 0 12px; font: 700 21px/1.5 var(--font-display); overflow-wrap: anywhere; }
+.delete-dialog p { font-size: var(--text-sm); line-height: 1.7; }
+.delete-dialog__options { display: grid; gap: 12px; border: 0; padding: 0; margin: 20px 0; }
+.delete-option { display: flex; align-items: start; gap: 10px; padding: 14px; border: 2px solid var(--color-rule); border-radius: var(--radius-md); cursor: pointer; }
+.delete-option:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.delete-option input { accent-color: var(--color-accent-strong); margin: 4px 0 0; width: 18px; height: 18px; flex: none; }
+.delete-option strong, .delete-option small { display: block; line-height: 1.6; }
+.delete-option small { margin-top: 4px; color: var(--color-ink-2); font-size: var(--text-sm); }
+.delete-dialog__actions { display: flex; justify-content: end; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.delete-dialog__preview { background: var(--color-paper-2); padding: 12px; border-radius: var(--radius-sm); overflow-wrap: anywhere; white-space: pre-wrap; }
+.delete-dialog :focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+.node.is-delete-preview { opacity: .45; outline: 3px dashed var(--color-danger); outline-offset: 4px; }
+.node.is-promote-preview { outline: 3px dashed var(--color-focus); outline-offset: 4px; }
+.edge.is-delete-preview { stroke-dasharray: 4 7; opacity: .4; }
+.edge.is-promote-preview { stroke-dasharray: 8 5; stroke: var(--color-focus); }
 [hidden] { display: none !important; }
 .i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
@@ -374,6 +391,22 @@ button { font: inherit; color: inherit; }
 
 <div class="toast panel" id="toast" role="status" aria-live="polite" hidden></div>
 
+<dialog class="delete-dialog" id="deleteDialog" aria-labelledby="deleteTitle" aria-describedby="deleteDescription">
+  <h2 id="deleteTitle"></h2>
+  <p id="deleteDescription">削除する範囲を選んでください。あとから「元に戻す」で取り消せます。</p>
+  <fieldset class="delete-dialog__options" id="deleteOptions">
+    <legend style="font-size:14px;margin-bottom:8px">削除する範囲</legend>
+    <label class="delete-option"><input type="radio" name="deleteScope" id="deleteSingle" value="single"><span><strong>このノードだけ削除</strong><small id="deleteSingleDetail"></small></span></label>
+    <label class="delete-option"><input type="radio" name="deleteScope" id="deleteBranch" value="branch"><span><strong>子孫もまとめて削除</strong><small id="deleteBranchDetail"></small></span></label>
+  </fieldset>
+  <p class="delete-dialog__preview" id="deletePreview" aria-live="polite">範囲を選ぶと、削除後のつながりを表示します。</p>
+  <p id="deleteHandHelp">手で操作：開いた手を上下に動かして項目を選び、つまんで少し保持すると決定します。</p>
+  <div class="delete-dialog__actions">
+    <button class="btn" id="deleteCancel" autofocus>キャンセル</button>
+    <button class="btn btn--danger" id="deleteConfirm" disabled>削除する</button>
+  </div>
+</dialog>
+
 <nav class="dock panel" aria-label="おもな操作">
   <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
   <button class="btn btn--primary dock__btn" id="chatBtn" aria-pressed="false" aria-controls="chat"><svg class="i"><use href="#i-chat"/></svg>チャット</button>
@@ -397,7 +430,7 @@ button { font: inherit; color: inherit; }
     <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px">隠す</button>
   </figcaption>
   <select id="camSelect" aria-label="カメラを選ぶ" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
-  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">グーはニュートラル。人差し指だけを立てると一時停止・再開します。</p>
+  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">ピースで子を追加、親指を下げて削除確認（約0.6秒保持）。グーはニュートラル、人差し指だけで一時停止・再開。</p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
@@ -438,8 +471,8 @@ button { font: inherit; color: inherit; }
   </div>
 </aside>
 
-<script src="gestures/controller.js?v=20261023-camera-select-1"></script>
-<script src="gestures/camera.js?v=20261023-camera-select-1"></script>
+<script src="gestures/controller.js?v=20261023-add-delete-7"></script>
+<script src="gestures/camera.js?v=20261023-add-delete-7"></script>
 <script>
 const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat', CAMERA_KEY = 'mindmap-proto:camera';
 const $ = s => document.querySelector(s);
@@ -453,6 +486,7 @@ const H = () => chat.open && $('#chat').offsetLeft === 0 ? $('#chat').getBoundin
 let map = load() || sample();
 let view = { x: 0, y: 0, s: 1 };
 let sel = map.root, editing = null, mode = null, hand = null, gesture = null;
+let deletion = null;
 let history = [], future = [], forceSaveFail = false;
 let chat = { open: false, log: [], pending: null };
 let saveTimer, toastTimer, hintTimer;
@@ -587,6 +621,7 @@ function commit(fn) {
 }
 function changed() { render(); renderChatLog(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length; }
 function restore(from, to) {
+  if (deletion) { closeDelete(); return; }
   if (gesture?.hand) { interruptHand(); return; }
   if (!from.length) return;
   if (editing) finishEdit();
@@ -726,6 +761,8 @@ function renderNode(n, blocked) {
   c.toggle('is-source', mode?.id === n.id);
   c.toggle('is-invalid', !!blocked && blocked.has(n.id) && n.id !== mode.id);
   c.toggle('is-candidate', mode?.candidate === n.id);
+  c.toggle('is-delete-preview', !!deletion?.scope && (deletion.scope === 'branch' ? deletion.ids.includes(n.id) : deletion.id === n.id));
+  c.toggle('is-promote-preview', deletion?.scope === 'single' && deletion.children.includes(n.id));
   const tag = tagFor(n.id);
   tag ? el.dataset.tag = tag : delete el.dataset.tag;
 }
@@ -758,7 +795,10 @@ function renderEdge(n) {
   el.classList.toggle('is-old', !!(mode?.id === n.id && mode.candidate));
   el.style.setProperty('--b', branchColor(n.id));
   el.style.strokeWidth = [0, 5, 3.5][depth(n.id)] || 2.5;
-  el.setAttribute('d', curve(map.nodes[n.parent], n));
+  const promote = deletion?.scope === 'single' && deletion.children.includes(n.id);
+  el.classList.toggle('is-promote-preview', promote);
+  el.classList.toggle('is-delete-preview', !!deletion?.scope && (deletion.scope === 'branch' ? deletion.ids.includes(n.id) : deletion.id === n.id));
+  el.setAttribute('d', curve(map.nodes[promote ? deletion.parent : n.parent], n));
 }
 let previewEdge = null;
 function renderEdges() {
@@ -773,7 +813,7 @@ function renderEdges() {
 }
 function positionMenu() {
   const menu = $('#nodeMenu'), n = sel && map.nodes[sel];
-  if (!n || editing || mode || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
+  if (!n || editing || mode || deletion || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
   menu.hidden = false;
   for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
   const el = els.get(sel), half = el.offsetHeight / 2;
@@ -836,12 +876,83 @@ function addSiblingAndEdit() {
   addChildAndEdit(!n || n.parent == null ? map.root : n.parent);
 }
 function removeNode(id) {
-  if (id === map.root) return;
-  const pid = map.nodes[id].parent;
-  commit(() => { for (const d of subtree(id)) delete map.nodes[d]; invalidateTree(); });
-  sel = pid;
+  if (!map.nodes[id]) return;
+  if (id === map.root) { toast('中心ノードは削除できません'); return; }
+  interruptHand();
+  if (editing) finishEdit();
+  if (!map.nodes[id]) return;
+  if (mode) endReparent();
+  const ids = [...subtree(id)], children = kids(id).map(n => n.id);
+  deletion = { id, ids, children, parent: map.nodes[id].parent, scope: children.length ? null : 'single', snapshot: JSON.stringify(map) };
+  $('#deleteTitle').textContent = `「${map.nodes[id].text}」を削除しますか？`;
+  $('#deleteDescription').textContent = children.length ? '削除する範囲を選んでください。あとから「元に戻す」で取り消せます。' : 'このノード1個を削除します。あとから「元に戻す」で取り消せます。';
+  $('#deleteOptions').hidden = !children.length;
+  $('#deleteSingle').checked = false; $('#deleteBranch').checked = false;
+  $('#deleteSingleDetail').textContent = `1個を削除。子${children.length}個を「${map.nodes[deletion.parent].text}」へつなぎ直します。孫以下も残り、位置は変わりません。`;
+  $('#deleteBranchDetail').textContent = `このノードと子孫${ids.length - 1}個、合計${ids.length}個を削除します。`;
+  updateDeletePreview();
+  if (!$('#deleteDialog').open) $('#deleteDialog').showModal();
+  $('#deleteCancel').focus();
   render();
-  toast('消しました', '元に戻す', undo);
+}
+function chooseDeleteScope(scope) {
+  if (!deletion || !['single', 'branch'].includes(scope)) return;
+  deletion.scope = scope;
+  $('#deleteSingle').checked = scope === 'single'; $('#deleteBranch').checked = scope === 'branch';
+  updateDeletePreview(); render();
+}
+function updateDeletePreview() {
+  const d = deletion;
+  $('#deleteConfirm').disabled = !d?.scope;
+  $('#deleteConfirm').textContent = d?.scope === 'branch' ? `子孫を含む${d.ids.length}個を削除` : d?.scope ? 'この1個を削除' : '削除する';
+  $('#deletePreview').textContent = !d?.scope ? '範囲を選ぶと、削除後のつながりを表示します。'
+    : d.scope === 'branch' ? `「${map.nodes[d.id].text}」以下の${d.ids.length}個を削除します。親の「${map.nodes[d.parent].text}」は残ります。`
+    : d.children.length ? `「${map.nodes[d.parent].text}」につなぎ直す子：\n${d.children.map(id => map.nodes[id].text).join('、')}\n孫以下のつながり・位置は保持します。`
+    : 'このノードだけを削除します。';
+}
+function closeDelete() {
+  if (!deletion) return;
+  deletion = null;
+  $('#deleteDialog').close();
+  interruptHand(); render(); vp.focus({ preventScroll: true });
+}
+function confirmDelete() {
+  const d = deletion;
+  if (!d?.scope) return;
+  if (JSON.stringify(map) !== d.snapshot) {
+    const id = d.id; closeDelete();
+    if (map.nodes[id]) { removeNode(id); if (deletion) deletion.fromChat = d.fromChat; }
+    toast('マップが変わったため、削除内容をもう一度確認してください'); return;
+  }
+  const text = map.nodes[d.id].text;
+  closeDelete();
+  commit(() => {
+    if (d.scope === 'branch') for (const id of d.ids) delete map.nodes[id];
+    else {
+      const siblings = kids(d.parent).flatMap(n => n.id === d.id ? d.children : [n.id]);
+      for (const id of d.children) map.nodes[id].parent = d.parent;
+      delete map.nodes[d.id];
+      for (const id of siblings) map.nodes[id].order = ++map.seq;
+    }
+    invalidateTree(); sel = d.parent;
+  });
+  toast('削除しました', '元に戻す', undo);
+  if (d.fromChat) { applied(d.parent, `削除しました：${text}`); renderChatLog(); }
+}
+function deleteHandItems() {
+  return [deletion?.children.length ? $('#deleteSingle') : null, deletion?.children.length ? $('#deleteBranch') : null,
+    $('#deleteCancel'), !$('#deleteConfirm').disabled ? $('#deleteConfirm') : null].filter(Boolean);
+}
+function navigateDelete(step) {
+  const items = deleteHandItems(), index = items.indexOf(document.activeElement);
+  items[Math.max(0, Math.min(items.length - 1, (index < 0 ? 0 : index) + step))].focus();
+}
+function selectDelete() {
+  const active = document.activeElement;
+  if (active === $('#deleteSingle')) chooseDeleteScope('single');
+  else if (active === $('#deleteBranch')) chooseDeleteScope('branch');
+  else if (active === $('#deleteCancel')) closeDelete();
+  else if (active === $('#deleteConfirm')) confirmDelete();
 }
 function navigate(key) {
   const s = map.nodes[sel] || map.nodes[map.root];
@@ -985,12 +1096,8 @@ function moveTo(id, to) {
 }
 function askRemove(id) {
   if (id === map.root) return reply('中心は消せません');
-  const count = subtree(id).size, n = map.nodes[id];
-  ask(`「${n.text}」${count > 1 ? `と、その先の${count - 1}個` : ''}を消しますか？`, [{ label: '消す', run: () => {
-    const pid = n.parent;
-    commit(() => { for (const d of subtree(id)) delete map.nodes[d]; invalidateTree(); });
-    applied(pid, `消しました：${n.text}`);
-  } }]);
+  removeNode(id);
+  if (deletion) deletion.fromChat = true;
 }
 function send(text) {
   if (editing) finishEdit();
@@ -1056,8 +1163,17 @@ function toggleHand(inputMode = 'worker') {
   if (cameraSession) { stopHand(); return; }
   handMode = inputMode;
   handController = new HandGestures.HandController({
-    blocked: () => !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]'),
+    blocked: () => !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
+    dialog: () => !!deletion,
+    dialogNavigate: navigateDelete,
+    dialogSelect: selectDelete,
+    command: action => {
+      if (deletion || editing || mode) return;
+      if (action === 'add') addChildAndEdit(map.nodes[sel] ? sel : map.root);
+      else if (action === 'delete') removeNode(sel || map.root);
+    },
     activate: () => {
+      if (deletion) return;
       if (!map.nodes[sel]) select(map.root);
     },
     navigate: direction => {
@@ -1105,7 +1221,11 @@ function updateHand() {
   if (!hand) return;
   $('#handCursor').hidden = true;
   const message = {
-    ready: '手を認識しています。グーはニュートラル、人差し指だけで一時停止。方向で選択、つまんで移動。両手を広げると縮小、近づけると拡大します。',
+    ready: '手を認識しています。方向で選択、つまんで移動。ピースで子を追加、親指を下げて削除確認。グーはニュートラル、人差し指だけで一時停止。両手を広げると縮小、近づけると拡大します。',
+    addWaiting: `ピース：子を追加 ${Math.round(hand.progress * 100)}%。そのまま保持してください。`,
+    deleteWaiting: `親指を下：削除確認 ${Math.round(hand.progress * 100)}%。そのまま保持してください。`,
+    commandReset: 'グーまたは開いた手に戻すと、次の操作ができます。',
+    dialog: `確認画面：開いた手を上下に動かして項目へ移動し、つまんで保持すると決定します。${hand.progress ? ` 決定 ${Math.round(hand.progress * 100)}%` : ''}`,
     zoomWaiting: '両手を認識しました。そのまま少し待ってください。',
     zooming: '両手を広げると縮小、近づけると拡大します。片手に戻すと選択・移動できます。',
     dragging: 'つかみ中です。手全体を動かし、指を開いて確定します。',
@@ -1119,6 +1239,7 @@ function updateHand() {
     nohand: '手がまだ見つかりません。手のひら全体をカメラに映してください。',
   }[hand.state];
   $('#handHelp').textContent = message;
+  if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : hand.state === 'dialog' ? message : '手で操作：開いた手を上下に動かして項目へ移動し、つまんで保持すると決定します。';
   $('#camMsg').hidden = hand.state === 'ready' || hand.state === 'dragging' || hand.state === 'zooming';
   $('#camMsg').textContent = message;
 }
@@ -1257,6 +1378,10 @@ nodesEl.addEventListener('keydown', e => {
 });
 nodesEl.addEventListener('focusout', e => { if (editing && e.target.isContentEditable) finishEdit(); });
 addEventListener('keydown', e => {
+  if (deletion) {
+    if (e.key === 'Escape') { e.preventDefault(); closeDelete(); }
+    return;
+  }
   if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
   const mod = e.metaKey || e.ctrlKey, k = e.key;
   if (mod && k.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -1343,6 +1468,12 @@ $('#zoomIn').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
 $('#zoomOut').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s / 1.25);
 $('#zoomLabel').onclick = () => zoomAt(W() / 2, innerHeight / 2, 1);
 $('#undo').onclick = undo;
+$('#deleteSingle').onchange = () => chooseDeleteScope('single');
+$('#deleteBranch').onchange = () => chooseDeleteScope('branch');
+$('#deleteCancel').onclick = closeDelete;
+$('#deleteConfirm').onclick = confirmDelete;
+$('#deleteDialog').addEventListener('cancel', e => { e.preventDefault(); closeDelete(); });
+$('#deleteDialog').addEventListener('close', () => { if (!$('#deleteDialog').open) closeDelete(); });
 $('#redo').onclick = redo;
 $('#modeOk').onclick = confirmReparent;
 $('#modeCancel').onclick = endReparent;
@@ -1352,7 +1483,7 @@ $('#saveExport').onclick = exportJson;
 $('#importBtn').onclick = () => { toggleFileMenu(false); $('#fileInput').click(); };
 function importMap(m) {
   if (!valid(m)) throw new Error('マップの形式が正しくありません');
-  if (editing || gesture || mode) throw new Error('操作を終えてから読み込んでください');
+  if (editing || gesture || mode || deletion) throw new Error('操作を終えてから読み込んでください');
   const previous = { map, sel, history, future, view: { ...view }, stored: localStorage.getItem(KEY) };
   // Save before publishing. A failed write must not replace the working map.
   if (forceSaveFail) throw new Error('保存できませんでした');
