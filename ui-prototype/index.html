@@ -38,7 +38,6 @@ button { font: inherit; color: inherit; }
   cursor: default;
 }
 #viewport.is-panning { cursor: grabbing; }
-body.hand-on #viewport, body.hand-on .node { cursor: none; }
 #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .edge { fill: none; stroke: var(--b); stroke-linecap: round; }
@@ -226,7 +225,8 @@ body.hand-on #viewport, body.hand-on .node { cursor: none; }
   width: 208px; margin: 0; padding: 6px; z-index: 1;
 }
 .cam__view { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-sm); background: var(--color-cam); overflow: hidden; display: grid; place-items: center; }
-.cam__view svg { width: 70%; height: 80%; stroke: var(--color-cam-line); fill: var(--color-cam-line); }
+.cam__view video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.cam__msg { position: absolute; inset: 0; display: grid; place-items: center; background: #183329aa; }
 .cam__msg { color: var(--color-paper); font-size: var(--text-xs); font-weight: 700; text-align: center; padding: 0 12px; line-height: 1.6; }
 .cam figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 4px 2px 0 6px; font-size: var(--text-xs); color: var(--color-ink-2); }
 .cam.is-collapsed .cam__view { display: none; }
@@ -389,19 +389,14 @@ body.hand-on #viewport, body.hand-on .node { cursor: none; }
 
 <figure class="cam panel" id="cam" hidden>
   <div class="cam__view">
-    <svg id="camHand" viewBox="0 0 100 100" aria-hidden="true">
-      <g stroke-width="2.5" fill="none" stroke-linecap="round">
-        <path d="M50 92 L36 74 L28 58 L22 46 L18 36"/><path d="M50 92 L48 62 L48 44 L48 32 L48 22"/>
-        <path d="M50 92 L58 62 L60 44 L61 32"/><path d="M50 92 L66 66 L70 52 L72 42"/><path d="M50 92 L76 72 L82 62 L86 54"/>
-      </g>
-      <g><circle cx="18" cy="36" r="4"/><circle cx="48" cy="22" r="4"/><circle cx="50" cy="92" r="3"/><circle cx="36" cy="74" r="3"/><circle cx="48" cy="44" r="3"/><circle cx="61" cy="32" r="3"/><circle cx="72" cy="42" r="3"/><circle cx="86" cy="54" r="3"/></g>
-    </svg>
+    <video id="camVideo" autoplay muted playsinline aria-label="カメラのプレビュー"></video>
     <span class="cam__msg" id="camMsg" hidden>カメラに手を<br>映してください</span>
   </div>
   <figcaption>
-    <span>カメラ（保存しません）</span>
+    <span id="handStatus" role="status" aria-live="polite">カメラ（保存しません）</span>
     <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px">隠す</button>
   </figcaption>
+  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">グーはニュートラル。人差し指だけを立てると一時停止・再開します。</p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
@@ -423,11 +418,11 @@ body.hand-on #viewport, body.hand-on .node { cursor: none; }
 
 <aside class="dev panel" id="dev" aria-label="検証用の表示" hidden>
   <h2>検証用の表示</h2>
-  <p>試作の確認用です。手と保存の状態を切り替えて見られます。手の操作中は、マウスを押す＝指でつまむ。</p>
+  <p>カメラ映像と手の座標は保存しません。Workerが利用できない場合は低頻度の推論を試せます。</p>
   <h3>手で操作</h3>
   <div class="dev__row">
-    <button class="btn" data-dev="h-nohand">手が映っていない</button>
-    <button class="btn" data-dev="h-lost">追跡が途切れる</button>
+    <button class="btn" id="handFallback">低頻度で試す（5fps）</button>
+    <output id="handMetrics">未計測</output>
   </div>
   <h3>保存</h3>
   <div class="dev__row">
@@ -442,8 +437,10 @@ body.hand-on #viewport, body.hand-on .node { cursor: none; }
   </div>
 </aside>
 
+<script src="gestures/controller.js?v=20261023-pause-toggle-6"></script>
+<script src="gestures/camera.js?v=20261023-pause-toggle-6"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, GRACE = 300, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
@@ -457,7 +454,7 @@ let view = { x: 0, y: 0, s: 1 };
 let sel = map.root, editing = null, mode = null, hand = null, gesture = null;
 let history = [], future = [], forceSaveFail = false;
 let chat = { open: false, log: [], pending: null };
-let saveTimer, toastTimer, hintTimer, handTimer;
+let saveTimer, toastTimer, hintTimer;
 
 /* ---------- model ---------- */
 function sample() {
@@ -581,6 +578,7 @@ function pushHistory(snapshot, target = history) {
   if (target.length > 200) target.splice(0, target.length - 200);
 }
 function commit(fn) {
+  interruptHand();
   pushHistory(JSON.stringify(map));
   future = [];
   fn();
@@ -588,6 +586,7 @@ function commit(fn) {
 }
 function changed() { render(); renderChatLog(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length; }
 function restore(from, to) {
+  if (gesture?.hand) { interruptHand(); return; }
   if (!from.length) return;
   if (editing) finishEdit();
   pushHistory(JSON.stringify(map), to);
@@ -601,7 +600,7 @@ function scheduleSave() {
   setSave('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { if (forceSaveFail) throw 0; localStorage.setItem(KEY, JSON.stringify(map)); setSave('saved'); }
+    try { if (forceSaveFail) throw 0; localStorage.setItem(KEY, gesture?.hand ? gesture.pre : JSON.stringify(map)); setSave('saved'); }
     catch { setSave('error'); }
   }, 500);
 }
@@ -787,6 +786,7 @@ function positionMenu() {
 /* ---------- selection & editing ---------- */
 function select(id) { sel = id; render(); }
 function startEdit(id, isNew = false) {
+  interruptHand();
   editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
   sel = id;
   render();
@@ -863,6 +863,7 @@ function nudge(key) {
 
 /* ---------- reparent ---------- */
 function startReparent(id) {
+  interruptHand();
   if (id === map.root) return;
   mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
   $('#modeMsg').innerHTML = `「<b></b>」をどこにつなぐ？`;
@@ -1040,57 +1041,106 @@ function toggleChat(open = !chat.open) {
   try { open ? localStorage.setItem(CHAT_KEY, '1') : localStorage.removeItem(CHAT_KEY); } catch {}
 }
 
-/* ---------- hand (mock) ---------- */
-function toggleHand() {
-  if (hand) {
-    if (gesture?.hand) revertGesture();
-    hand = null;
-    clearTimeout(handTimer);
-    document.body.classList.remove('hand-on');
-    $('#cam').hidden = true;
-    $('#handCursor').hidden = true;
-    $('#handBtn').setAttribute('aria-pressed', 'false');
-    render();
-    return;
-  }
-  hand = { state: 'nohand', x: W() / 2, y: innerHeight / 2, hover: null, grab: null };
-  document.body.classList.add('hand-on');
-  $('#cam').hidden = false;
-  $('#handCursor').hidden = false;
-  $('#handBtn').setAttribute('aria-pressed', 'true');
-  toast('左右は鏡のように動きます。指をつまむとつかめます');
-  handTimer = setTimeout(() => setHandState('ready'), 1400);
-  updateHand();
-}
-function setHandState(state) {
-  if (!hand) return;
-  hand.state = state;
-  if (state !== 'ready') hand.hover = null;
-  updateHand();
+/* ---------- camera hand input ---------- */
+let handController = null, cameraSession = null, handPaintKey = '';
+function stopHand() {
+  cameraSession?.stop(); cameraSession = null;
+  handController?.cancel(); handController = null; hand = null;
+  $('#cam').hidden = true; $('#handCursor').hidden = true;
+  $('#handBtn').setAttribute('aria-pressed', 'false');
   render();
+}
+function interruptHand() { handController?.cancel(); }
+function toggleHand(inputMode = 'worker') {
+  if (cameraSession) { stopHand(); return; }
+  handController = new HandGestures.HandController({
+    blocked: () => !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]'),
+    activate: () => {
+      if (!map.nodes[sel]) select(map.root);
+    },
+    navigate: direction => {
+      const origin = map.nodes[sel] ? sel : map.root;
+      const next = HandGestures.directionalTarget(Object.values(map.nodes), origin, direction);
+      if (next) { select(next); ensureVisible(map.nodes[next]); }
+    },
+    zoom: factor => { animId++; zoomAt(W() / 2, H() / 2, view.s * factor); },
+    bounds: () => { const r = vp.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.left + W(), bottom: Math.min(r.bottom, H()) }; },
+    begin: (x, y) => {
+      const id = map.nodes[sel] ? sel : map.root;
+      beginNodeDrag(id, x, y, true); return id;
+    },
+    move: (x, y) => { if (gesture?.hand) moveNodeDrag(gesture, x, y); },
+    release: () => { if (gesture?.hand) finishNodeDrag(gesture); },
+    cancel: () => { if (gesture?.hand) revertGesture(); },
+    paint: state => {
+      hand = state;
+      const key = [state.state, state.hover, state.grab].join(':');
+      if (key !== handPaintKey) { handPaintKey = key; render(); }
+      updateHand();
+    },
+  });
+  hand = handController.state;
+  $('#cam').hidden = false;
+  $('#handBtn').setAttribute('aria-pressed', 'true');
+  const session = new CameraSession({
+    video: $('#camVideo'),
+    status: message => { $('#handStatus').textContent = message; },
+    frame: (frame, now) => handController?.update(frame, now),
+    metrics: m => { $('#handMetrics').textContent = `${m.mode} / 検出 ${m.hands}手 / 座標 ${m.frameValid ? "有効" : "なし"} / 推論 ${m.inferenceMs.toFixed(1)}ms / フレーム取得→表示 ${m.displayMs.toFixed(1)}ms / ${m.revision}`; },
+    error: message => { if (cameraSession !== session) return; stopHand(); toast(message); },
+  });
+  cameraSession = session;
+  vp.focus({ preventScroll: true });
+  session.start(inputMode);
 }
 function updateHand() {
   if (!hand) return;
-  const c = $('#handCursor');
-  c.style.transform = `translate(${hand.x}px, ${hand.y}px)`;
-  c.dataset.state = hand.state === 'ready' ? (hand.grab ? 'grab' : hand.hover ? 'hover' : 'ready') : hand.state;
-  $('#handLabel').textContent = hand.state === 'lost' ? '手が見えません' : '';
-  $('#camHand').style.display = hand.state === 'ready' ? '' : 'none';
-  $('#camMsg').hidden = hand.state === 'ready';
-  $('#camMsg').innerHTML = hand.state === 'lost' ? '手が見えなく<br>なりました' : 'カメラに手を<br>映してください';
+  $('#handCursor').hidden = true;
+  const message = {
+    ready: '手を認識しています。グーはニュートラル、人差し指だけで一時停止。方向で選択、つまんで移動。両手を広げると縮小、近づけると拡大します。',
+    zoomWaiting: '両手を認識しました。そのまま少し待ってください。',
+    zooming: '両手を広げると縮小、近づけると拡大します。片手に戻すと選択・移動できます。',
+    dragging: 'つかみ中です。手全体を動かし、指を開いて確定します。',
+    waiting: '手を認識しました。指を開いたまま少し待ってください。',
+    neutral: 'グーはニュートラルです。手を開くと操作できます。人差し指だけを立てると一時停止します。',
+    toggleWaiting: '人差し指だけを少し保持すると切り替わります。切替後はグーか開いた手に戻してください。',
+    pinchWaiting: '手を認識しています。親指と人差し指を離すと方向選択に戻ります。',
+    paused: '一時停止中です。グーに戻してから、人差し指だけを立てると再開します。',
+    blocked: '通常操作を優先しています。編集や操作を終えると再開します。',
+    lost: '手の追跡が途切れました。手のひら全体をカメラに映してください。',
+    nohand: '手がまだ見つかりません。手のひら全体をカメラに映してください。',
+  }[hand.state];
+  $('#handHelp').textContent = message;
+  $('#camMsg').hidden = hand.state === 'ready' || hand.state === 'dragging' || hand.state === 'zooming';
+  $('#camMsg').textContent = message;
 }
-function loseHand() {
-  if (!hand) { toast('先に「手で操作」をオンにしてください'); return; }
-  setHandState('lost');
-  const g = gesture;
-  if (g?.hand) {
-    setTimeout(() => {
-      if (gesture !== g) return;
-      revertGesture();
-      toast('手が見えなくなったので、元の位置にもどしました');
-    }, GRACE);
+function beginNodeDrag(id, x, y, fromHand = false) {
+  animId++;
+  sel = id;
+  const orig = new Map([...subtree(id)].map(d => [d, { x: map.nodes[d].x, y: map.nodes[d].y }]));
+  const edgeIds = new Set();
+  for (const d of orig.keys()) {
+    if (map.nodes[d].parent != null) edgeIds.add(d);
+    for (const child of kids(d)) edgeIds.add(child.id);
   }
-  setTimeout(() => { if (hand?.state === 'lost') setHandState('ready'); }, 1800);
+  gesture = { type: 'node', edgeIds, id, sx: x, sy: y, moved: false, pre: JSON.stringify(map), orig, hand: fromHand };
+  render();
+}
+function moveNodeDrag(g, x, y) {
+  const dx = x - g.sx, dy = y - g.sy;
+  if (!g.moved && Math.hypot(dx, dy) < 4) return;
+  let wx = dx / view.s, wy = dy / view.s;
+  for (const p of g.orig.values()) { wx = clamp(wx, -BOUND - p.x, BOUND - p.x); wy = clamp(wy, -BOUND - p.y, BOUND - p.y); }
+  for (const [id, p] of g.orig) { map.nodes[id].x = Math.round(p.x + wx); map.nodes[id].y = Math.round(p.y + wy); }
+  g.moved = true;
+  scheduleDragRender(g);
+}
+function finishNodeDrag(g) {
+  gesture = null;
+  if (hand) hand.grab = null;
+  if (JSON.stringify(map) !== g.pre) { pushHistory(g.pre); future = []; changed(); }
+  else render();
+  updateHand();
 }
 function revertGesture() {
   if (gesture?.type === 'node') for (const [id, p] of gesture.orig) Object.assign(map.nodes[id], p);
@@ -1104,6 +1154,7 @@ function revertGesture() {
 const pts = new Map();
 vp.addEventListener('pointerdown', e => {
   if (e.target.isContentEditable) return;
+  interruptHand();
   animId++;
   pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   vp.setPointerCapture(e.pointerId);
@@ -1122,33 +1173,13 @@ vp.addEventListener('pointerdown', e => {
     else setCandidate(id);
     return;
   }
-  if (hand && e.pointerType === 'mouse') {
-    if (hand.state !== 'ready' || !id) return;
-    hand.grab = id;
-    hand.hover = null;
-  }
   if (id) {
-    sel = id;
-    const orig = new Map([...subtree(id)].map(d => [d, { x: map.nodes[d].x, y: map.nodes[d].y }]));
-    const edgeIds = new Set();
-    for (const d of orig.keys()) {
-      if (map.nodes[d].parent != null) edgeIds.add(d);
-      for (const child of kids(d)) edgeIds.add(child.id);
-    }
-    gesture = { type: 'node', edgeIds, id, sx: e.clientX, sy: e.clientY, moved: false, pre: JSON.stringify(map), orig, hand: !!hand };
-    render();
-    updateHand();
-  } else if (!hand) {
+    beginNodeDrag(id, e.clientX, e.clientY);
+  } else {
     gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
   }
 });
 vp.addEventListener('pointermove', e => {
-  if (hand && e.pointerType === 'mouse') {
-    hand.x = e.clientX; hand.y = e.clientY;
-    const over = hand.state === 'ready' && !hand.grab ? e.target.closest('.node')?.dataset.id || null : hand.hover;
-    if (over !== hand.hover) { hand.hover = over; render(); }
-    updateHand();
-  }
   if (mode && e.pointerType === 'mouse') setCandidate(e.target.closest('.node')?.dataset.id || null);
   if (!pts.has(e.pointerId)) return;
   pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1169,40 +1200,38 @@ vp.addEventListener('pointermove', e => {
     vp.classList.add('is-panning');
     view = clampView({ x: g.vx + dx, y: g.vy + dy, s: view.s });
     applyView();
-  } else if (g.type === 'node' && hand?.state !== 'lost') {
-    let wx = dx / view.s, wy = dy / view.s;
-    for (const p of g.orig.values()) { wx = clamp(wx, -BOUND - p.x, BOUND - p.x); wy = clamp(wy, -BOUND - p.y, BOUND - p.y); }
-    for (const [id, p] of g.orig) { map.nodes[id].x = Math.round(p.x + wx); map.nodes[id].y = Math.round(p.y + wy); }
-    scheduleDragRender(g);
+  } else if (g.type === 'node') {
+    moveNodeDrag(g, e.clientX, e.clientY);
   }
 });
 function endPointer(e) {
   pts.delete(e.pointerId);
   const g = gesture;
   vp.classList.remove('is-panning');
-  if (!g) return;
+  if (!g || g.hand) return;
   // Lifting either finger ends the pinch. The remaining finger cannot start
   // a pan or move a node until a new gesture begins.
   if (g.type === 'pinch') { gesture = null; return; }
+  if (g.type === 'node') { finishNodeDrag(g); return; }
   gesture = null;
-  if (hand) hand.grab = null;
-  if (g.type === 'node' && g.moved) {
-    pushHistory(g.pre);
-    future = [];
-    changed();
-  } else if (g.type === 'pan' && !g.moved) {
-    select(null);
-  } else render();
+  if (g.type === 'pan' && !g.moved) select(null);
+  else render();
   updateHand();
 }
 vp.addEventListener('pointerup', endPointer);
 vp.addEventListener('pointercancel', e => { if (gesture?.type === 'node') revertGesture(); endPointer(e); });
+vp.addEventListener('lostpointercapture', e => {
+  if (!pts.has(e.pointerId)) return;
+  if (gesture?.type === 'node') revertGesture();
+  endPointer(e);
+});
 vp.addEventListener('dblclick', e => {
   const id = e.target.closest('.node')?.dataset.id;
-  if (id && !mode && !hand) startEdit(id);
+  if (id && !mode) startEdit(id);
 });
 vp.addEventListener('wheel', e => {
   e.preventDefault();
+  interruptHand();
   animId++;
   if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, view.s * Math.exp(-e.deltaY * 0.01));
   else { view = clampView({ x: view.x - e.deltaX, y: view.y - e.deltaY, s: view.s }); applyView(); }
@@ -1225,6 +1254,7 @@ addEventListener('keydown', e => {
   if (mod && k.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (k === 'Escape') {
+    if (gesture?.hand) { interruptHand(); return; }
     if (mode) endReparent();
     else if (!$('#fileMenu').hidden) toggleFileMenu(false);
     else if (document.activeElement === vp) $('#addChild').focus();
@@ -1232,6 +1262,7 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.target !== vp && e.target !== document.body) return;
+  interruptHand();
   if (mode) {
     if (k === 'Enter' && mode.candidate) { e.preventDefault(); confirmReparent(); }
     else if (k.startsWith('Arrow')) {
@@ -1293,7 +1324,8 @@ $('#chatInput').onkeydown = e => {
   if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) e.preventDefault();
   if (e.key === 'Escape') vp.focus();
 };
-$('#handBtn').onclick = toggleHand;
+$('#handBtn').onclick = () => toggleHand();
+$('#handFallback').onclick = () => { stopHand(); toggleHand('main'); };
 $('#fitBtn').onclick = fitAll;
 $('#zoomIn').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
 $('#zoomOut').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s / 1.25);
@@ -1374,8 +1406,6 @@ $('#camToggle').onclick = () => {
 $('#dev').addEventListener('click', e => {
   const d = e.target.closest('[data-dev]')?.dataset.dev;
   if (!d) return;
-  if (d === 'h-nohand') { if (!hand) toggleHand(); clearTimeout(handTimer); setHandState(hand.state === 'nohand' ? 'ready' : 'nohand'); }
-  if (d === 'h-lost') loseHand();
   if (d === 's-saving') { clearTimeout(saveTimer); setSave('saving'); }
   if (d === 's-error') { forceSaveFail = true; scheduleSave(); }
   if (d === 's-saved') { forceSaveFail = false; scheduleSave(); }
@@ -1383,10 +1413,13 @@ $('#dev').addEventListener('click', e => {
   if (d === 'reset') { commit(() => { map = sample(); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
 });
 document.addEventListener('pointerdown', e => {
+  if (!e.target.closest('#viewport')) interruptHand();
   if (!$('#fileMenu').hidden && !e.target.closest('.menu')) toggleFileMenu(false);
 });
-addEventListener('resize', () => { clampView(view, false); applyView(); });
-addEventListener('blur', () => { if (gesture?.type === 'node') revertGesture(); });
+addEventListener('resize', () => { interruptHand(); clampView(view, false); applyView(); });
+addEventListener('blur', () => { if (gesture?.type === 'node') revertGesture(); pts.clear(); stopHand(); });
+addEventListener('pagehide', stopHand);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopHand(); });
 
 $('#title').value = map.title;
 try { if (localStorage.getItem(CHAT_KEY)) setChatOpen(true); } catch {}
