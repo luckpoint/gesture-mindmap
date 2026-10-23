@@ -23,7 +23,7 @@
   class HandController {
     constructor(io, options = {}) {
       this.io = io;
-      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .45, deadzone: 3, stable: 100, toggleStable: 300, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
+      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .18, fastSmoothing: .7, dragSpeed: 500, deadzone: 6, movingDeadzone: .75, stopStable: 350, referenceHandSize: .15, stable: 100, toggleStable: 300, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
       this.state = { state: 'nohand', initialized: false, hover: null, grab: null, x: 0, y: 0 };
       this.paused = false; this.toggleHeld = false;
       this.commandHeld = false; this.commandFrame = null; this.commandResetAt = null;
@@ -34,6 +34,8 @@
       if (this.state.grab) this.io.cancel();
       this.state.grab = null; this.closed = false; this.pinchAt = null;
       this.dragPoint = null; this.dragAt = null; this.dragFiltered = null;
+      this.dragScale = 1; this.dragVelocity = { x: 0, y: 0 }; this.dragRaw = null;
+      this.dragMoving = false; this.dragStopPoint = null; this.dragStopAt = null; this.dragStillPoint = null;
       this.anchor = null; this.pendingAt = null; this.lastAt = null;
       this.identity = null; this.wrist = null; this.lastSwitch = -Infinity;
       this.zoomDistance = null; this.zoomPendingAt = null; this.zoomLastAt = null;
@@ -138,6 +140,10 @@
           if (now - this.pinchAt >= c.stable) {
             this.closed = true; this.pinchAt = null; s.x = 0; s.y = 0;
             s.grab = this.io.begin?.(s.x, s.y) || null;
+            // Apparent palm length approximates camera distance. Freeze the
+            // correction per grab so depth/rotation noise cannot pump the gain.
+            this.dragScale = Number.isFinite(frame.handSize) && frame.handSize > 0
+              ? Math.max(.6, Math.min(1.6, c.referenceHandSize / frame.handSize)) : 1;
             this.rebaseDrag(point, now);
           }
         } else this.pinchAt = null;
@@ -237,19 +243,63 @@
     rebaseDrag(point, now) {
       this.dragPoint = { ...point }; this.dragAt = now;
       this.dragFiltered = { x: this.state.x, y: this.state.y };
+      this.dragRaw = { ...point }; this.dragVelocity = { x: 0, y: 0 };
+      this.dragMoving = false; this.dragStopPoint = null; this.dragStopAt = null;
+      this.dragStillPoint = { ...point };
     }
     moveDrag(point, now) {
       const s = this.state, c = this.config, b = this.io.bounds();
-      const alpha = 1 - Math.pow(1 - c.smoothing, Math.max(0, now - this.dragAt) / 50);
-      this.dragFiltered.x -= (point.x - this.dragPoint.x) * (b.right - b.left) * c.gain * alpha;
-      this.dragFiltered.y += (point.y - this.dragPoint.y) * (b.bottom - b.top) * c.gain * alpha;
+      const elapsed = Math.max(0, now - this.dragAt);
+      if (!elapsed) return;
+      const width = b.right - b.left, height = b.bottom - b.top, gain = c.gain * this.dragScale;
+      // Smooth signed velocity before measuring speed: alternating tracking
+      // noise must not make the position filter respond like a deliberate move.
+      const velocityAlpha = 1 - Math.pow(.8, elapsed / 50);
+      this.dragVelocity.x += ((point.x - this.dragRaw.x) * width * gain * 1000 / elapsed - this.dragVelocity.x) * velocityAlpha;
+      this.dragVelocity.y += ((point.y - this.dragRaw.y) * height * gain * 1000 / elapsed - this.dragVelocity.y) * velocityAlpha;
+      const speed = Math.min(1, Math.hypot(this.dragVelocity.x, this.dragVelocity.y) / c.dragSpeed);
+      const smoothing = c.smoothing + (Math.max(c.smoothing, c.fastSmoothing) - c.smoothing) * speed;
+      const alpha = 1 - Math.pow(1 - smoothing, elapsed / 50);
+      this.dragFiltered.x -= (point.x - this.dragPoint.x) * width * gain * alpha;
+      this.dragFiltered.y += (point.y - this.dragPoint.y) * height * gain * alpha;
       this.dragPoint.x += (point.x - this.dragPoint.x) * alpha;
       this.dragPoint.y += (point.y - this.dragPoint.y) * alpha;
       this.dragAt = now;
+      this.dragRaw = { ...point };
+      const noiseScale = Math.max(1, this.dragScale);
+      if (this.dragMoving && c.deadzone > 0) {
+        // Use a separate, fixed low-pass estimate for rest detection. At low
+        // fps the responsive position filter can still follow alternating noise.
+        const stillAlpha = 1 - Math.pow(.9, elapsed / 50);
+        this.dragStillPoint.x += (point.x - this.dragStillPoint.x) * stillAlpha;
+        this.dragStillPoint.y += (point.y - this.dragStillPoint.y) * stillAlpha;
+        // A fixed anchor (never a per-frame delta) lets slow deliberate motion
+        // accumulate, while a brief pause cannot immediately latch the node.
+        const stillRadius = c.deadzone * .5 * noiseScale;
+        if (!this.dragStopPoint || Math.hypot((this.dragStillPoint.x - this.dragStopPoint.x) * width * gain,
+            (this.dragStillPoint.y - this.dragStopPoint.y) * height * gain) > stillRadius) {
+          this.dragStopPoint = { ...this.dragStillPoint }; this.dragStopAt = now;
+        } else if (now - this.dragStopAt >= c.stopStable) {
+          // Freeze at the displayed position and discard filter tail. Changing
+          // the deadzone alone would allow residual motion to restart the drag.
+          this.rebaseDrag(point, now);
+          return;
+        }
+      }
       const dx = this.dragFiltered.x - s.x, dy = this.dragFiltered.y - s.y, distance = Math.hypot(dx, dy);
-      if (distance > c.deadzone) {
-        const scale = 1 - c.deadzone / distance;
+      // Far/small hands amplify image noise when movement is normalized.
+      const deadzone = (this.dragMoving ? Math.min(c.deadzone, c.movingDeadzone) : c.deadzone * 2) * noiseScale;
+      if (distance > deadzone) {
+        const scale = 1 - deadzone / distance;
         s.x += dx * scale; s.y += dy * scale;
+        if (!this.dragMoving) {
+          this.dragMoving = true;
+          // Remove the breakaway offset before reducing the deadzone so the
+          // next frame cannot jump just because the mode changed.
+          this.dragFiltered = { x: s.x, y: s.y };
+          this.dragStillPoint = { ...point };
+          this.dragStopPoint = null; this.dragStopAt = null;
+        }
         this.io.move(s.x, s.y);
       }
     }
@@ -283,7 +333,7 @@
       : fingers[0].extended && fingers[1].extended && fingers.slice(2).every(f => f.folded) ? 'peace'
       : fingers[0].extended && fingers.slice(1).every(f => f.folded) ? 'point'
       : fingers.every(f => f.folded) ? 'fist' : null;
-    return { pointer, tip: p[8], wrist: p[0], ratio: distance(p[4], p[8]) / size,
+    return { pointer, tip: p[8], wrist: p[0], handSize: size / width, ratio: distance(p[4], p[8]) / size,
       pose, identity: category?.score >= .8 ? category.categoryName : null };
   }
   function handFrame(result, width, height) {

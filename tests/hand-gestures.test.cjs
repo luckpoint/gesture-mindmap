@@ -110,6 +110,7 @@ test('landmark distances account for aspect ratio and hand size', () => {
   landmarks[0] = { x: .5, y: .7 }; landmarks[4] = { x: .6, y: .5 };
   const frame = handFrame({ landmarks: [landmarks], handedness: [[{ categoryName: 'Left', score: .95 }]] }, 640, 480);
   assert.ok(Math.abs(frame.ratio - 64 / 96) < 1e-8);
+  assert.ok(Math.abs(frame.handSize - .15) < 1e-8);
   assert.equal(frame.identity, 'Left');
   assert.equal(handFrame({}, 640, 480), null);
 });
@@ -168,6 +169,117 @@ test('default drag filtering absorbs stationary palm jitter', () => {
   const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1 });
   for (let i = 0; i < 40; i++) t.feed(i % 2 ? .503 : .497, .5, { ratio: .1 });
   assert.equal(t.dragEvents.some(e => e[0] === 'move'), false);
+});
+
+test('larger stationary tremor stays still for near and far hands', () => {
+  for (const handSize of [.075, .15, .25]) {
+    const t = setup(), extra = { ratio: .1, handSize };
+    t.stable(); t.stable(.5, .5, extra);
+    for (let i = 0; i < 100; i++) t.feed(.5 + (i % 2 ? .006 : -.006), .5, extra);
+    assert.equal(t.dragEvents.filter(e => e[0] === 'move').length, 0, `handSize=${handSize}`);
+  }
+});
+
+test('stationary jitter is suppressed at 20, 10 and 5 fps without drift', () => {
+  for (const interval of [50, 100, 200]) {
+    const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1 });
+    for (let i = 0; i < 100; i++) {
+      t.advance(interval - 50);
+      t.feed(.5 + (i % 2 ? .004 : -.004), .5, { ratio: .1 });
+    }
+    assert.equal(t.dragEvents.filter(e => e[0] === 'move').length, 0, `${interval}ms`);
+  }
+});
+
+test('slow deliberate drag crosses the deadzone and fast movement follows promptly', () => {
+  const slow = setup(); slow.stable(); slow.stable(.5, .5, { ratio: .1 });
+  for (let i = 1; i <= 40; i++) slow.feed(.5 - i * .001, .5, { ratio: .1 });
+  assert.ok(slow.controller.state.x > 50);
+  const fast = setup(); fast.stable(); fast.stable(.5, .5, { ratio: .1 });
+  for (let i = 1; i <= 4; i++) fast.feed(.5 - i * .025, .5, { ratio: .1 });
+  assert.ok(fast.controller.state.x > 130);
+  const stopped = fast.controller.state.x;
+  for (let i = 0; i < 40; i++) fast.feed(.4, .5, { ratio: .1 });
+  assert.ok(fast.controller.state.x >= stopped && fast.controller.state.x <= 180);
+  const settled = fast.controller.state.x;
+  for (let i = 0; i < 60; i++) fast.feed(i % 2 ? .406 : .394, .5, { ratio: .1 });
+  assert.ok(Math.abs(fast.controller.state.x - settled) < 3);
+});
+
+test('distance correction matches relative hand motion and stays fixed until the next grab', () => {
+  const run = (handSize, displacement) => {
+    const t = setup({ smoothing: 1, deadzone: 0 }); t.stable(); t.stable(.5, .5, { ratio: .1, handSize });
+    t.feed(.5 - displacement, .5, { ratio: .1, handSize: handSize * 2 });
+    return t;
+  };
+  const near = run(.2, .04), far = run(.1, .02);
+  assert.ok(Math.abs(near.controller.state.x - far.controller.state.x) < 1e-8);
+  assert.ok(Math.abs(near.controller.state.x - 54) < 1e-8);
+  near.stable(.46); near.stable(.46, .5, { ratio: .1, handSize: .1 });
+  near.feed(.44, .5, { ratio: .1, handSize: .1 });
+  assert.ok(Math.abs(near.controller.state.x - 54) < 1e-8);
+  for (const size of [undefined, NaN, 0, .0001, 10]) {
+    const t = run(size, .02);
+    assert.ok(Number.isFinite(t.controller.state.x));
+    assert.ok(t.controller.dragScale >= .6 && t.controller.dragScale <= 1.6);
+  }
+});
+
+test('moving drag follows small displacements, then latches and resumes without a mode-change jump', () => {
+  const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1 });
+  for (let i = 1; i <= 12; i++) t.feed(.5 - i * .005, .5, { ratio: .1 });
+  assert.equal(t.controller.dragMoving, true);
+  const before = t.controller.state.x;
+  // 0.9 CSS px per sample, smaller than either stationary deadzone.
+  for (let i = 1; i <= 30; i++) {
+    t.feed(.44 - i * .0005, .5, { ratio: .1 });
+    assert.equal(t.controller.dragMoving, true);
+  }
+  assert.ok(t.controller.state.x - before > 20);
+  for (let i = 0; i < 40; i++) t.feed(.425, .5, { ratio: .1 });
+  assert.equal(t.controller.dragMoving, false);
+  const locked = { x: t.controller.state.x, y: t.controller.state.y };
+  for (let i = 0; i < 80; i++) t.feed(.425 + Math.sin(i * .4) * .008,
+    .5 + Math.cos(i * .4) * .005, { ratio: .1 });
+  assert.deepEqual({ x: t.controller.state.x, y: t.controller.state.y }, locked);
+  for (let i = 1; i <= 20; i++) t.feed(.425 - i * .001, .5, { ratio: .1 });
+  assert.equal(t.controller.dragMoving, true);
+  assert.ok(t.controller.state.x > locked.x + 10);
+});
+
+test('stationary latch handles moving tremor and resets through release and loss at different rates', () => {
+  for (const interval of [50, 100, 200]) {
+    const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1, handSize: .1 });
+    const sample = (x, ratio = .1) => {
+      t.advance(interval - 50); t.feed(x, .5, { ratio, handSize: .1 });
+    };
+    for (let i = 1; i <= 10; i++) sample(.5 - i * .005);
+    assert.equal(t.controller.dragMoving, true);
+    for (let i = 0; i < 40; i++) sample(.45 + (i % 2 ? .003 : -.003));
+    assert.equal(t.controller.dragMoving, false, `${interval}ms`);
+    const locked = t.controller.state.x;
+    for (let i = 0; i < 40; i++) sample(.45 + (i % 2 ? .003 : -.003));
+    assert.equal(t.controller.state.x, locked);
+    for (let i = 0; i < 4; i++) sample(.45, .8);
+    assert.equal(t.controller.state.grab, null);
+    for (let i = 0; i < 4; i++) sample(.45);
+    assert.equal(t.controller.dragMoving, false);
+    assert.equal(t.controller.state.x, 0);
+    t.lost();
+    for (let i = 0; i < 4; i++) sample(.3);
+    assert.equal(t.controller.state.grab, null);
+  }
+});
+
+test('leaving the stationary latch does not spend its deadzone again on the next frame', () => {
+  const t = setup({ smoothing: 1, gain: 1 }); t.stable(); t.stable(.5, .5, { ratio: .1 });
+  t.feed(.48, .5, { ratio: .1 });
+  assert.equal(t.controller.dragMoving, true);
+  const position = t.controller.state.x;
+  t.feed(.48, .5, { ratio: .1 });
+  assert.equal(t.controller.state.x, position);
+  t.feed(.479, .5, { ratio: .1 });
+  assert.ok(t.controller.state.x > position && t.controller.state.x - position < 1);
 });
 
 test('two-hand distance uses palm centers, aspect ratio, and ignores result order', () => {

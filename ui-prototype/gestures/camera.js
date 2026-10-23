@@ -28,7 +28,7 @@
         this.io.status('手の認識を準備しています');
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261023-add-delete-7');
+          this.worker = new Worker('gestures/hand-worker.js?v=20261023-pinch-rest-9');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
             this.initTimer = setTimeout(() => reject(new Error('推論の準備がタイムアウトしました')), 30000);
@@ -68,7 +68,7 @@
       const sentAt = this.sentAt;
       requestAnimationFrame(() => {
         if (!this.closed) this.io.metrics({ mode: this.mode, inferenceMs, displayMs: performance.now() - sentAt,
-          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-add-delete-7" });
+          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-pinch-rest-9" });
       });
       this.busy = false;
     }
