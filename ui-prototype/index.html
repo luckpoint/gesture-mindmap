@@ -977,10 +977,14 @@ function selectDelete() {
   else if (active === $('#deleteCancel')) closeDelete();
   else if (active === $('#deleteConfirm')) confirmDelete();
 }
-function navigate(key) {
+function relatives(id) {
+  const parent = map.nodes[id].parent;
+  return Object.values(map.nodes).filter(n => n.id === id || n.id === parent || n.parent === id || (parent != null && n.parent === parent));
+}
+function navigate(key, nodes) {
   const s = map.nodes[sel] || map.nodes[map.root];
   let best = null, bs = Infinity;
-  for (const n of Object.values(map.nodes)) {
+  for (const n of nodes || relatives(s.id)) {
     if (n.id === s.id) continue;
     const dx = n.x - s.x, dy = n.y - s.y;
     const [a, b] = { ArrowRight: [dx, dy], ArrowLeft: [-dx, dy], ArrowDown: [dy, dx], ArrowUp: [-dy, dx] }[key];
@@ -1201,7 +1205,7 @@ function toggleHand(inputMode = 'worker') {
     },
     navigate: direction => {
       const origin = map.nodes[sel] ? sel : map.root;
-      const next = HandGestures.directionalTarget(Object.values(map.nodes), origin, direction);
+      const next = HandGestures.directionalTarget(relatives(origin), origin, direction);
       if (next) { select(next); ensureVisible(map.nodes[next]); }
     },
     pan: (dx, dy) => { animId++; view = clampView({ x: view.x + dx, y: view.y + dy, s: view.s }); applyView(); },
@@ -1430,7 +1434,7 @@ addEventListener('keydown', e => {
     if (k === 'Enter' && mode.candidate) { e.preventDefault(); confirmReparent(); }
     else if (k.startsWith('Arrow')) {
       e.preventDefault();
-      const from = sel; sel = mode.candidate || mode.id; navigate(k);
+      const from = sel; sel = mode.candidate || mode.id; navigate(k, Object.values(map.nodes));
       setCandidate(sel); sel = from;
     }
     return;

@@ -402,6 +402,18 @@ test('camera down-left selects a diagonal node, no candidate and stopping retain
   assert.equal(t.run(`sel === 'b' && JSON.stringify(map) === originalMap && history.length === 0`), true);
 });
 
+test('keyboard and camera directions only reach parent, children and siblings', () => {
+  const t = setup(); prepareHand(t);
+  t.run(`map.nodes.b.x = 600; map.nodes.b.y = 0; sel = 'a1';`);
+  const press = key => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} });
+  press('ArrowRight');
+  assert.equal(t.run('sel'), 'a1');
+  t.run(`handSample(.4); for (let i = 0; i < 6; i++) handSample(.4); handSample(.3);`);
+  assert.equal(t.run('sel'), 'a1');
+  press('ArrowLeft');
+  assert.equal(t.run('sel'), 'a');
+});
+
 test('no active node initializes to root; pinch grabs root without displacement', () => {
   const t = setup(); prepareHand(t);
   t.run(`sel = null; interruptHand(); stableHand(); stableHand(.1, .5, .1);`);
