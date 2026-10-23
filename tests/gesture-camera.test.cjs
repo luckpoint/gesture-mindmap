@@ -9,7 +9,7 @@ const { join } = require('node:path');
 function setup(options = {}) {
   const timers = new Map(), intervals = new Map(), frames = new Map(), events = [], workers = [];
   let counter = 0, now = 1000;
-  const track = { stops: 0, stop() { this.stops++; } };
+  const track = { stops: 0, stop() { this.stops++; }, getSettings: () => ({ deviceId: 'front' }) };
   const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
   const video = { currentTime: 1, videoWidth: 640, videoHeight: 480, readyState: 2, async play() {}, pause() { events.push('pause'); } };
   class Worker {
@@ -23,7 +23,7 @@ function setup(options = {}) {
   const bitmaps = [];
   const context = vm.createContext({
     isSecureContext: true,
-    navigator: { mediaDevices: { getUserMedia: options.getUserMedia || (async () => stream) } },
+    navigator: { mediaDevices: { getUserMedia: options.getUserMedia || (async () => stream), enumerateDevices: async () => options.devices || [] } },
     Worker, performance: { now: () => now },
     createImageBitmap: options.createImageBitmap || (async () => { const b = { closes: 0, close() { this.closes++; } }; bitmaps.push(b); return b; }),
     requestAnimationFrame: fn => { frames.set(++counter, fn); return counter; }, cancelAnimationFrame: id => frames.delete(id),
@@ -32,7 +32,7 @@ function setup(options = {}) {
     HandGestures: { TRACKING_TIMEOUT_MS, handFrame: () => ({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, identity: 'Left' }) },
   });
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/camera.js'), 'utf8'), context);
-  const session = new context.CameraSession({ video, status: s => events.push(s), error: e => events.push(['error', e]), frame: (...args) => events.push(['frame', ...args]), metrics: m => events.push(['metrics', m]) });
+  const session = new context.CameraSession({ video, status: s => events.push(s), error: e => events.push(['error', e]), frame: (...args) => events.push(['frame', ...args]), metrics: m => events.push(['metrics', m]), cameras: (...args) => events.push(['cameras', ...args]) });
   return { session, context, timers, intervals, frames, events, workers, track, stream, video, bitmaps, advance: n => { now += n; } };
 }
 
@@ -42,6 +42,32 @@ test('camera denial reports an actionable error and does not start a worker', as
   assert.equal(t.session.closed, true);
   assert.equal(t.workers.length, 0);
   assert.match(t.events.at(-1)[1], /許可されません/);
+});
+
+test('selected camera is requested exactly and available cameras are reported', async () => {
+  const requests = [];
+  const devices = [{ kind: 'videoinput', deviceId: 'front', label: 'FaceTime' }, { kind: 'audioinput', deviceId: 'mic' }, { kind: 'videoinput', deviceId: 'usb', label: 'USB' }];
+  const t = setup({ devices, getUserMedia: async c => { requests.push(c); return t.stream; } });
+  await t.session.start('worker', 'usb');
+  assert.equal(requests[0].video.deviceId.exact, 'usb');
+  const [, cameras, active] = t.events.find(e => e[0] === 'cameras');
+  assert.equal(cameras.map(c => c.deviceId).join(), 'front,usb');
+  assert.equal(active, 'front');
+  t.session.stop();
+});
+
+test('a camera that no longer exists falls back to the default camera', async () => {
+  const requests = [];
+  const t = setup({ getUserMedia: async c => {
+    requests.push(c);
+    if (c.video.deviceId) throw Object.assign(new Error('gone'), { name: 'OverconstrainedError' });
+    return t.stream;
+  } });
+  await t.session.start('worker', 'unplugged');
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].video.facingMode, 'user');
+  assert.equal(t.session.closed, false);
+  t.session.stop();
 });
 
 test('stopping during a pending permission prompt stops a late stream', async () => {

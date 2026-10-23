@@ -1,13 +1,25 @@
 (function (root) {
   class CameraSession {
     constructor(io) { this.io = io; this.closed = false; this.busy = false; this.worker = null; }
-    async start(mode = 'worker') {
+    async open(deviceId) {
+      const video = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
+      try {
+        return await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...video, ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' }) } });
+      } catch (error) {
+        if (!deviceId || !['OverconstrainedError', 'NotFoundError'].includes(error.name)) throw error;
+        return navigator.mediaDevices.getUserMedia({ audio: false, video: { ...video, facingMode: 'user' } });
+      }
+    }
+    async start(mode = 'worker', deviceId) {
       try {
         if (!isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('HTTPSまたはlocalhostで開いてください');
         this.io.status('カメラの許可を待っています');
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } } });
+        const stream = await this.open(deviceId);
         if (this.closed) { stream.getTracks().forEach(t => t.stop()); return; }
         this.stream = stream;
+        const cameras = (await navigator.mediaDevices.enumerateDevices?.() || []).filter(d => d.kind === 'videoinput');
+        if (this.closed) return;
+        this.io.cameras?.(cameras, stream.getVideoTracks()[0].getSettings?.().deviceId);
         stream.getVideoTracks()[0].onended = () => this.fail(new Error('カメラが切断されました'));
         this.video = this.io.video;
         this.video.srcObject = stream;
@@ -16,7 +28,7 @@
         this.io.status('手の認識を準備しています');
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261023-pause-toggle-6');
+          this.worker = new Worker('gestures/hand-worker.js?v=20261023-camera-select-1');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
             this.initTimer = setTimeout(() => reject(new Error('推論の準備がタイムアウトしました')), 30000);
@@ -56,7 +68,7 @@
       const sentAt = this.sentAt;
       requestAnimationFrame(() => {
         if (!this.closed) this.io.metrics({ mode: this.mode, inferenceMs, displayMs: performance.now() - sentAt,
-          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-pause-toggle-6" });
+          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-camera-select-1" });
       });
       this.busy = false;
     }

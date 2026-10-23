@@ -396,6 +396,7 @@ button { font: inherit; color: inherit; }
     <span id="handStatus" role="status" aria-live="polite">カメラ（保存しません）</span>
     <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px">隠す</button>
   </figcaption>
+  <select id="camSelect" aria-label="カメラを選ぶ" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
   <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">グーはニュートラル。人差し指だけを立てると一時停止・再開します。</p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
@@ -437,10 +438,10 @@ button { font: inherit; color: inherit; }
   </div>
 </aside>
 
-<script src="gestures/controller.js?v=20261023-pause-toggle-6"></script>
-<script src="gestures/camera.js?v=20261023-pause-toggle-6"></script>
+<script src="gestures/controller.js?v=20261023-camera-select-1"></script>
+<script src="gestures/camera.js?v=20261023-camera-select-1"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat', CAMERA_KEY = 'mindmap-proto:camera';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
@@ -1042,7 +1043,7 @@ function toggleChat(open = !chat.open) {
 }
 
 /* ---------- camera hand input ---------- */
-let handController = null, cameraSession = null, handPaintKey = '';
+let handController = null, cameraSession = null, handPaintKey = '', handMode = 'worker';
 function stopHand() {
   cameraSession?.stop(); cameraSession = null;
   handController?.cancel(); handController = null; hand = null;
@@ -1053,6 +1054,7 @@ function stopHand() {
 function interruptHand() { handController?.cancel(); }
 function toggleHand(inputMode = 'worker') {
   if (cameraSession) { stopHand(); return; }
+  handMode = inputMode;
   handController = new HandGestures.HandController({
     blocked: () => !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]'),
     activate: () => {
@@ -1087,11 +1089,17 @@ function toggleHand(inputMode = 'worker') {
     status: message => { $('#handStatus').textContent = message; },
     frame: (frame, now) => handController?.update(frame, now),
     metrics: m => { $('#handMetrics').textContent = `${m.mode} / 検出 ${m.hands}手 / 座標 ${m.frameValid ? "有効" : "なし"} / 推論 ${m.inferenceMs.toFixed(1)}ms / フレーム取得→表示 ${m.displayMs.toFixed(1)}ms / ${m.revision}`; },
+    cameras: (cameras, active) => {
+      const select = $('#camSelect');
+      select.replaceChildren(...cameras.map((c, i) => new Option(c.label || `カメラ ${i + 1}`, c.deviceId, false, c.deviceId === active)));
+      select.hidden = cameras.length < 2;
+    },
     error: message => { if (cameraSession !== session) return; stopHand(); toast(message); },
   });
   cameraSession = session;
   vp.focus({ preventScroll: true });
-  session.start(inputMode);
+  let deviceId; try { deviceId = localStorage.getItem(CAMERA_KEY) || undefined; } catch {}
+  session.start(inputMode, deviceId);
 }
 function updateHand() {
   if (!hand) return;
@@ -1325,6 +1333,10 @@ $('#chatInput').onkeydown = e => {
   if (e.key === 'Escape') vp.focus();
 };
 $('#handBtn').onclick = () => toggleHand();
+$('#camSelect').onchange = e => {
+  try { localStorage.setItem(CAMERA_KEY, e.target.value); } catch {}
+  stopHand(); toggleHand(handMode);
+};
 $('#handFallback').onclick = () => { stopHand(); toggleHand('main'); };
 $('#fitBtn').onclick = fitAll;
 $('#zoomIn').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
