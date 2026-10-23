@@ -1,0 +1,147 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "message",
+    "operations"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "needs_input",
+        "no_change"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "operations": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "clientId",
+              "parentId",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "add_node"
+                ]
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "parentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "nodeId",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "update_node"
+                ]
+              },
+              "nodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "nodeId",
+              "parentId"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reparent_node"
+                ]
+              },
+              "nodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "parentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "nodeId",
+              "scope"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delete_node"
+                ]
+              },
+              "nodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "subtree"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

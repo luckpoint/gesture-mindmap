@@ -17,7 +17,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow: clip; }
 body {
-  --side: 0px; --chat-w: 360px;
+  --side: 0px;
   background: var(--color-paper);
   color: var(--color-ink);
   font-family: var(--font-ui);
@@ -251,45 +251,21 @@ button { font: inherit; color: inherit; }
 .cam figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 4px 2px 0 6px; font-size: var(--text-xs); color: var(--color-ink-2); }
 .cam.is-collapsed .cam__view { display: none; }
 
-/* ---------- chat ---------- */
-.chat {
-  position: fixed; top: 0; right: 0; bottom: 0; width: var(--chat-w);
-  display: flex; flex-direction: column;
-  background: var(--color-surface); border-left: var(--rule-1) solid var(--color-rule);
-  z-index: 6;
-}
-.chat__head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px var(--space-md); border-bottom: var(--rule-1) solid var(--color-rule); }
-.chat__head h2 { margin: 0; font: 700 var(--text-md) var(--font-display); }
-.chat__log { flex: 1; overflow: auto; margin: 0; padding: var(--space-md); list-style: none; display: flex; flex-direction: column; gap: var(--space-xs); }
-.chat__empty { margin: auto 0; color: var(--color-ink-2); font-size: var(--text-sm); line-height: 1.8; }
-.chat__empty b { font-family: var(--font-display); color: var(--color-ink); }
-.msg { max-width: 88%; padding: 8px 12px; border-radius: var(--radius-md); font-size: var(--text-sm); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg--user { align-self: flex-end; background: var(--color-accent-soft); }
-.msg--app { align-self: flex-start; background: var(--color-paper-2); }
-.msg__actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.msg__actions .btn { min-height: 36px; background: var(--color-surface); border: var(--rule-1) solid var(--color-rule); white-space: normal; text-align: left; }
-.chat__foot { padding: var(--space-xs) var(--space-sm) max(var(--space-sm), env(safe-area-inset-bottom)); border-top: var(--rule-1) solid var(--color-rule); }
-.chat__target { margin: 0 4px 6px; color: var(--color-ink-2); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chat__target b { color: var(--color-ink); font-family: var(--font-display); }
-.chat__form { display: flex; gap: 4px; }
-.chat__input {
-  flex: 1; min-width: 0; height: 44px; padding: 0 12px;
-  border: var(--rule-2) solid var(--color-rule); border-radius: var(--radius-sm);
-  background: var(--color-paper); color: var(--color-ink);
-  font: 16px var(--font-ui);
-}
-.chat__input:focus-visible { outline: var(--rule-3) solid var(--color-focus); outline-offset: 0; }
-.chat__note { margin: 6px 4px 0; color: var(--color-ink-3); font-size: var(--text-xs); }
-@media (min-width: 901px) { body.chat-open { --side: var(--chat-w); } }
-@media (max-width: 900px) {
-  .chat {
-    top: auto; left: 0; bottom: var(--kb, 0px); width: auto; height: min(60vh, 520px);
-    border-left: 0; border-top: var(--rule-1) solid var(--color-rule);
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-2);
-    animation: sheet-up var(--dur-med) var(--ease-out);
-  }
-}
-@keyframes sheet-up { from { transform: translateY(100%); } }
+/* ---------- instruction field ---------- */
+.prompt { position: fixed; left: 50%; bottom: calc(var(--kb, 0px) + 100px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); padding: 12px; z-index: 4; }
+.prompt__target { margin: 0 4px 8px; font-size: var(--text-xs); color: var(--color-ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.prompt__form { display: flex; align-items: end; gap: 8px; }
+.prompt__input { flex: 1; min-width: 0; min-height: 46px; max-height: 94px; resize: none; overflow-y: auto; padding: 10px 12px; border: 2px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); color: var(--color-ink); font: 16px/24px var(--font-ui); }
+.prompt__input:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 1px; }
+.prompt__note { margin: 8px 4px 0; font-size: var(--text-xs); color: var(--color-ink-2); line-height: 1.5; }
+.prompt__connection { margin: 4px 4px 0; font-size: var(--text-xs); color: var(--color-danger); }
+.notices { position: fixed; top: var(--notice-top, 80px); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); display: grid; gap: 8px; z-index: 7; pointer-events: none; }
+.notices .toast { position: static; transform: none; max-width: 100%; pointer-events: auto; flex-wrap: wrap; overflow-wrap: anywhere; }
+.dock { bottom: calc(var(--kb, 0px) + max(var(--space-md), env(safe-area-inset-bottom))); }
+body.keyboard-open .dock { display: none; }
+body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-inset-bottom)); }
+@media (max-width: 900px) { .cam { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); width: 144px; } .zoom { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); } }
+@media (max-width: 560px) { .topbar { flex-wrap: wrap; } .topbar .cluster:first-child { flex: 1; } .prompt { width: calc(100vw - 24px); } }
 
 /* ---------- dev panel ---------- */
 .dev { position: fixed; right: calc(var(--space-sm) + var(--side)); top: 72px; width: 272px; padding: var(--space-md); z-index: 3; max-height: calc(100vh - 180px); overflow: auto; }
@@ -304,8 +280,8 @@ button { font: inherit; color: inherit; }
 @media (max-width: 720px) {
   .btn__label--wide { display: none; }
   .node-menu .btn__label { display: none; }
-  .zoom { bottom: calc(max(var(--space-md), env(safe-area-inset-bottom)) + 84px); right: var(--space-sm); }
-  .cam { bottom: calc(max(var(--space-md), env(safe-area-inset-bottom)) + 84px); width: 160px; }
+  .zoom { right: var(--space-sm); }
+
 }
 @media (max-width: 560px) {
   .dock { left: var(--space-sm); right: var(--space-sm); transform: none; justify-content: space-between; }
@@ -329,7 +305,6 @@ button { font: inherit; color: inherit; }
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-child" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><path d="M9 12h4M18 8v8M14 12h8"/></symbol>
-  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-6 16-3-7z"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V6a1.5 1.5 0 0 1 3 0v5M11 11V4.5a1.5 1.5 0 0 1 3 0V11M14 11V6a1.5 1.5 0 0 1 3 0v7c0 4-2.5 8-6.5 8-3 0-4.5-2-6-4.5L3 13a1.5 1.5 0 0 1 2.5-1.6L8 14"/></symbol>
@@ -392,7 +367,17 @@ button { font: inherit; color: inherit; }
   <button class="btn" id="modeCancel">やめる</button>
 </div>
 
-<div class="toast panel" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="notices" id="notices">
+  <div class="toast panel" id="instructionToast" role="status" aria-live="polite" hidden></div>
+  <div class="toast panel" id="toast" role="status" aria-live="polite" hidden></div>
+</div>
+<dialog class="delete-dialog" id="instructionDialog" aria-labelledby="instructionTitle">
+  <h2 id="instructionTitle">指示の変更を確認</h2>
+  <p>削除範囲と、同時に行う変更を確認してください。すべての変更をまとめて反映します。</p>
+  <div id="instructionScopes"></div>
+  <p class="delete-dialog__preview" id="instructionPreview" role="status" aria-live="polite"></p>
+  <div class="delete-dialog__actions"><button class="btn" id="instructionCancel">キャンセル</button><button class="btn btn--danger" id="instructionConfirm">まとめて反映</button></div>
+</dialog>
 
 <dialog class="delete-dialog" id="deleteDialog" aria-labelledby="deleteTitle" aria-describedby="deleteDescription">
   <h2 id="deleteTitle"></h2>
@@ -423,7 +408,7 @@ button { font: inherit; color: inherit; }
     <dt>⇧2</dt><dd>選んだノードに寄る</dd>
     <dt>⌘= / ⌘-</dt><dd>拡大 / 縮小</dd>
     <dt>⌘0</dt><dd>100%にもどす</dd>
-    <dt>⌘K</dt><dd>チャットを開閉</dd>
+    <dt>⌘K</dt><dd>指示の入力欄へ移動</dd>
     <dt>⇧H</dt><dd>手で操作のオン / オフ</dd>
     <dt>?</dt><dd>この一覧</dd>
   </dl>
@@ -432,7 +417,6 @@ button { font: inherit; color: inherit; }
 
 <nav class="dock panel" aria-label="おもな操作">
   <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
-  <button class="btn btn--primary dock__btn" id="chatBtn" aria-pressed="false" aria-controls="chat" title="チャット（⌘K）"><svg class="i"><use href="#i-chat"/></svg>チャット</button>
   <button class="btn dock__btn" id="handBtn" aria-pressed="false" title="手で操作（⇧H）"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
   <button class="btn dock__btn" id="fitBtn" title="全体を表示（⇧1）"><svg class="i"><use href="#i-fit"/></svg>全体を表示</button>
 </nav>
@@ -457,21 +441,15 @@ button { font: inherit; color: inherit; }
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
-<aside class="chat" id="chat" aria-label="チャット" hidden>
-  <div class="chat__head">
-    <h2>チャット</h2>
-    <button class="btn btn--icon" id="chatClose" aria-label="チャットを閉じる"><svg class="i"><use href="#i-close"/></svg></button>
-  </div>
-  <ol class="chat__log" id="chatLog" aria-live="polite"></ol>
-  <div class="chat__foot">
-    <p class="chat__target">選択中：<b id="chatTarget"></b></p>
-    <form class="chat__form" id="chatForm">
-      <input class="chat__input" id="chatInput" autocomplete="off" enterkeyhint="send" aria-label="話すか書いて送る" placeholder="話すか、書いて送る">
-      <button class="btn btn--primary btn--icon" aria-label="送る"><svg class="i"><use href="#i-send"/></svg></button>
-    </form>
-    <p class="chat__note">声はキーボードの音声入力を使ってください</p>
-  </div>
-</aside>
+<section class="prompt panel" aria-label="マップへの指示">
+  <p class="prompt__target" id="promptTarget"></p>
+  <form class="prompt__form" id="promptForm">
+    <textarea class="prompt__input" id="promptInput" rows="1" maxlength="4000" aria-label="マップへの指示" placeholder="マップへの指示を入力" aria-describedby="promptNote promptConnection"></textarea>
+    <button class="btn btn--primary" id="promptSend" type="submit">送信</button>
+  </form>
+  <p class="prompt__note" id="promptNote">指示と現在のマップをCodexへ送信します</p>
+  <p class="prompt__connection" id="promptConnection" role="status" hidden></p>
+</section>
 
 <aside class="dev panel" id="dev" aria-label="検証用の表示" hidden>
   <h2>検証用の表示</h2>
@@ -496,22 +474,25 @@ button { font: inherit; color: inherit; }
 
 <script src="gestures/controller.js?v=20261023-still-point-12"></script>
 <script src="gestures/camera.js?v=20261023-still-point-12"></script>
+<script src="instructions/operations.js"></script>
+<script src="instructions/client.js"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat', CAMERA_KEY = 'mindmap-proto:camera';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CAMERA_KEY = 'mindmap-proto:camera';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
 const els = new Map();
 const W = () => vp.clientWidth || innerWidth;
-// The bottom sheet covers the canvas; the side panel does not.
-const H = () => chat.open && $('#chat').offsetLeft === 0 ? $('#chat').getBoundingClientRect().top : innerHeight;
+const H = () => { const top = $('.prompt').getBoundingClientRect().top; return top > 150 ? top : innerHeight - 200; };
 
 let map = load() || sample();
 let view = { x: 0, y: 0, s: 1 };
 let sel = map.root, editing = null, mode = null, hand = null, gesture = null;
 let deletion = null;
 let history = [], future = [], forceSaveFail = false;
-let chat = { open: false, log: [], pending: null };
+let revision = 0, historyToken = 0, mapSessionId = InstructionTransport.id('map_');
+let instruction = null, instructionTimer, instructionUndoButton = null, draftVersion = 0;
+const instructionClient = new InstructionTransport.Client();
 let saveTimer, toastTimer, hintTimer;
 
 /* ---------- model ---------- */
@@ -525,36 +506,8 @@ function sample() {
   const nodes = Object.fromEntries(list.map(([id, text, parent, x, y], order) => [id, { id, text, parent, x, y, order }]));
   return { version: 1, title: '週末のマップ', root: 'root', seq: list.length, nodes };
 }
-function valid(m) {
-  const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-  if (!record(m) || m.version !== 1 || typeof m.title !== 'string' ||
-      typeof m.root !== 'string' || !m.root || !record(m.nodes) ||
-      !Number.isSafeInteger(m.seq) || m.seq < 0 || m.seq >= Number.MAX_SAFE_INTEGER ||
-      !Object.hasOwn(m.nodes, m.root)) return false;
-  const ids = Object.keys(m.nodes);
-  for (const id of ids) {
-    const n = m.nodes[id];
-    if (!id || !record(n) || n.id !== id || typeof n.text !== 'string' ||
-        !Number.isFinite(n.x) || !Number.isFinite(n.y) ||
-        !Number.isSafeInteger(n.order) || n.order < 0 || n.order > m.seq) return false;
-    if (id === m.root) {
-      if (n.parent !== null) return false;
-    } else if (typeof n.parent !== 'string' || !Object.hasOwn(m.nodes, n.parent)) return false;
-  }
-  // Every branch must reach the one root. Already checked paths can be reused.
-  const reached = new Set([m.root]);
-  for (const id of ids) {
-    const path = new Set();
-    let cur = id;
-    while (!reached.has(cur)) {
-      if (path.has(cur)) return false;
-      path.add(cur);
-      cur = m.nodes[cur].parent;
-    }
-    for (const nodeId of path) reached.add(nodeId);
-  }
-  return true;
-}
+function valid(m) { return InstructionOperations.valid(m); }
+function serializeMap() { return InstructionOperations.serialize(map); }
 function load() { try { const m = JSON.parse(localStorage.getItem(KEY)); return valid(m) ? m : null; } catch { return null; } }
 let treeCache = null;
 function invalidateTree() { treeCache = null; }
@@ -593,41 +546,10 @@ function size(n) {
   const el = els.get(n.id);
   return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: Math.min(260, n.text.length * 18 + 40), h: 52 };
 }
-function overlaps(pt, w) {
-  return Object.values(map.nodes).some(n => {
-    const s = size(n);
-    return Math.abs(n.x - pt.x) < (s.w + w) / 2 + 12 && Math.abs(n.y - pt.y) < (s.h + 52) / 2 + 32;
-  });
-}
-function place(pid, w = 160) {
-  const p = map.nodes[pid];
-  let base = 0;
-  if (p.parent != null) {
-    const g = map.nodes[p.parent];
-    base = Math.atan2(p.y - g.y, p.x - g.x);
-  } else {
-    const angs = kids(pid).map(c => Math.atan2(c.y - p.y, c.x - p.x)).sort((a, b) => a - b);
-    if (angs.length === 1) base = angs[0] + Math.PI;
-    let gap = -1;
-    angs.forEach((a, i) => {
-      const next = i === angs.length - 1 ? angs[0] + Math.PI * 2 : angs[i + 1];
-      if (angs.length > 1 && next - a > gap) { gap = next - a; base = a + gap / 2; }
-    });
-  }
-  const dist = p.parent == null ? 250 : 200;
-  for (let ring = 0; ring < 4; ring++)
-    for (const k of [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 7]) {
-      const a = base + k * 0.4, d = dist + ring * 100;
-      const pt = { x: p.x + Math.cos(a) * d, y: p.y + Math.sin(a) * d };
-      if (!overlaps(pt, w)) return pt;
-    }
-  return { x: p.x + Math.cos(base) * dist, y: p.y + Math.sin(base) * dist };
-}
-function addNode(pid, text, pos = place(pid, Math.max(160, size({ text }).w))) {
-  const id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  map.nodes[id] = { id, text, parent: pid, x: Math.round(pos.x), y: Math.round(pos.y), order: ++map.seq };
-  invalidateTree();
-  return id;
+function place(pid, w = 160) { return InstructionOperations.place(map, pid, w, size); }
+function addNode(pid, text, pos) {
+  const id = InstructionOperations.addNode(map, pid, text, pos, size);
+  invalidateTree(); return id;
 }
 
 /* ---------- history & save ---------- */
@@ -642,7 +564,12 @@ function commit(fn) {
   fn();
   changed();
 }
-function changed() { render(); renderChatLog(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length; }
+function changed() {
+  revision++; historyToken++;
+  if (instructionUndoButton) instructionUndoButton.disabled = true;
+  if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
+  render(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length;
+}
 function restore(from, to) {
   if (deletion) { closeDelete(); return; }
   if (gesture?.hand) { interruptHand(); return; }
@@ -667,6 +594,7 @@ function setSave(state) {
   $('#save').dataset.state = state;
   $('#saveText').textContent = { saving: '保存中…', saved: '保存済み', error: '保存できませんでした' }[state];
   $('#saveExport').hidden = state !== 'error';
+  resizeNotices();
 }
 
 /* ---------- view ---------- */
@@ -796,7 +724,7 @@ function render() {
   for (const n of Object.values(map.nodes)) renderNode(n, blocked);
   renderEdges();
   positionMenu();
-  $('#chatTarget').textContent = (map.nodes[sel] || map.nodes[map.root]).text;
+  $('#promptTarget').textContent = map.nodes[sel] ? '選択中：' + map.nodes[sel].text : '対象：中心ノード';
 }
 function curve(a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -944,10 +872,9 @@ function confirmDelete() {
   if (!d?.scope) return;
   if (JSON.stringify(map) !== d.snapshot) {
     const id = d.id; closeDelete();
-    if (map.nodes[id]) { removeNode(id); if (deletion) deletion.fromChat = d.fromChat; }
+    if (map.nodes[id]) removeNode(id);
     toast('マップが変わったため、削除内容をもう一度確認してください'); return;
   }
-  const text = map.nodes[d.id].text;
   closeDelete();
   commit(() => {
     if (d.scope === 'branch') for (const id of d.ids) delete map.nodes[id];
@@ -960,7 +887,6 @@ function confirmDelete() {
     invalidateTree(); sel = d.parent;
   });
   toast('削除しました', '元に戻す', undo);
-  if (d.fromChat) { applied(d.parent, `削除しました：${text}`); renderChatLog(); }
 }
 function deleteHandItems() {
   return [deletion?.children.length ? $('#deleteSingle') : null, deletion?.children.length ? $('#deleteBranch') : null,
@@ -1007,11 +933,11 @@ function startReparent(id) {
   mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
   $('#modeMsg').innerHTML = `「<b></b>」をどこにつなぐ？`;
   $('#modeMsg b').textContent = map.nodes[id].text;
-  $('#modeBanner').hidden = false;
+  $('#modeBanner').hidden = false; resizeNotices();
   $('#modeOk').disabled = true;
   render();
 }
-function endReparent() { mode = null; $('#modeBanner').hidden = true; render(); }
+function endReparent() { mode = null; $('#modeBanner').hidden = true; resizeNotices(); render(); }
 function setCandidate(id) {
   if (!mode) return;
   if (mode.blocked.has(id)) id = null;
@@ -1030,150 +956,138 @@ function confirmReparent() {
   toast('つなぎ替えました', '元に戻す', undo);
 }
 
-/* ---------- chat ---------- */
-// Rule-based stand-in for the LLM interpreter. Each verb pattern anchors at the
-// end of the sentence; the text before it names the target node.
-const MOVE = /の(?:子|下)に(?:移|つなぎ[替か]え|つない)[^に]*$/;
-const RENAME = /に(?:変え|変更|書きかえ|書き換え|直)[^に]*$/;
-const REMOVE = /^(.+)を(?:消|削除)[^を]*$/;
-const ADD = /を(?:追加|足|加え)[^を]*$/;
-function unquote(s) {
-  const m = s.trim().match(/^[「『"“]([^「『」』"“”]*)[」』"”]$/);
-  return (m ? m[1] : s).trim();
+/* ---------- instructions ---------- */
+function resizePrompt() {
+  const input = $('#promptInput'); input.style.height = 'auto'; input.style.height = Math.min(94, Math.max(46, input.scrollHeight || 46)) + 'px';
+  document.body.style.setProperty('--prompt-height', $('.prompt').offsetHeight + 'px');
+  resizeNotices();
 }
-function findNodes(name, partial) {
-  name = unquote(name);
-  if (!name) return [];
-  if (/^(?:これ|ここ|それ|選択中)$/.test(name)) return map.nodes[sel] ? [sel] : [];
-  return Object.values(map.nodes).filter(n => partial ? n.text.includes(name) : n.text === name).map(n => n.id);
+function resizeNotices() {
+  const top = Math.max(72, $('.topbar').getBoundingClientRect().bottom + 8);
+  const banner = $('#modeBanner');
+  banner.style.top = top + 'px';
+  document.body.style.setProperty('--notice-top', (banner.hidden ? top : top + banner.offsetHeight + 8) + 'px');
 }
-const resolve = name => { const ids = findNodes(name, false); return ids.length ? ids : findNodes(name, true); };
-// Prefer an exact node name at any split point before falling back to partial matches.
-function splitTarget(body, seps) {
-  for (const partial of [false, true])
-    for (const sep of seps)
-      for (let i = body.indexOf(sep); i > 0; i = body.indexOf(sep, i + 1)) {
-        const ids = findNodes(body.slice(0, i), partial);
-        if (ids.length) return { ids, rest: unquote(body.slice(i + sep.length)) };
-      }
-  return null;
-}
-function interpret(text) {
-  const here = map.nodes[sel] ? sel : map.root;
-  const unknown = () => ask('どのことばのことか分かりませんでした', [{ label: 'そのまま追加', run: () => addTo(here, text) }]);
-  let m, t;
-  if ((m = text.match(MOVE))) {
-    if (!(t = splitTarget(text.slice(0, m.index), ['を']))) return unknown();
-    return pick(t.ids, id => pick(resolve(t.rest), to => moveTo(id, to), t.rest));
+function instructionToast(message, actions = [], transient = false, error = false) {
+  clearTimeout(instructionTimer); instructionUndoButton = null;
+  const t = $('#instructionToast'); t.textContent = message; t.hidden = false;
+  t.setAttribute('role', error ? 'alert' : 'status'); t.setAttribute('aria-live', error ? 'assertive' : 'polite');
+  for (const action of actions) {
+    const button = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: action.label });
+    button.onclick = action.run; t.append(button);
+    if (action.undo) instructionUndoButton = button;
   }
-  if ((m = text.match(RENAME))) {
-    if (!(t = splitTarget(text.slice(0, m.index), ['を']))) return unknown();
-    return pick(t.ids, id => rename(id, t.rest));
+  if (!instruction) {
+    const close = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: '閉じる' });
+    close.onclick = () => { t.hidden = true; }; t.append(close);
   }
-  if ((m = text.match(REMOVE))) {
-    const ids = resolve(m[1]);
-    return ids.length ? pick(ids, askRemove) : unknown();
-  }
-  if ((m = text.match(ADD))) {
-    const body = text.slice(0, m.index);
-    t = splitTarget(body, ['の子に', 'の下に', 'に']);
-    return t ? pick(t.ids, pid => addTo(pid, t.rest)) : addTo(here, unquote(body));
-  }
-  addTo(here, unquote(text));
+  if (transient) instructionTimer = setTimeout(() => { if (!instruction) t.hidden = true; }, 5000);
 }
-function label(id) {
-  const n = map.nodes[id], p = map.nodes[n.parent];
-  return p ? `${n.text}（${p.text}）` : n.text;
+async function checkCodexStatus() {
+  try {
+    const status = await instructionClient.status();
+    $('#promptConnection').textContent = status.reason || ''; $('#promptConnection').hidden = status.available;
+  } catch { $('#promptConnection').textContent = '指示を使うにはMacで npm start を実行し、そのURLを開いてください。'; $('#promptConnection').hidden = false; }
 }
-function pick(ids, next, name) {
-  if (!ids.length) return reply(`「${unquote(name)}」が見つかりませんでした`);
-  if (ids.length === 1) return next(ids[0]);
-  ask('どれのことですか？', ids.map(id => ({ label: label(id), run: () => next(id) })));
+function instructionConflict(run) {
+  return run.session !== mapSessionId || run.revision !== revision || !!(editing || gesture || mode || deletion || hand?.grab);
 }
-function ask(text, choices) {
-  const msg = { role: 'app', text };
-  chat.pending = { msg, choices: [...choices, { label: 'やめる', run: () => reply('やめました') }] };
-  chat.log.push(msg);
-}
-function reply(text, undoSnap) { chat.log.push({ role: 'app', text, undoSnap }); }
-function applied(id, text) {
-  sel = id;
-  render();
-  ensureVisible(map.nodes[id]);
-  reply(text, history.at(-1));
-}
-function addTo(pid, text) {
-  if (!text) return reply('追加することばが分かりませんでした');
-  let id;
-  commit(() => { id = addNode(pid, text); });
-  applied(id, `「${map.nodes[pid].text}」に追加しました：${text}`);
-}
-function rename(id, text) {
-  if (!text) return reply('新しいことばが分かりませんでした');
-  const before = map.nodes[id].text;
-  commit(() => { map.nodes[id].text = text; });
-  applied(id, `書きかえました：${before} → ${text}`);
-}
-function moveTo(id, to) {
-  if (id === map.root) return reply('中心はつなぎ替えできません');
-  if (subtree(id).has(to)) return reply(`「${map.nodes[id].text}」の中にはつなげません`);
-  if (map.nodes[id].parent === to) return reply('もうそこにつながっています');
-  commit(() => { map.nodes[id].parent = to; map.nodes[id].order = ++map.seq; invalidateTree(); });
-  applied(id, `「${map.nodes[to].text}」につなぎ替えました：${map.nodes[id].text}`);
-}
-function askRemove(id) {
-  if (id === map.root) return reply('中心は消せません');
-  removeNode(id);
-  if (deletion) deletion.fromChat = true;
-}
-function send(text) {
-  if (editing) finishEdit();
-  if (mode) endReparent();
-  chat.pending = null;
-  chat.log.push({ role: 'user', text });
-  interpret(text);
-  renderChatLog();
-}
-function choose(choice) {
-  chat.pending = null;
-  choice.run();
-  renderChatLog();
-}
-function renderChatLog() {
-  const log = $('#chatLog');
-  log.innerHTML = chat.log.length ? '' : '<li class="chat__empty">思いついたことを送ると、選択中のことばの先に追加します。<br>指示もできます。<br><b>図書館に行くの子に本を借りるを追加</b><br><b>ブランコを図書館に行くの下に移して</b><br><b>公園で遊ぶを午前中に公園で遊ぶに変えて</b><br><b>ブランコを消して</b></li>';
-  for (const msg of chat.log) {
-    const li = Object.assign(document.createElement('li'), { className: `msg msg--${msg.role}`, textContent: msg.text });
-    const choices = chat.pending?.msg === msg ? chat.pending.choices : [];
-    // Only the newest change can be undone from here; older ones would undo something else.
-    const actions = msg.undoSnap && history.at(-1) === msg.undoSnap ? [{ label: '元に戻す', run: undo }] : choices;
-    if (actions.length) {
-      const row = Object.assign(document.createElement('div'), { className: 'msg__actions' });
-      for (const a of actions) {
-        const b = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: a.label });
-        b.onclick = () => a.run === undo ? undo() : choose(a);
-        row.append(b);
-      }
-      li.append(row);
+function endInstruction(state, message, counts) {
+  const run = instruction; if (!run) return;
+  instruction = null; $('#promptSend').disabled = false;
+  if ($('#instructionDialog').open) $('#instructionDialog').close();
+  const input = $('#promptInput'), actions = [];
+  if (state === 'succeeded') {
+    if (draftVersion === run.draftVersion && input.value === run.text) { input.value = ''; draftVersion++; resizePrompt(); }
+    if (counts) {
+      const token = historyToken;
+      actions.push({ label: '元に戻す', undo: true, run: () => { if (historyToken === token) { undo(); $('#instructionToast').hidden = true; } } });
     }
-    log.append(li);
+  } else if (input.value !== run.text) {
+    actions.push({ label: '入力に戻す', run: () => { input.value = run.text; draftVersion++; resizePrompt(); input.focus(); } });
   }
-  log.scrollTop = log.scrollHeight;
+  if (state === 'failed') actions.push({ label: '再試行', run: () => { if (!instruction) void sendInstruction(run.text); } });
+  instructionToast(message, actions, ['succeeded', 'cancelled', 'no_change'].includes(state), state === 'failed' || state === 'conflict');
 }
-function setChatOpen(open) {
-  chat.open = open;
-  document.body.classList.toggle('chat-open', open);
-  $('#chat').hidden = !open;
-  $('#chatBtn').setAttribute('aria-pressed', open);
+function cancelInstruction() {
+  if (!instruction) return;
+  // Invalidate the browser request before asking the relay to interrupt it.
+  endInstruction('cancelled', '中止しました'); instructionClient.cancel();
 }
-function toggleChat(open = !chat.open) {
-  const before = W();
-  setChatOpen(open);
-  view.x += (W() - before) / 2;
-  clampView(view, false);
-  applyView();
-  open ? $('#chatInput').focus() : vp.focus();
-  try { open ? localStorage.setItem(CHAT_KEY, '1') : localStorage.removeItem(CHAT_KEY); } catch {}
+async function sendInstruction(retryText) {
+  if (instruction) return;
+  const text = typeof retryText === 'string' ? retryText : $('#promptInput').value;
+  if (!text.trim()) return;
+  if (deletion || $('#instructionDialog').open) return;
+  if (editing) finishEdit();
+  interruptHand();
+  if (gesture) { revertGesture(); pts.clear(); }
+  if (mode) endReparent();
+  const input = { requestId: InstructionTransport.id('req_'), clientSessionId: instructionClient.clientSessionId,
+    mapSessionId, baseRevision: revision, prompt: text, selectedNodeId: map.nodes[sel] ? sel : null, map: serializeMap() };
+  try {
+    InstructionOperations.validateInput(input);
+    if (new TextEncoder().encode(JSON.stringify(input)).length > 1024 * 1024) throw new Error('送信データは1MiBまでです。マップを小さくしてください');
+  } catch (error) { instructionToast(error.message, [], false, true); return; }
+  const run = instruction = { id: input.requestId, session: mapSessionId, revision, selection: sel, text, draftVersion, state: 'thinking', snapshot: input.map };
+  $('#promptSend').disabled = true;
+  instructionToast('考えています', [{ label: '中止', run: cancelInstruction }]);
+  try {
+    const proposal = await instructionClient.run(input);
+    if (instruction !== run || instructionClient.applied.has(run.id)) return;
+    if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください'); return; }
+    InstructionOperations.validateProposal(proposal);
+    if (proposal.status !== 'ok') { endInstruction(proposal.status, proposal.message || (proposal.status === 'no_change' ? '変更はありません' : 'ノードを選択して、もう一度指示してください')); return; }
+    run.proposal = proposal; run.state = 'validating';
+    run.prepared = InstructionOperations.prepare(run.snapshot, proposal, { size });
+    if (run.prepared.deletions.length) confirmInstruction(); else applyInstruction();
+  } catch (error) { if (instruction === run) endInstruction('failed', error.message || 'Codexに接続できませんでした'); }
+}
+function confirmInstruction() {
+  const run = instruction; run.state = 'awaiting_confirmation';
+  const scopes = $('#instructionScopes'); scopes.textContent = '';
+  run.proposal.operations.forEach((op, index) => {
+    if (op.type !== 'delete_node') return;
+    const row = document.createElement('label'); row.className = 'delete-option';
+    const name = run.snapshot.nodes[op.nodeId]?.text || op.nodeId;
+    const span = document.createElement('span'); span.textContent = `「${name}」の削除範囲`;
+    const select = document.createElement('select'); select.setAttribute('aria-label', `「${name}」の削除範囲`);
+    for (const [value, text] of [['single', 'このノードだけ'], ['subtree', '子孫を含む']]) {
+      const option = document.createElement('option'); option.value = value; option.textContent = text; select.append(option);
+    }
+    select.value = op.scope; select.onchange = () => { run.proposal.operations[index].scope = select.value; updateInstructionPreview(); };
+    row.append(span); row.append(select); scopes.append(row);
+  });
+  updateInstructionPreview();
+  instructionToast('削除内容を確認してください', [{ label: '中止', run: cancelInstruction }]);
+  $('#instructionDialog').showModal(); $('#instructionCancel').focus();
+}
+function updateInstructionPreview() {
+  const run = instruction; if (!run) return;
+  try {
+    run.prepared = InstructionOperations.prepare(run.snapshot, run.proposal, { size });
+    $('#instructionPreview').textContent = run.prepared.deletions.map(d => `「${d.name}」：${d.scope === 'single' ? 'このノードだけ' : '子孫を含む'} ${d.count}個\n${d.names.join('、')}`).join('\n\n') + '\n\n全体：' + InstructionOperations.summary(run.prepared.counts);
+    $('#instructionConfirm').disabled = false;
+  } catch (error) { run.prepared = null; $('#instructionPreview').textContent = error.message; $('#instructionConfirm').disabled = true; }
+}
+function applyInstruction() {
+  const run = instruction; if (!run || !run.prepared) return;
+  if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください'); return; }
+  const candidate = run.prepared;
+  if (!candidate.changed) { endInstruction('no_change', '変更はありません'); return; }
+  let target = candidate.focusId, preserveView = false;
+  if (sel !== run.selection) {
+    preserveView = !!candidate.map.nodes[sel]; target = sel;
+    while (target && !candidate.map.nodes[target]) target = map.nodes[target]?.parent;
+    target ||= candidate.map.root;
+  }
+  run.state = 'applying'; instructionToast('変更を反映しています');
+  // No await from the final revision check through publishing this one history entry.
+  commit(() => { map = candidate.map; invalidateTree(); sel = target; });
+  instructionClient.applied.add(run.id);
+  if (instructionClient.applied.size > 1000) instructionClient.applied.delete(instructionClient.applied.values().next().value);
+  if (!preserveView) ensureVisible(map.nodes[sel]);
+  endInstruction('succeeded', InstructionOperations.summary(candidate.counts), candidate.counts);
 }
 
 /* ---------- camera hand input ---------- */
@@ -1190,7 +1104,7 @@ function toggleHand(inputMode = 'worker') {
   if (cameraSession) { stopHand(); return; }
   handMode = inputMode;
   handController = new HandGestures.HandController({
-    blocked: () => !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
+    blocked: () => instruction?.state === 'awaiting_confirmation' || !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
     dialog: () => !!deletion,
     dialogNavigate: navigateDelete,
     dialogSelect: selectDelete,
@@ -1413,7 +1327,7 @@ addEventListener('keydown', e => {
     return;
   }
   const mod = e.metaKey || e.ctrlKey, k = e.key;
-  if (!editing && mod && k.toLowerCase() === 'k') { e.preventDefault(); toggleChat(); return; }
+  if (mod && k.toLowerCase() === 'k' && !e.isComposing) { e.preventDefault(); if (editing) finishEdit(); $('#promptInput').focus(); return; }
   if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); zoomAt(W() / 2, innerHeight / 2, view.s * 1.25); return; }
   if (mod && k === '-') { e.preventDefault(); zoomAt(W() / 2, innerHeight / 2, view.s / 1.25); return; }
@@ -1469,7 +1383,7 @@ function toggleFileMenu(open) {
 }
 function exportJson() {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(map, null, 2)], { type: 'application/json' }));
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(serializeMap(), null, 2)], { type: 'application/json' }));
   a.download = `${map.title || 'map'}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
@@ -1481,19 +1395,16 @@ $('#nodeMenu').addEventListener('click', e => {
   ({ child: () => addChildAndEdit(sel), edit: () => startEdit(sel), reparent: () => startReparent(sel), delete: () => removeNode(sel) })[act]();
 });
 $('#addChild').onclick = () => addChildAndEdit(sel || map.root);
-$('#chatBtn').onclick = () => toggleChat();
-$('#chatClose').onclick = () => toggleChat(false);
-$('#chatForm').onsubmit = e => {
-  e.preventDefault();
-  const text = $('#chatInput').value.trim();
-  $('#chatInput').value = '';
-  if (text) send(text);
-};
-$('#chatInput').onkeydown = e => {
-  // Safari reports the IME confirming Enter as keyCode 229; it must not submit.
-  if (e.key === 'Enter' && (e.isComposing || e.keyCode === 229)) e.preventDefault();
+$('#promptForm').onsubmit = e => { e.preventDefault(); void sendInstruction(); };
+$('#promptInput').oninput = () => { draftVersion++; resizePrompt(); };
+$('#promptInput').onkeydown = e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); void sendInstruction(); }
   if (e.key === 'Escape') vp.focus();
 };
+$('#instructionCancel').onclick = cancelInstruction;
+$('#instructionConfirm').onclick = applyInstruction;
+$('#instructionDialog').addEventListener('cancel', e => { e.preventDefault(); cancelInstruction(); });
+$('#instructionDialog').addEventListener('close', () => { if (instruction?.state === 'awaiting_confirmation') cancelInstruction(); });
 $('#handBtn').onclick = () => toggleHand();
 $('#camSelect').onchange = e => {
   try { localStorage.setItem(CAMERA_KEY, e.target.value); } catch {}
@@ -1537,6 +1448,9 @@ function importMap(m) {
     $('#undo').disabled = true;
     $('#redo').disabled = true;
     setSave('saved');
+    mapSessionId = InstructionTransport.id('map_'); revision++; historyToken++;
+    if (instructionUndoButton) instructionUndoButton.disabled = true;
+    if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
   } catch (error) {
     map = previous.map;
     sel = previous.sel;
@@ -1572,7 +1486,7 @@ $('#fileInput').onchange = async e => {
     toast('読み込みました');
   } catch { if (request === importRequest) toast('読み込めませんでした。作業中のマップを維持しています'); }
 };
-$('#title').oninput = e => { map.title = e.target.value; scheduleSave(); };
+$('#title').oninput = e => { if (map.title !== e.target.value) commit(() => { map.title = e.target.value; }); };
 $('#title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) vp.focus(); };
 $('#devBtn').onclick = () => {
   const open = $('#dev').hidden;
@@ -1590,7 +1504,7 @@ $('#dev').addEventListener('click', e => {
   if (d === 's-error') { forceSaveFail = true; scheduleSave(); }
   if (d === 's-saved') { forceSaveFail = false; scheduleSave(); }
   if (d === 'edge') { animateTo(centerOn({ x: BOUND, y: 0 })); setTimeout(() => { edgeHint('right'); toast('「全体を表示」で戻れます'); }, 300); }
-  if (d === 'reset') { commit(() => { map = sample(); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
+  if (d === 'reset') { commit(() => { map = sample(); mapSessionId = InstructionTransport.id('map_'); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
 });
 document.addEventListener('pointerdown', e => {
   if (!e.target.closest('#viewport')) interruptHand();
@@ -1602,11 +1516,20 @@ addEventListener('pagehide', stopHand);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopHand(); });
 
 $('#title').value = map.title;
-try { if (localStorage.getItem(CHAT_KEY)) setChatOpen(true); } catch {}
-visualViewport?.addEventListener('resize', () => {
-  document.body.style.setProperty('--kb', Math.max(0, innerHeight - visualViewport.height - visualViewport.offsetTop) + 'px');
-});
-renderChatLog();
+function updateViewport() {
+  const viewport = globalThis.visualViewport;
+  const kb = viewport ? Math.max(0, innerHeight - viewport.height - viewport.offsetTop) : 0;
+  document.body.style.setProperty('--kb', kb + 'px');
+  document.body.classList.toggle('keyboard-open', kb > 80);
+  resizePrompt();
+}
+globalThis.visualViewport?.addEventListener('resize', updateViewport);
+globalThis.visualViewport?.addEventListener('scroll', updateViewport);
+addEventListener('resize', updateViewport);
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resizeNotices).observe($('.topbar'));
+addEventListener('pagehide', cancelInstruction);
+updateViewport();
+void checkCodexStatus();
 view = centerOn(map.nodes[map.root], 1);
 view.y -= 20;
 render();

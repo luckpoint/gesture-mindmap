@@ -1,0 +1,7 @@
+{
+  "name": "lp-mindmap",
+  "private": true,
+  "version": "0.1.0",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node server/index.mjs", "test": "node --test tests/*.test.cjs" }
+}

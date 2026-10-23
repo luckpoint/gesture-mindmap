@@ -30,7 +30,7 @@ function setup({ renderUI = false, handUI = false } = {}) {
     return elements.get(key);
   }
   const context = vm.createContext({
-    console, innerWidth: 1200, innerHeight: 800,
+    console, TextEncoder, AbortSignal, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: true }),
     document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
     getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
@@ -51,6 +51,7 @@ function setup({ renderUI = false, handUI = false } = {}) {
   context.document.body = element('body');
   // Skip only the initial screen draw; all production handlers are registered.
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
+  for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
   vm.runInContext(`
     ${renderUI ? '' : 'render = () => {};'} fitAll = () => {}; applyView = () => {};
@@ -320,52 +321,86 @@ test('SVG paths survive redraws and obsolete paths are removed', () => {
   assert.equal(run(`!originalEdge.isConnected && !edgeEls.has('a') && !edgeEls.has('a1')`), true);
 });
 
-test('chat adds a child under the named node in one undoable step', () => {
-  const { run } = setup();
-  run(`send('図書館に行くの子に「日本の歴史」の本を借りるを追加');`);
-  assert.equal(run(`map.nodes[sel].parent === 'b' && map.nodes[sel].text === '「日本の歴史」の本を借りる' && history.length === 1`), true);
-  run(`send('「おやつ」');`);
-  assert.equal(run(`map.nodes[sel].text === 'おやつ' && map.nodes[map.nodes[sel].parent].text === '「日本の歴史」の本を借りる'`), true);
-  run('undo(); undo();');
-  assert.equal(run('Object.keys(map.nodes).length'), 7);
+function mockInstruction(t, operations) {
+  t.run(`var resolveInstruction;
+    instructionClient.run = () => new Promise(resolve => { resolveInstruction = resolve; });
+    $('#promptInput').value = '指示';
+  `);
+  const pending = t.run('sendInstruction()');
+  return { pending, finish: () => t.run(`resolveInstruction(${JSON.stringify({status:'ok', message:'', operations})});`) };
+}
+
+test('instructions apply multiple operations as one undo/redo entry and share export serialization', async () => {
+  const t = setup(); const before = t.run('JSON.stringify(serializeMap())');
+  const request = mockInstruction(t, [{type:'add_node',clientId:'new_1',parentId:'b',text:'本を借りる'}, {type:'add_node',clientId:'new_2',parentId:'new_1',text:'返却する'}]);
+  assert.equal(t.run('Object.keys(map.nodes).length'), 7);
+  request.finish(); await request.pending;
+  assert.equal(t.run('Object.keys(map.nodes).length === 9 && history.length === 1 && instruction === null'), true);
+  assert.equal(t.elements.get('#promptInput').value, '');
+  t.run('undo()'); assert.equal(t.run('JSON.stringify(map)'), before);
+  t.run('redo()'); assert.equal(t.run('Object.keys(map.nodes).length'), 9);
 });
 
-test('chat asks which node when a name is ambiguous', () => {
-  const { run } = setup();
-  run(`commit(() => { addNode('root', '公園で走る'); }); send('公園の子にベンチを追加');`);
-  assert.equal(run(`chat.pending.choices.map(c => c.label).join(',')`), '公園で遊ぶ（週末にやりたいこと）,公園で走る（週末にやりたいこと）,やめる');
-  run(`choose(chat.pending.choices[1]);`);
-  assert.equal(run(`chat.pending === null && map.nodes[map.nodes[sel].parent].text === '公園で走る'`), true);
+test('a bad later instruction leaves the map and history intact', async () => {
+  const t = setup(); const before = t.run('JSON.stringify(map)');
+  const request = mockInstruction(t, [{type:'add_node',clientId:'new_1',parentId:'b',text:'本'}, {type:'reparent_node',nodeId:'root',parentId:'new_1'}]);
+  request.finish(); await request.pending;
+  assert.equal(t.run('JSON.stringify(map)'), before);
+  assert.equal(t.run('history.length'), 0);
+  assert.equal(t.elements.get('#promptInput').value, '指示');
 });
 
-test('chat renames and reparents, refusing a move into its own branch', () => {
-  const { run } = setup();
-  run(`send('公園で遊ぶを午前中に公園で遊ぶに変えて');`);
-  assert.equal(run(`map.nodes.a.text`), '午前中に公園で遊ぶ');
-  run(`send('ブランコを図書館に行くの下に移して');`);
-  assert.equal(run(`map.nodes.a1.parent`), 'b');
-  run(`send('図書館に行くをブランコの下に移して');`);
-  assert.equal(run(`map.nodes.b.parent === 'root' && history.length === 2`), true);
+test('instructions reject edits, undo cycles, imports, and unfinished gestures while selection changes are allowed', async () => {
+  for (const action of ["commit(() => { map.nodes.a.text = '変更'; });", "commit(() => { map.nodes.a.text = '変更'; }); undo();", "importMap(sample());", "gesture = { type: 'node' };", "editing = { id: 'a' };"]) {
+    const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
+    t.run(action); request.finish(); await request.pending;
+    assert.equal(t.run("map.nodes.b.text"), '図書館に行く', action);
+    assert.match(t.elements.get('#instructionToast').textContent, /マップが変わった/);
+  }
+  const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
+  t.run("sel = 'a';"); request.finish(); await request.pending;
+  assert.equal(t.run("map.nodes.b.text === '新しい本' && sel === 'a'"), true);
 });
 
-test('chat deletes only after confirmation and keeps unknown commands out of the map', () => {
-  const { run } = setup();
-  run(`send('公園で遊ぶを消して');`);
-  assert.equal(run(`!!map.nodes.a && deletion.id === 'a' && deletion.scope === null`), true);
-  run(`chooseDeleteScope('branch'); confirmDelete();`);
-  assert.equal(run(`!map.nodes.a && !map.nodes.a1 && sel === 'root' && history.length === 1`), true);
-  run(`send('すべり台を消して');`);
-  assert.equal(run(`Object.keys(map.nodes).length === 5 && chat.pending.choices[0].label === 'そのまま追加'`), true);
-  run(`send('中心を消して'); send('週末にやりたいことを消して');`);
-  assert.equal(run(`!!map.nodes.root && chat.log.at(-1).text`), '中心は消せません');
+test('mixed deletion stays atomic and can be cancelled or confirmed after changing scopes', async () => {
+  const t = setup(); const request = mockInstruction(t, [{type:'add_node',clientId:'new_1',parentId:'b',text:'本'}, {type:'delete_node',nodeId:'a',scope:'single'}]);
+  request.finish(); await request.pending;
+  assert.equal(t.run("instruction.state === 'awaiting_confirmation' && Object.keys(map.nodes).length === 7 && history.length === 0"), true);
+  t.run("instruction.proposal.operations[1].scope = 'subtree'; updateInstructionPreview(); applyInstruction();");
+  assert.equal(t.run("!map.nodes.a && !map.nodes.a1 && Object.keys(map.nodes).length === 6 && history.length === 1"), true);
+  t.run('undo()'); assert.equal(t.run('Object.keys(map.nodes).length'), 7);
+  const second = mockInstruction(t, [{type:'delete_node',nodeId:'a',scope:'single'}]); second.finish(); await second.pending;
+  t.run('cancelInstruction()'); assert.equal(t.run("!!map.nodes.a && instruction === null && history.length === 0"), true);
 });
 
-test('only the newest chat change offers undo', () => {
-  const { run } = setup();
-  run(`send('一つ目'); const first = chat.log.at(-1); send('二つ目'); const second = chat.log.at(-1);`);
-  assert.equal(run(`first.undoSnap !== history.at(-1) && second.undoSnap === history.at(-1)`), true);
-  run('undo();');
-  assert.equal(run(`first.undoSnap === history.at(-1)`), true);
+test('deletion scope validation can recover from an invalid combination', async () => {
+  const t = setup(); const request = mockInstruction(t, [{type:'delete_node',nodeId:'a',scope:'single'}, {type:'update_node',nodeId:'a1',text:'残す'}]);
+  request.finish(); await request.pending;
+  t.run("instruction.proposal.operations[0].scope = 'subtree'; updateInstructionPreview();");
+  assert.equal(t.elements.get('#instructionConfirm').disabled, true);
+  t.run("instruction.proposal.operations[0].scope = 'single'; updateInstructionPreview();");
+  assert.equal(t.elements.get('#instructionConfirm').disabled, false);
+  t.run('applyInstruction()'); assert.equal(t.run("map.nodes.a1.text === '残す' && map.nodes.a1.parent === 'root'"), true);
+});
+
+test('late cancelled results cannot apply and an edited draft survives success', async () => {
+  const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
+  t.run('cancelInstruction()'); request.finish(); await request.pending;
+  assert.equal(t.run("map.nodes.b.text"), '図書館に行く');
+  const next = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
+  t.run("$('#promptInput').value = '次の指示'; draftVersion++;"); next.finish(); await next.pending;
+  assert.equal(t.elements.get('#promptInput').value, '次の指示');
+  const button = t.run('instructionUndoButton'); assert.equal(button.disabled, false);
+  t.run("commit(() => { map.nodes.a.text = '編集'; }); undo();"); assert.equal(button.disabled, true);
+});
+
+test('IME Enter does not submit, Shift Enter stays a newline, plain Enter submits', () => {
+  const t = setup(); t.run('let sends = 0; sendInstruction = () => { sends++; };');
+  const key = t.elements.get('#promptInput').onkeydown;
+  let prevented = 0; const press = opts => key({ key: 'Enter', preventDefault() { prevented++; }, ...opts });
+  press({isComposing:true}); press({keyCode:229}); press({shiftKey:true});
+  assert.equal(t.run('sends'), 0); assert.equal(prevented, 0);
+  press({}); assert.equal(t.run('sends'), 1); assert.equal(prevented, 1);
 });
 
 function prepareHand(t) {
@@ -653,7 +688,7 @@ test('Enter edits the selection, Shift+Enter adds a sibling', () => {
   assert.equal(t.run(`editing.isNew && map.nodes[editing.id].parent === map.nodes.a.parent`), true);
 });
 
-test('view and screen shortcuts zoom, focus, toggle chat and open the key list', () => {
+test('view and screen shortcuts zoom, focus the prompt and open the key list', () => {
   const t = setup(); t.run(`sel = 'a'; view = { x: 0, y: 0, s: 1 }; document.body = $('body');`);
   const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
   press('=', { metaKey: true });
@@ -664,14 +699,13 @@ test('view and screen shortcuts zoom, focus, toggle chat and open the key list',
   assert.equal(t.run('view.s'), 1);
   press('@', { code: 'Digit2', shiftKey: true });
   assert.equal(t.run('view.s'), 1.5);
-  const open = t.run('chat.open');
   press('k', { metaKey: true });
-  assert.equal(t.run('chat.open'), !open);
+  assert.equal(t.context.document.activeElement, t.elements.get('#promptInput'));
   press('?', { shiftKey: true });
   assert.equal(t.elements.get('#keysDialog').open, true);
 });
 
-test('Shift+H toggles hand input; plain h and typing in the chat field do not', () => {
+test('Shift+H toggles hand input; plain h and typing in the prompt field do not', () => {
   const t = setup({ handUI: true });
   const press = (target, opts = { key: 'H', code: 'KeyH', shiftKey: true }) => t.windowHandlers.get('keydown')({ target, preventDefault() {}, ...opts });
   press(t.elements.get('#viewport'), { key: 'h', code: 'KeyH' });
