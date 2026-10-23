@@ -424,7 +424,7 @@ button { font: inherit; color: inherit; }
     <dt>⌘= / ⌘-</dt><dd>拡大 / 縮小</dd>
     <dt>⌘0</dt><dd>100%にもどす</dd>
     <dt>⌘K</dt><dd>チャットを開閉</dd>
-    <dt>H</dt><dd>手で操作のオン / オフ</dd>
+    <dt>⇧H</dt><dd>手で操作のオン / オフ</dd>
     <dt>?</dt><dd>この一覧</dd>
   </dl>
   <form method="dialog"><button class="btn">閉じる</button></form>
@@ -433,7 +433,7 @@ button { font: inherit; color: inherit; }
 <nav class="dock panel" aria-label="おもな操作">
   <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
   <button class="btn btn--primary dock__btn" id="chatBtn" aria-pressed="false" aria-controls="chat" title="チャット（⌘K）"><svg class="i"><use href="#i-chat"/></svg>チャット</button>
-  <button class="btn dock__btn" id="handBtn" aria-pressed="false" title="手で操作（H）"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
+  <button class="btn dock__btn" id="handBtn" aria-pressed="false" title="手で操作（⇧H）"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
   <button class="btn dock__btn" id="fitBtn" title="全体を表示（⇧1）"><svg class="i"><use href="#i-fit"/></svg>全体を表示</button>
 </nav>
 
@@ -1440,7 +1440,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit1' && e.shiftKey) { e.preventDefault(); fitAll(); }
   else if (e.code === 'Digit2' && e.shiftKey) { e.preventDefault(); animateTo(centerOn(map.nodes[sel || map.root], 1.5)); }
   else if (k === '?') { e.preventDefault(); $('#keysDialog').showModal(); }
-  else if (k.toLowerCase() === 'h' && !mod) { e.preventDefault(); toggleHand(); }
+  else if (e.code === 'KeyH' && e.shiftKey && !mod) { e.preventDefault(); toggleHand(); }
 });
 
 /* ---------- chrome ---------- */

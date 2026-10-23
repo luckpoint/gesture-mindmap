@@ -653,9 +653,11 @@ test('view and screen shortcuts zoom, focus, toggle chat and open the key list',
   assert.equal(t.elements.get('#keysDialog').open, true);
 });
 
-test('H toggles hand input; typing H in the chat field does not', () => {
+test('Shift+H toggles hand input; plain h and typing in the chat field do not', () => {
   const t = setup({ handUI: true });
-  const press = target => t.windowHandlers.get('keydown')({ key: 'h', target, preventDefault() {} });
+  const press = (target, opts = { key: 'H', code: 'KeyH', shiftKey: true }) => t.windowHandlers.get('keydown')({ target, preventDefault() {}, ...opts });
+  press(t.elements.get('#viewport'), { key: 'h', code: 'KeyH' });
+  assert.equal(t.run('cameraSession'), null);
   press(t.elements.get('#viewport'));
   assert.equal(t.run('!!cameraSession'), true);
   press(t.elements.get('#viewport'));
