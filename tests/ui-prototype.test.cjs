@@ -624,3 +624,42 @@ test('thumb-down opens confirmation once, permits hand choice and fresh pinch co
     for (let i = 0; i < 14; i++) dialogSample(null, .1, .7);`);
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
+
+test('Enter edits the selection, Shift+Enter adds a sibling', () => {
+  const t = setup({ renderUI: true }); t.run(`sel = 'a';`);
+  const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
+  press('Enter');
+  assert.equal(t.run(`editing.id === 'a' && !editing.isNew`), true);
+  t.run(`cancelEdit();`);
+  press('Enter', { shiftKey: true });
+  assert.equal(t.run(`editing.isNew && map.nodes[editing.id].parent === map.nodes.a.parent`), true);
+});
+
+test('view and screen shortcuts zoom, focus, toggle chat and open the key list', () => {
+  const t = setup(); t.run(`sel = 'a'; view = { x: 0, y: 0, s: 1 }; document.body = $('body');`);
+  const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
+  press('=', { metaKey: true });
+  assert.equal(t.run('view.s'), 1.25);
+  press('-', { ctrlKey: true }); press('-', { ctrlKey: true });
+  assert.equal(t.run('view.s'), 0.8);
+  press('0', { metaKey: true });
+  assert.equal(t.run('view.s'), 1);
+  press('@', { code: 'Digit2', shiftKey: true });
+  assert.equal(t.run('view.s'), 1.5);
+  const open = t.run('chat.open');
+  press('k', { metaKey: true });
+  assert.equal(t.run('chat.open'), !open);
+  press('?', { shiftKey: true });
+  assert.equal(t.elements.get('#keysDialog').open, true);
+});
+
+test('H toggles hand input; typing H in the chat field does not', () => {
+  const t = setup({ handUI: true });
+  const press = target => t.windowHandlers.get('keydown')({ key: 'h', target, preventDefault() {} });
+  press(t.elements.get('#viewport'));
+  assert.equal(t.run('!!cameraSession'), true);
+  press(t.elements.get('#viewport'));
+  assert.equal(t.run('cameraSession'), null);
+  press({ closest: sel => sel === 'input, textarea' });
+  assert.equal(t.run('cameraSession'), null);
+});
