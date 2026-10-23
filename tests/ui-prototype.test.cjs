@@ -532,7 +532,7 @@ test('camera fist and pause toggle cancel previews, retain map and show resumabl
     poseSample('fist');
   `);
   assert.equal(t.run('!gesture && !hand.grab && history.length === 0 && JSON.stringify(map) === originalMap'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /ニュートラル/);
+  assert.match(t.elements.get('#handHelp').textContent, /片手のグーは待機/);
   t.run(`for (let i = 0; i < 8; i++) poseSample('point');`);
   assert.match(t.elements.get('#handHelp').textContent, /一時停止中/);
   t.run(`stableHand(.1); stableHand(.1, .5, .1);`);
@@ -664,4 +664,24 @@ test('Shift+H toggles hand input; plain h and typing in the chat field do not', 
   assert.equal(t.run('cameraSession'), null);
   press({ closest: sel => sel === 'input, textarea' });
   assert.equal(t.run('cameraSession'), null);
+});
+
+test('two fists pan the viewport, revert node previews and keep scale, nodes and history intact', () => {
+  const t = setup({ handUI: true }); prepareHand(t);
+  t.run(`stableHand(.5, .5, .1); handSample(.4, .5, .1);
+    const panSample = (x, y, pose = 'bothFists') => {
+      cameraSession.io.frame({ hands: 2, pose, pointer: { x, y }, distance: .4 }, handTime); handTime += 50;
+    };
+    const beforePan = { ...view };
+    panSample(.5, .5); panSample(.5, .5); panSample(.5, .5);
+    panSample(.45, .45);
+  `);
+  assert.equal(t.run('view.x > beforePan.x && view.y < beforePan.y && view.s === beforePan.s'), true);
+  assert.equal(t.run('!gesture && JSON.stringify(map) === originalMap && history.length === 0'), true);
+  assert.match(t.elements.get('#handHelp').textContent, /両手グーでマップを移動中/);
+  assert.equal(t.elements.get('#camMsg').hidden, true);
+  t.run(`const stoppedPan = { ...view }; panSample(.2, .2, 'fist');`);
+  assert.equal(t.run('JSON.stringify(view) === JSON.stringify(stoppedPan)'), true);
+  t.run(`editing = { id: 'root' }; panSample(.3, .3); panSample(.4, .4);`);
+  assert.equal(t.run('hand.state === "blocked" && JSON.stringify(view) === JSON.stringify(stoppedPan)'), true);
 });

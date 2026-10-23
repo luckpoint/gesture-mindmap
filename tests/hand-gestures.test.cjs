@@ -3,11 +3,12 @@ const { test } = require('node:test');
 const { HandController, handFrame, directionalTarget } = require('../ui-prototype/gestures/controller.js');
 
 function setup(options = {}) {
-  const events = [], dragEvents = [], zooms = [], commands = [], dialogEvents = []; let blocked = false, time = 0, dialog = false;
+  const events = [], dragEvents = [], zooms = [], pans = [], commands = [], dialogEvents = []; let blocked = false, time = 0, dialog = false;
   const controller = new HandController({
     blocked: () => blocked, activate: () => events.push('activate'),
     navigate: direction => events.push(direction), paint() {},
     zoom: factor => zooms.push(factor),
+    pan: (x, y) => pans.push({ x, y }),
     command: action => commands.push(action), dialog: () => dialog,
     dialogNavigate: step => dialogEvents.push(step), dialogSelect: () => dialogEvents.push('select'),
     bounds: () => ({ left: 0, top: 0, right: 1000, bottom: 800 }),
@@ -20,7 +21,7 @@ function setup(options = {}) {
     time += 50;
   };
   const stable = (x = .5, y = .5, extra = {}) => { for (let i = 0; i < 3; i++) feed(x, y, extra); };
-  return { controller, events, dragEvents, zooms, commands, dialogEvents, feed, stable, block: value => blocked = value, dialog: value => dialog = value,
+  return { controller, events, dragEvents, zooms, pans, commands, dialogEvents, feed, stable, block: value => blocked = value, dialog: value => dialog = value,
     lost: () => { controller.update(null, time); time += 50; },
     advance: duration => time += duration,
     moves: () => events.filter(e => typeof e === 'object') };
@@ -290,7 +291,9 @@ test('two-hand distance uses palm centers, aspect ratio, and ignores result orde
   assert.ok(Math.abs(result.distance - .5) < 1e-8);
   assert.deepEqual(handFrame({ landmarks: [b, a] }, 640, 480), result);
   b[8].x += .1; b[4].x += .2;
-  assert.deepEqual(handFrame({ landmarks: [a, b] }, 640, 480), result);
+  const flexed = handFrame({ landmarks: [a, b] }, 640, 480);
+  assert.equal(flexed.distance, result.distance);
+  assert.deepEqual(flexed.pointer, result.pointer);
   b[13].x = NaN;
   assert.equal(handFrame({ landmarks: [a, b] }, 640, 480), null);
 });
@@ -481,4 +484,70 @@ test('point hold cannot inherit time spent in a command pose', () => {
   t.stable(.5, .5, { pose: 'point' });
   assert.equal(t.controller.paused, false);
   pointHand(t); assert.equal(t.controller.paused, true);
+});
+
+const fists = { hands: 2, pose: 'bothFists', distance: .4 };
+
+test('both fists pan with the mirrored midpoint, cancel previews and never zoom or select', () => {
+  const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
+  t.stable(); t.stable(.5, .5, { ratio: .1 });
+  t.stable(.5, .5, fists);
+  assert.deepEqual(t.dragEvents.map(e => e[0]), ['begin', 'cancel']);
+  assert.equal(t.controller.state.state, 'panning');
+  assert.deepEqual(t.pans, []);
+  t.feed(.45, .45, { ...fists, distance: .5 });
+  assert.ok(Math.abs(t.pans[0].x - 50) < 1e-8);
+  assert.ok(Math.abs(t.pans[0].y + 40) < 1e-8);
+  t.feed(.5, .5, fists);
+  assert.ok(Math.abs(t.pans[1].x + 50) < 1e-8);
+  assert.ok(Math.abs(t.pans[1].y - 40) < 1e-8);
+  assert.deepEqual(t.zooms, []); assert.deepEqual(t.moves(), []);
+});
+
+for (const cause of ['open', 'one', 'loss', 'blocked', 'dialog', 'gap', 'clock', 'jump', 'invalid']) test(`pan ${cause} stops and reacquires without a jump`, () => {
+  const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
+  t.stable(.5, .5, fists); t.feed(.45, .5, fists);
+  if (cause === 'open') t.feed(.2, .2, { hands: 2, pose: 'fist', distance: .4 });
+  if (cause === 'one') t.feed(.2, .2);
+  if (cause === 'loss') t.lost();
+  if (cause === 'blocked') { t.block(true); t.feed(.2, .2, fists); t.block(false); }
+  if (cause === 'dialog') { t.dialog(true); t.feed(.2, .2, fists); t.dialog(false); }
+  if (cause === 'gap') t.advance(1500);
+  if (cause === 'clock') t.advance(-500);
+  if (cause === 'invalid') t.feed(NaN, .5, fists);
+  t.stable(.1, .2, fists);
+  assert.equal(t.pans.length, 1);
+  t.feed(.08, .2, fists); assert.equal(t.pans.length, 2);
+  assert.ok(Math.abs(t.pans[1].x - 20) < 1e-8);
+});
+
+test('pan jitter is suppressed and pause prevents all pan movement', () => {
+  const t = setup(); t.stable(.5, .5, fists);
+  for (let i = 0; i < 60; i++) t.feed(.5 + (i % 2 ? .003 : -.003), .5, fists);
+  assert.deepEqual(t.pans, []);
+  pointHand(t); t.stable(.5, .5, fists); t.feed(.4, .4, fists);
+  assert.equal(t.controller.state.state, 'paused'); assert.deepEqual(t.pans, []);
+});
+
+test('pan and zoom transitions require fresh baselines', () => {
+  const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
+  t.stable(.5, .5, fists); t.feed(.45, .5, fists);
+  t.stable(.1, .1, { hands: 2, distance: .7 });
+  assert.deepEqual(t.zooms, []);
+  t.feed(.1, .1, { hands: 2, distance: .75 }); assert.equal(t.zooms.length, 1);
+  t.stable(.1, .1, fists); assert.equal(t.pans.length, 1);
+  t.feed(.08, .1, fists); assert.equal(t.pans.length, 2);
+});
+
+test('landmarks require two fists for pan and use an order-independent palm midpoint', () => {
+  const left = poseLandmarks('fist').map(p => ({ x: p.x - .2, y: p.y - .1 }));
+  const right = poseLandmarks('fist').map(p => ({ x: p.x + .2, y: p.y + .1 }));
+  const frame = handFrame({ landmarks: [left, right] }, 640, 480);
+  assert.equal(frame.pose, 'bothFists');
+  assert.deepEqual(frame.pointer, { x: .5, y: .65 });
+  assert.deepEqual(handFrame({ landmarks: [right, left] }, 640, 480), frame);
+  for (const pose of ['open', 'point']) {
+    const mixed = handFrame({ landmarks: [left, poseLandmarks(pose)] }, 640, 480);
+    assert.equal(mixed.pose, pose === 'point' ? 'point' : 'fist');
+  }
 });

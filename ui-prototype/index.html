@@ -453,7 +453,7 @@ button { font: inherit; color: inherit; }
     <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px">隠す</button>
   </figcaption>
   <select id="camSelect" aria-label="カメラを選ぶ" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
-  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">ピースで子を追加、親指を下げて削除確認（約0.6秒保持）。グーはニュートラル、人差し指だけで一時停止・再開。</p>
+  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">ピースで子を追加、親指を下げて削除確認（約0.6秒保持）。片手のグーは待機、両手グーでマップ移動、人差し指だけで一時停止・再開。</p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
@@ -494,8 +494,8 @@ button { font: inherit; color: inherit; }
   </div>
 </aside>
 
-<script src="gestures/controller.js?v=20261023-pinch-rest-9"></script>
-<script src="gestures/camera.js?v=20261023-pinch-rest-9"></script>
+<script src="gestures/controller.js?v=20261023-two-fist-pan-10"></script>
+<script src="gestures/camera.js?v=20261023-two-fist-pan-10"></script>
 <script>
 const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CHAT_KEY = 'mindmap-proto:chat', CAMERA_KEY = 'mindmap-proto:camera';
 const $ = s => document.querySelector(s);
@@ -1204,6 +1204,7 @@ function toggleHand(inputMode = 'worker') {
       const next = HandGestures.directionalTarget(Object.values(map.nodes), origin, direction);
       if (next) { select(next); ensureVisible(map.nodes[next]); }
     },
+    pan: (dx, dy) => { animId++; view = clampView({ x: view.x + dx, y: view.y + dy, s: view.s }); applyView(); },
     zoom: factor => { animId++; zoomAt(W() / 2, H() / 2, view.s * factor); },
     bounds: () => { const r = vp.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.left + W(), bottom: Math.min(r.bottom, H()) }; },
     begin: (x, y) => {
@@ -1244,16 +1245,18 @@ function updateHand() {
   if (!hand) return;
   $('#handCursor').hidden = true;
   const message = {
-    ready: '手を認識しています。方向で選択、つまんで移動。ピースで子を追加、親指を下げて削除確認。グーはニュートラル、人差し指だけで一時停止。両手を広げると縮小、近づけると拡大します。',
+    ready: '手を認識しています。方向で選択、つまんで移動。ピースで子を追加、親指を下げて削除確認。片手のグーは待機、両手グーでマップ移動、人差し指だけで一時停止。両手を広げると縮小、近づけると拡大します。',
     addWaiting: `ピース：子を追加 ${Math.round(hand.progress * 100)}%。そのまま保持してください。`,
     deleteWaiting: `親指を下：削除確認 ${Math.round(hand.progress * 100)}%。そのまま保持してください。`,
     commandReset: 'グーまたは開いた手に戻すと、次の操作ができます。',
     dialog: `確認画面：開いた手を上下に動かして項目へ移動し、つまんで保持すると決定します。${hand.progress ? ` 決定 ${Math.round(hand.progress * 100)}%` : ''}`,
+    panWaiting: '両手グーを認識しました。そのまま少し待ってください。',
+    panning: '両手グーでマップを移動中です。どちらかの手を開くと止まります。',
     zoomWaiting: '両手を認識しました。そのまま少し待ってください。',
     zooming: '両手を広げると縮小、近づけると拡大します。片手に戻すと選択・移動できます。',
     dragging: 'つかみ中です。手全体を動かし、指を開いて確定します。',
     waiting: '手を認識しました。指を開いたまま少し待ってください。',
-    neutral: 'グーはニュートラルです。手を開くと操作できます。人差し指だけを立てると一時停止します。',
+    neutral: '片手のグーは待機です。両手をグーにして動かすとマップを移動できます。人差し指だけを立てると一時停止します。',
     toggleWaiting: '人差し指だけを少し保持すると切り替わります。切替後はグーか開いた手に戻してください。',
     pinchWaiting: '手を認識しています。親指と人差し指を離すと方向選択に戻ります。',
     paused: '一時停止中です。グーに戻してから、人差し指だけを立てると再開します。',
@@ -1263,7 +1266,7 @@ function updateHand() {
   }[hand.state];
   $('#handHelp').textContent = message;
   if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : hand.state === 'dialog' ? message : '手で操作：開いた手を上下に動かして項目へ移動し、つまんで保持すると決定します。';
-  $('#camMsg').hidden = hand.state === 'ready' || hand.state === 'dragging' || hand.state === 'zooming';
+  $('#camMsg').hidden = hand.state === 'ready' || hand.state === 'dragging' || hand.state === 'zooming' || hand.state === 'panning';
   $('#camMsg').textContent = message;
 }
 function beginNodeDrag(id, x, y, fromHand = false) {

@@ -39,6 +39,7 @@
       this.anchor = null; this.pendingAt = null; this.lastAt = null;
       this.identity = null; this.wrist = null; this.lastSwitch = -Infinity;
       this.zoomDistance = null; this.zoomPendingAt = null; this.zoomLastAt = null;
+      this.panLastAt = null; this.panPendingAt = null; this.panRaw = null;
       if (!preserveToggle) {
         this.toggleAt = null; this.toggleReleaseAt = null; this.toggleLastAt = null;
       }
@@ -85,6 +86,10 @@
       if (dialog && frame?.hands === 2) {
         this.cancel(); s.state = 'dialog'; this.io.paint(s); return;
       }
+      if (frame?.hands === 2 && frame.pose === 'bothFists') {
+        this.updatePan(frame.pointer, now); return;
+      }
+      if (this.panLastAt !== null) this.cancel();
       if (frame?.hands === 2) {
         const distance = frame.distance;
         if (!Number.isFinite(distance) || distance < .05 || !Number.isFinite(now)) {
@@ -192,7 +197,7 @@
         this.commandPose = null; this.commandAt = null; s.progress = 0;
         return false;
       }
-      if (s.grab || this.zoomLastAt !== null) {
+      if (s.grab || this.zoomLastAt !== null || this.panLastAt !== null) {
         this.commandHeld = true; this.cancel();
       }
       if (this.commandHeld) {
@@ -247,7 +252,28 @@
       this.dragMoving = false; this.dragStopPoint = null; this.dragStopAt = null;
       this.dragStillPoint = { ...point };
     }
-    moveDrag(point, now) {
+    updatePan(point, now) {
+      const s = this.state, c = this.config;
+      if (![point?.x, point?.y, now].every(Number.isFinite)) {
+        this.cancel(); s.state = 'lost'; this.io.paint(s); return;
+      }
+      if (this.panLastAt === null || now < this.panLastAt || now - this.panLastAt > c.maxGap ||
+          Math.hypot(point.x - this.panRaw.x, point.y - this.panRaw.y) >= .2) {
+        this.cancel(); this.panPendingAt = now;
+        s.x = 0; s.y = 0;
+        this.rebaseDrag(point, now);
+      }
+      this.panLastAt = now; this.panRaw = { ...point };
+      if (now - this.panPendingAt < c.stable) {
+        this.rebaseDrag(point, now); s.state = 'panWaiting';
+      } else {
+        const x = s.x, y = s.y;
+        this.moveDrag(point, now, (nextX, nextY) => this.io.pan(nextX - x, nextY - y));
+        s.state = 'panning';
+      }
+      this.io.paint(s);
+    }
+    moveDrag(point, now, move = this.io.move) {
       const s = this.state, c = this.config, b = this.io.bounds();
       const elapsed = Math.max(0, now - this.dragAt);
       if (!elapsed) return;
@@ -300,7 +326,7 @@
           this.dragStillPoint = { ...point };
           this.dragStopPoint = null; this.dragStopAt = null;
         }
-        this.io.move(s.x, s.y);
+        move(s.x, s.y);
       }
     }
 
@@ -343,9 +369,11 @@
     if (!second) return null;
     // Palm centers avoid changes caused by finger flexion. Image-width units
     // preserve the aspect ratio; distance is independent of detection order.
-    const frame = { hands: 2, distance: Math.hypot(first.pointer.x - second.pointer.x,
+    const frame = { hands: 2, pointer: { x: (first.pointer.x + second.pointer.x) / 2,
+      y: (first.pointer.y + second.pointer.y) / 2 }, distance: Math.hypot(first.pointer.x - second.pointer.x,
       (first.pointer.y - second.pointer.y) * height / width) };
     if (first.pose === 'point' || second.pose === 'point') frame.pose = 'point';
+    else if (first.pose === 'fist' && second.pose === 'fist') frame.pose = 'bothFists';
     else if (first.pose === 'fist' || second.pose === 'fist') frame.pose = 'fist';
     return frame;
   }

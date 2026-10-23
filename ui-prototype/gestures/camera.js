@@ -28,7 +28,7 @@
         this.io.status('手の認識を準備しています');
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261023-pinch-rest-9');
+          this.worker = new Worker('gestures/hand-worker.js?v=20261023-two-fist-pan-10');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
             this.initTimer = setTimeout(() => reject(new Error('推論の準備がタイムアウトしました')), 30000);
@@ -50,7 +50,7 @@
           this.detector = detector;
         }
         if (this.closed) return;
-        this.io.status('グーはニュートラル／人差し指だけで一時停止・再開／片手で選択・移動、両手でズーム');
+        this.io.status('片手のグーは待機、両手グーでマップ移動／人差し指だけで一時停止・再開／片手で選択・移動、両手でズーム');
         this.lastResult = performance.now();
         this.watchdog = setInterval(() => {
           const elapsed = performance.now() - this.lastResult;
@@ -68,7 +68,7 @@
       const sentAt = this.sentAt;
       requestAnimationFrame(() => {
         if (!this.closed) this.io.metrics({ mode: this.mode, inferenceMs, displayMs: performance.now() - sentAt,
-          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-pinch-rest-9" });
+          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-two-fist-pan-10" });
       });
       this.busy = false;
     }
