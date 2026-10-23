@@ -23,7 +23,7 @@
   class HandController {
     constructor(io, options = {}) {
       this.io = io;
-      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .18, fastSmoothing: .7, dragSpeed: 500, deadzone: 6, movingDeadzone: .75, stopStable: 350, referenceHandSize: .15, stable: 100, toggleStable: 300, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
+      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .18, fastSmoothing: .7, dragSpeed: 500, deadzone: 6, movingDeadzone: .75, stopStable: 350, referenceHandSize: .15, stable: 100, toggleStable: 2000, toggleDrift: .015, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
       this.state = { state: 'nohand', initialized: false, hover: null, grab: null, x: 0, y: 0 };
       this.paused = false; this.toggleHeld = false;
       this.commandHeld = false; this.commandFrame = null; this.commandResetAt = null;
@@ -42,6 +42,7 @@
       this.panLastAt = null; this.panPendingAt = null; this.panRaw = null;
       if (!preserveToggle) {
         this.toggleAt = null; this.toggleReleaseAt = null; this.toggleLastAt = null;
+        this.togglePoint = null; this.toggleWrist = null; this.toggleIdentity = null;
       }
       this.commandPose = null; this.commandAt = null; this.commandPoint = null;
       this.state.progress = 0;
@@ -62,13 +63,23 @@
         this.toggleLastAt = now;
         if (frame.pose === 'point') {
           this.toggleReleaseAt = null;
-          if (this.toggleAt === null) {
+          const hand = frame.toggleHand ?? frame, point = hand.pointer, wrist = hand.wrist;
+          if (![point?.x, point?.y, wrist?.x, wrist?.y].every(Number.isFinite)) {
+            this.cancel(); s.state = this.paused ? 'paused' : 'neutral'; this.io.paint(s); return;
+          }
+          // Compare against fixed hold anchors so slow motion accumulates.
+          // Small landmark jitter is allowed, but movement restarts the hold.
+          if (this.toggleAt === null ||
+              Math.hypot(point.x - this.togglePoint.x, point.y - this.togglePoint.y) > c.toggleDrift ||
+              Math.hypot(wrist.x - this.toggleWrist.x, wrist.y - this.toggleWrist.y) > c.toggleDrift ||
+              (this.toggleIdentity && hand.identity && this.toggleIdentity !== hand.identity)) {
             this.cancel(); this.toggleAt = now; this.toggleLastAt = now;
+            this.togglePoint = { ...point }; this.toggleWrist = { ...wrist }; this.toggleIdentity = hand.identity;
           }
           if (!this.toggleHeld && now - this.toggleAt >= c.toggleStable) {
             this.paused = !this.paused; this.toggleHeld = true;
           }
-          s.state = this.paused ? 'paused' : 'toggleWaiting';
+          s.state = this.paused ? 'paused' : 'neutral';
           this.io.paint(s); return;
         }
         this.toggleAt = null;
@@ -188,7 +199,7 @@
       }
       this.commandFrame = valid ? { now, identity: frame.identity, wrist: { ...frame.wrist } } : null;
       const command = frame?.pose === 'peace' ? 'add' : frame?.pose === 'thumbDown' ? 'delete' : null;
-      const neutral = valid && (frame.pose === 'fist' || (!frame.pose && frame.ratio >= c.open));
+      const neutral = valid && (frame.pose === 'fist' || frame.pose === 'point' || (!frame.pose && frame.ratio >= c.open));
       if (neutral) {
         if (this.commandResetAt === null) this.commandResetAt = now;
         if (now - this.commandResetAt >= c.stable) this.commandHeld = false;
@@ -372,7 +383,10 @@
     const frame = { hands: 2, pointer: { x: (first.pointer.x + second.pointer.x) / 2,
       y: (first.pointer.y + second.pointer.y) / 2 }, distance: Math.hypot(first.pointer.x - second.pointer.x,
       (first.pointer.y - second.pointer.y) * height / width) };
-    if (first.pose === 'point' || second.pose === 'point') frame.pose = 'point';
+    if (first.pose === 'point' || second.pose === 'point') {
+      frame.pose = 'point';
+      frame.toggleHand = first.pose === 'point' ? first : second;
+    }
     else if (first.pose === 'fist' && second.pose === 'fist') frame.pose = 'bothFists';
     else if (first.pose === 'fist' || second.pose === 'fist') frame.pose = 'fist';
     return frame;

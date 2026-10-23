@@ -336,7 +336,68 @@ for (const cause of ['loss', 'blocked', 'gap', 'jump', 'invalid', 'clock']) test
   two(baseline + .05); assert.ok(t.zooms[0] < 1);
 });
 
-const pointHand = t => { for (let i = 0; i < 8; i++) t.feed(.5, .5, { pose: 'point' }); };
+const pointHand = t => { for (let i = 0; i < 42; i++) t.feed(.5, .5, { pose: 'point' }); };
+
+test('point pause and resume each require two full seconds of stillness', () => {
+  const t = setup();
+  for (const paused of [true, false]) {
+    for (let i = 0; i < 40; i++) t.feed(.5, .5, { pose: 'point' });
+    assert.equal(t.controller.paused, !paused); // Last sample is at 1950ms.
+    t.feed(.5, .5, { pose: 'point' });
+    assert.equal(t.controller.paused, paused); // Exactly 2000ms.
+    t.stable(.5, .5, { pose: 'fist' });
+  }
+});
+
+for (const speed of [.005, .03]) test(`moving point at ${speed} stays neutral and stopping requires a fresh hold`, () => {
+  const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1 });
+  for (let i = 0; i < 20; i++) {
+    t.feed(.1 + i * speed, .5, { pose: 'point', ratio: .1 });
+    assert.equal(t.controller.paused, false);
+    assert.equal(t.controller.state.state, 'neutral');
+  }
+  assert.deepEqual(t.dragEvents.map(e => e[0]), ['begin', 'cancel']);
+  assert.deepEqual(t.moves(), []); assert.deepEqual(t.zooms, []); assert.deepEqual(t.pans, []);
+  t.stable(.9, .5, { pose: 'point' }); assert.equal(t.controller.paused, false);
+  for (let i = 0; i < 39; i++) t.feed(.9, .5, { pose: 'point' });
+  assert.equal(t.controller.paused, true);
+  t.stable(.9); // Rearm; moving point must not resume either.
+  for (let i = 0; i < 20; i++) t.feed(.1 + i * speed, .5, { pose: 'point' });
+  assert.equal(t.controller.paused, true);
+  pointHand(t); assert.equal(t.controller.paused, false);
+});
+
+test('point hold tolerates small jitter around a fixed position', () => {
+  const t = setup();
+  for (let i = 0; i < 42; i++) t.feed(.5 + (i % 2 ? .003 : -.003), .5, { pose: 'point' });
+  assert.equal(t.controller.paused, true);
+});
+
+for (const cause of ['loss', 'gap', 'clock', 'identity', 'invalid', 'wrist']) test(`point ${cause} requires a fresh stationary hold`, () => {
+  const t = setup(); t.stable(.5, .5, { pose: 'point' });
+  if (cause === 'loss') t.lost();
+  if (cause === 'gap') t.advance(1500);
+  if (cause === 'clock') t.advance(-500);
+  if (cause === 'invalid') t.feed(NaN, .5, { pose: 'point' });
+  const extra = cause === 'identity' ? { identity: 'Right' } : cause === 'wrist' ? { wrist: { x: .6, y: .7 } } : {};
+  t.stable(.5, .5, { pose: 'point', ...extra });
+  assert.equal(t.controller.paused, false);
+  for (let i = 0; i < 39; i++) t.feed(.5, .5, { pose: 'point', ...extra });
+  assert.equal(t.controller.paused, true);
+});
+
+test('two-hand point hold follows the pointing hand even when opposite motion hides it in the midpoint', () => {
+  const t = setup();
+  for (let i = 0; i < 20; i++) {
+    const pointing = poseLandmarks('point').map(p => ({ x: p.x + i * .02, y: p.y }));
+    const other = poseLandmarks('open').map(p => ({ x: p.x - i * .02, y: p.y }));
+    const landmarks = i % 2 ? [other, pointing] : [pointing, other];
+    const frame = handFrame({ landmarks }, 640, 480);
+    t.feed(frame.pointer.x, frame.pointer.y, frame);
+    assert.equal(t.controller.state.state, 'neutral');
+    assert.equal(t.controller.paused, false);
+  }
+});
 
 test('point toggles once per hold; fist rearms it and resume starts without a jump', () => {
   const t = setup(); t.stable(); pointHand(t);

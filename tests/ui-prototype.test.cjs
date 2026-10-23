@@ -545,11 +545,17 @@ test('camera fist and pause toggle cancel previews, retain map and show resumabl
   `);
   assert.equal(t.run('!gesture && !hand.grab && history.length === 0 && JSON.stringify(map) === originalMap'), true);
   assert.match(t.elements.get('#handHelp').textContent, /片手のグーは待機/);
-  t.run(`for (let i = 0; i < 8; i++) poseSample('point');`);
+  t.run(`for (let i = 0; i < 20; i++) {
+    cameraSession.io.frame({ pointer: { x: .1 + i * .02, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .1, pose: 'point' }, handTime);
+    handTime += 50;
+  }`);
+  assert.equal(t.run('hand.state === "neutral" && !handController.paused && !gesture && sel === "root" && history.length === 0 && JSON.stringify(map) === originalMap'), true);
+  assert.match(t.elements.get('#handHelp').textContent, /動かしている間も待機/);
+  t.run(`for (let i = 0; i < 42; i++) poseSample('point');`);
   assert.match(t.elements.get('#handHelp').textContent, /一時停止中/);
   t.run(`stableHand(.1); stableHand(.1, .5, .1);`);
   assert.equal(t.run('hand.state === "paused" && !gesture && !!cameraSession && JSON.stringify(map) === originalMap'), true);
-  t.run(`for (let i = 0; i < 8; i++) poseSample('point'); stableHand(.1);`);
+  t.run(`for (let i = 0; i < 42; i++) poseSample('point'); stableHand(.1);`);
   assert.equal(t.run('hand.state === "ready" && sel === "root" && history.length === 0'), true);
 });
 
