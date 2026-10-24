@@ -1015,6 +1015,84 @@
   "palette.loading": "適用中…",
   "palette.failed": "アイコンを読み込めませんでした。再試行してください"
 });
+  Object.assign(en, {
+  "landing.title": "A mind map you can grow by hand",
+  "landing.description": "A mind map that runs in your browser. Add and delete nodes with the mouse, touch, or hand gestures in front of your camera.",
+  "landing.brand": "Mind Map",
+  "landing.nav": "Open the app",
+  "landing.heroA": "Raise your hand,",
+  "landing.heroB": "grow your ideas.",
+  "landing.lede": "A mind map that runs in your browser. Besides mouse and touch, you can add and delete nodes with hand gestures in front of your camera.",
+  "landing.cta": "Try the mind map",
+  "landing.ctaNote": "No sign-up. Maps are saved in this browser on your device.",
+  "landing.mapAlt": "The mind map editor. Branches in different colors grow from the central node “Things to do this weekend”.",
+  "landing.handsTitle": "✌️ adds a node.",
+  "landing.handsLede": "Press “Hand control” at the bottom and allow the camera. Hands are recognized on your device, and the video is never saved.",
+  "landing.palm": "Open hand",
+  "landing.palmDo": "Select the node nearest your palm",
+  "landing.peace": "Peace",
+  "landing.peaceDo": "Add a child to the selected node",
+  "landing.thumbDown": "Thumb down",
+  "landing.thumbDownDo": "Delete. Tilt your thumb left or right to confirm or cancel",
+  "landing.pinch": "Pinch",
+  "landing.pinchDo": "Bring the selected node to the center",
+  "landing.fist": "One fist",
+  "landing.fistDo": "Move the whole map",
+  "landing.bothFists": "Both fists",
+  "landing.bothFistsDo": "Spread to zoom out, bring together to zoom in",
+  "landing.cross": "Crossed index fingers",
+  "landing.crossDo": "Hold briefly to turn hand control off",
+  "landing.honest": "Honestly, the mouse is faster. But growing a node with a peace sign in mid-air is a little fun.",
+  "landing.moreTitle": "Everyday features, too.",
+  "landing.icons": "144 icons",
+  "landing.iconsDo": "Add illustrations of people and daily life as child nodes or images.",
+  "landing.voice": "Voice input",
+  "landing.voiceDo": "Type node text by speaking Japanese.",
+  "landing.maps": "Multiple maps and history",
+  "landing.mapsDo": "Undo/Redo is saved per map. Import and export JSON, or print on A4.",
+  "landing.iconsAlt": "The icon palette open on the right, with illustrations of people to add as a child node.",
+  "landing.end": "Start by growing one idea.",
+  "landing.endNote": "Hand control needs a device with a camera."
+});
+  Object.assign(ja, {
+  "landing.title": "手で広げるマインドマップ",
+  "landing.description": "ブラウザで動くマインドマップ。マウスやタッチに加えて、カメラに映した手のジェスチャーでもノードを追加・削除できます。",
+  "landing.brand": "マインドマップ",
+  "landing.nav": "アプリを開く",
+  "landing.heroA": "手をかざして、",
+  "landing.heroB": "考えを広げる。",
+  "landing.lede": "ブラウザで動くマインドマップです。マウスやタッチはもちろん、カメラに映した手のジェスチャーでもノードを追加・削除できます。",
+  "landing.cta": "マインドマップを試す",
+  "landing.ctaNote": "登録不要。マップは端末のブラウザ内に保存されます。",
+  "landing.mapAlt": "マインドマップの編集画面。中心の「週末にやりたいこと」から色分けされた枝が広がっている",
+  "landing.handsTitle": "✌️ でノードが増える。",
+  "landing.handsLede": "画面下の「手で操作」を押してカメラを許可するだけ。手の形は端末内で認識し、カメラ映像は保存しません。",
+  "landing.palm": "パー",
+  "landing.palmDo": "手のひらの近くのノードを選ぶ",
+  "landing.peace": "ピース",
+  "landing.peaceDo": "選んだノードに子を追加",
+  "landing.thumbDown": "親指を下",
+  "landing.thumbDownDo": "削除。親指を左右に倒して確定・取消",
+  "landing.pinch": "つまむ",
+  "landing.pinchDo": "選んだノードを画面の中央へ",
+  "landing.fist": "片手グー",
+  "landing.fistDo": "マップ全体を動かす",
+  "landing.bothFists": "両手グー",
+  "landing.bothFistsDo": "広げると縮小、寄せると拡大",
+  "landing.cross": "人差し指をクロス",
+  "landing.crossDo": "少し保つと手操作をオフ",
+  "landing.honest": "正直に言うと、速さならマウスのほうが上です。でも、空中でピースしてノードが生えるのはちょっと楽しい。",
+  "landing.moreTitle": "ふだん使いの機能も。",
+  "landing.icons": "アイコン144種",
+  "landing.iconsDo": "人物と日常生活のイラストを、子ノードや画像として追加。",
+  "landing.voice": "音声で入力",
+  "landing.voiceDo": "ノードの文字を日本語の音声で入力できます。",
+  "landing.maps": "複数マップと履歴",
+  "landing.mapsDo": "マップごとにUndo/Redoを保存。JSONの読み込み・書き出しとA4印刷にも対応。",
+  "landing.iconsAlt": "右側にアイコンパレットを開いた画面。人物のイラストを子ノードとして追加できる",
+  "landing.end": "まずは、ひとつ広げてみる。",
+  "landing.endNote": "手で操作するにはカメラ付きの端末が必要です。"
+});
   const messages = { en, ja };
   const detect = languages => /^ja(-|$)/i.test(languages?.[0] || '') ? 'ja' : 'en';
   let lang = detect(globalThis.navigator?.languages);
@@ -1023,10 +1101,10 @@
     const value = messages[lang][key] ?? en[key] ?? key;
     return typeof value === 'function' ? value(...args) : value;
   }
-  const ATTRS = { i18n: null, i18nAriaLabel: 'aria-label', i18nTitle: 'title', i18nPlaceholder: 'placeholder' };
+  const ATTRS = { i18n: null, i18nAriaLabel: 'aria-label', i18nTitle: 'title', i18nPlaceholder: 'placeholder', i18nAlt: 'alt', i18nContent: 'content' };
   function apply(doc) {
     doc.documentElement.lang = lang;
-    for (const el of doc.querySelectorAll('[data-i18n],[data-i18n-aria-label],[data-i18n-title],[data-i18n-placeholder]'))
+    for (const el of doc.querySelectorAll('[data-i18n],[data-i18n-aria-label],[data-i18n-title],[data-i18n-placeholder],[data-i18n-alt],[data-i18n-content]'))
       for (const [key, attr] of Object.entries(ATTRS)) if (el.dataset[key]) attr ? el.setAttribute(attr, t(el.dataset[key])) : el.textContent = t(el.dataset[key]);
   }
   if (globalThis.document?.querySelectorAll) apply(globalThis.document);

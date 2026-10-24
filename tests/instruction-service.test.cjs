@@ -187,3 +187,21 @@ test('disabled relay serves OFF configuration and rejects every instruction API 
   }
   assert.equal((await fetch(base+'/')).status,200);
 });
+
+test('relay serves the landing page at /landing with a CTA back to the app', async t => {
+  const {createRelay}=await import('../server/index.mjs');
+  const {server}=createRelay();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{server.closeAllConnections();server.close();});
+  const base='http://127.0.0.1:'+server.address().port;
+  const page=await fetch(base+'/landing');
+  assert.equal(page.status,200);
+  assert.match(page.headers.get('content-type'),/text\/html/);
+  const html=await page.text();
+  assert.match(html,/<a class="cta" href="\/">/);
+  for (const src of html.match(/landing\/[\w-]+\.webp/g)) {
+    const image=await fetch(base+'/'+src);
+    assert.equal(image.status,200);
+    assert.equal(image.headers.get('content-type'),'image/webp');
+  }
+});

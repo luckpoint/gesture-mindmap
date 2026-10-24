@@ -37,6 +37,13 @@ test('every data-i18n key in the page exists', () => {
   for (const key of keys) assert.ok(Object.hasOwn(en, key), key);
 });
 
+test('every data-i18n key in the landing page exists in both languages', () => {
+  const landing = readFileSync(join(root, 'landing.html'), 'utf8');
+  const keys = [...landing.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g)].map(m => m[1]);
+  assert.ok(keys.length > 30);
+  for (const key of keys) assert.ok(Object.hasOwn(en, key) && Object.hasOwn(ja, key), key);
+});
+
 test('user-facing code keeps Japanese only in the dictionary', () => {
   const files = [];
   const walk = dir => {

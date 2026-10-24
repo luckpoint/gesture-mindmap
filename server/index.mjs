@@ -6,7 +6,7 @@ import { CodexClient } from './codex-client.mjs';
 import { InstructionService, ServiceError } from './instruction-service.mjs';
 
 const staticRoot = fileURLToPath(new URL('../ui-prototype/', import.meta.url));
-const types = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.wasm': 'application/wasm', '.task': 'application/octet-stream' };
+const types = { '.png': 'image/png', '.webp': 'image/webp', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.wasm': 'application/wasm', '.task': 'application/octet-stream' };
 const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
 function body(req) {
   return new Promise((resolve, reject) => {
@@ -57,7 +57,7 @@ export function createRelay(client, service, { instructions = false } = {}) {
       if (url.pathname.startsWith('/api/')) { json(res, 404, { message: 'APIが見つかりません' }); return; }
       if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405); res.end(); return; }
       let path;
-      try { path = await realpath(resolve(staticRoot, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname))); }
+      try { path = await realpath(resolve(staticRoot, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : extname(url.pathname) ? url.pathname : url.pathname + '.html'))); }
       catch { res.writeHead(404); res.end('Not found'); return; }
       if (!path.startsWith(resolve(staticRoot) + sep)) { res.writeHead(404); res.end(); return; }
       const data = await readFile(path); res.writeHead(200, { 'Content-Type': types[extname(path)] || 'application/octet-stream', 'Cache-Control': 'no-cache' }); res.end(req.method === 'HEAD' ? undefined : data);
