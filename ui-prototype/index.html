@@ -1305,8 +1305,8 @@ function relatives(id) {
 }
 const along = (key, dx, dy) => ({ ArrowRight: [dx, dy], ArrowLeft: [-dx, dy], ArrowDown: [dy, dx], ArrowUp: [-dy, dx] })[key];
 const opposite = { ArrowRight: 'ArrowLeft', ArrowLeft: 'ArrowRight', ArrowDown: 'ArrowUp', ArrowUp: 'ArrowDown' };
-function nearestInDirection(key, from, nodes) {
-  for (const spread of [1, 6]) {
+function nearestInDirection(key, from, nodes, spreads = [1, 6]) {
+  for (const spread of spreads) {
     let best = null, bs = Infinity;
     for (const n of nodes) {
       if (n.id === from.id) continue;
@@ -1328,7 +1328,7 @@ function branchKey(id) {
 function treeTarget(key, s) {
   const out = branchKey(s.id), parent = map.nodes[s.parent];
   const angle = (n, origin) => { const [a, b] = along(out, n.x - origin.x, n.y - origin.y); return Math.atan2(b, a); };
-  if (key === opposite[out]) return parent.id;
+  if (key === opposite[out]) return nearestInDirection(key, s, [parent, ...kids(parent.id)], [1]) ?? parent.id;
   if (key === out) {
     const children = kids(s.id);
     if (children.some(n => n.id === lastChild.get(s.id))) return lastChild.get(s.id);
