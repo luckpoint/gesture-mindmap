@@ -773,14 +773,26 @@ test('thumb-down opens confirmation once, permits hand choice and fresh pinch co
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
 
-test('Enter edits the selection, Shift+Enter adds a sibling', () => {
+test('Space edits with all selected, Shift+Space and F2 edit at the end, Enter adds a sibling', () => {
   const t = setup({ renderUI: true }); t.run(`sel = 'a';`);
   const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
-  press('Enter');
+  const collapsed = [];
+  t.context.document.createRange = () => ({ selectNodeContents() {}, collapse(toStart) { collapsed.push(toStart); } });
+  press(' ');
   assert.equal(t.run(`editing.id === 'a' && !editing.isNew`), true);
+  assert.deepEqual(collapsed, []);
   t.run(`cancelEdit();`);
-  press('Enter', { shiftKey: true });
+  press(' ', { shiftKey: true });
+  assert.deepEqual(collapsed, [false]);
+  t.run(`cancelEdit();`);
+  press('F2');
+  assert.deepEqual(collapsed, [false, false]);
+  t.run(`cancelEdit();`);
+  press('Enter');
   assert.equal(t.run(`editing.isNew && map.nodes[editing.id].parent === map.nodes.a.parent`), true);
+  t.run(`cancelEdit(); sel = map.root;`);
+  press('Enter');
+  assert.equal(t.run(`editing.isNew && map.nodes[editing.id].parent === map.root`), true);
 });
 
 test('view and screen shortcuts zoom, focus the prompt and open the key list', () => {

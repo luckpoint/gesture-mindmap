@@ -361,7 +361,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></symbol>
 </svg>
 
-<main id="viewport" tabindex="0" aria-label="マップ。Tabで子を追加、Enterで兄弟を追加、矢印で選択を移動">
+<main id="viewport" tabindex="0" aria-label="マップ。Tabで子を追加、Enterで兄弟を追加、Spaceで書きかえ、矢印で選択を移動">
   <div id="world">
     <svg id="edges" width="1" height="1"></svg>
     <div id="nodes"></div>
@@ -466,9 +466,10 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <dialog class="keys-dialog" id="keysDialog" aria-labelledby="keysTitle">
   <h2 id="keysTitle">キーボードショートカット</h2>
   <dl>
-    <dt>Enter / F2</dt><dd>書きかえ</dd>
+    <dt>Space</dt><dd>書きかえ（全選択）</dd>
+    <dt>⇧Space / F2</dt><dd>書きかえ（行末から）</dd>
+    <dt>Enter</dt><dd>兄弟を追加</dd>
     <dt>Tab</dt><dd>子を追加</dd>
-    <dt>⇧Enter</dt><dd>兄弟を追加</dd>
     <dt>Delete</dt><dd>消す</dd>
     <dt>矢印</dt><dd>選択を移動（⌥で位置を動かす）</dd>
     <dt>⌘Z / ⇧⌘Z</dt><dd>元に戻す / やり直す</dd>
@@ -1157,7 +1158,7 @@ function positionMenu() {
 
 /* ---------- selection & editing ---------- */
 function select(id) { sel = id; render(); }
-function startEdit(id, isNew = false) {
+function startEdit(id, isNew = false, atEnd = false) {
   if (refuseReadOnly()) return;
   interruptHand();
   editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
@@ -1169,6 +1170,7 @@ function startEdit(id, isNew = false) {
   t.focus();
   const r = document.createRange();
   r.selectNodeContents(t);
+  if (atEnd) r.collapse(false);
   getSelection().removeAllRanges();
   getSelection().addRange(r);
 }
@@ -1790,8 +1792,9 @@ addEventListener('keydown', e => {
     return;
   }
   if (k === 'Tab' && !e.shiftKey) { e.preventDefault(); addChildAndEdit(sel || map.root); }
-  else if (k === 'Enter' && e.shiftKey) { e.preventDefault(); addSiblingAndEdit(); }
-  else if ((k === 'Enter' || k === 'F2') && sel) { e.preventDefault(); startEdit(sel); }
+  else if (k === 'Enter') { e.preventDefault(); addSiblingAndEdit(); }
+  else if (k === ' ' && sel) { e.preventDefault(); startEdit(sel, false, e.shiftKey); }
+  else if (k === 'F2' && sel) { e.preventDefault(); startEdit(sel, false, true); }
   else if ((k === 'Delete' || k === 'Backspace') && sel && sel !== map.root) { e.preventDefault(); removeNode(sel); }
   else if (k.startsWith('Arrow')) { e.preventDefault(); e.altKey ? nudge(k) : navigate(k); }
   else if (e.code === 'Digit1' && e.shiftKey) { e.preventDefault(); fitAll(); }
