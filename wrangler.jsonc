@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lp-mindmap",
+  "compatibility_date": "2026-10-24",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./ui-prototype",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+  "env": {
+    "production": {
+      "name": "lp-mindmap",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "mindmap.luckpoint.jp", "custom_domain": true }
+      ]
+    },
+    "staging": {
+      "name": "lp-mindmap-stg",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "mindmap-stg.luckpoint.jp", "custom_domain": true }
+      ]
+    }
+  }
+}
