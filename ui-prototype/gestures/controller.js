@@ -156,7 +156,7 @@
           if (now - this.pinchAt >= c.stable) {
             this.closed = true; this.pinchAt = null; s.x = 0; s.y = 0;
             s.grab = this.io.begin?.(s.x, s.y) || null;
-            // Apparent palm length approximates camera distance. Freeze the
+            // Apparent palm size approximates camera distance. Freeze the
             // correction per grab so depth/rotation noise cannot pump the gain.
             this.dragScale = Number.isFinite(frame.handSize) && frame.handSize > 0
               ? Math.max(.6, Math.min(1.6, c.referenceHandSize / frame.handSize)) : 1;
@@ -342,41 +342,93 @@
     }
 
   }
-  function singleHandFrame(result, width, height, index) {
+  const length3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  const valid3D = points => points?.length === 21 &&
+    points.every(p => [p?.x, p?.y, p?.z].every(Number.isFinite));
+  function palmSize(points, stable) {
+    const primary = length3(points[0], points[9]);
+    if (!stable) return primary;
+    // Width is converted to a palm-length equivalent. A median limits the
+    // influence of one noisy landmark; depth keeps tilted palms measurable.
+    const lengths = [5, 9, 13, 17].map(i => length3(points[0], points[i]));
+    lengths.push(length3(points[5], points[17]) * 1.25);
+    const usable = lengths.filter(v => v > 1e-8).sort((a, b) => a - b);
+    if (!usable.length) return 0;
+    const mid = Math.floor(usable.length / 2);
+    return usable.length % 2 ? usable[mid] : (usable[mid - 1] + usable[mid]) / 2;
+  }
+  function bendAngle(a, b, c) {
+    const u = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+    const v = { x: c.x - b.x, y: c.y - b.y, z: c.z - b.z };
+    const norm = Math.hypot(u.x, u.y, u.z) * Math.hypot(v.x, v.y, v.z);
+    if (norm < 1e-10) return null;
+    return Math.acos(Math.max(-1, Math.min(1, (u.x * v.x + u.y * v.y + u.z * v.z) / norm))) * 180 / Math.PI;
+  }
+  function singleHandFrame(result, width, height, index, options) {
     const p = result.landmarks?.[index], category = result.handedness?.[index]?.[0];
     if (!p || p.length !== 21 || ![width, height].every(v => Number.isFinite(v) && v > 0) ||
         !p.every(v => Number.isFinite(v?.x) && Number.isFinite(v?.y))) return null;
     const distance = (a, b) => Math.hypot((a.x - b.x) * width, (a.y - b.y) * height);
-    const size = distance(p[0], p[9]);
+    const hasDepth = options.depthPinch !== false && valid3D(p);
+    // MediaPipe z has x's scale: use image pixels for all three axes.
+    // A partial/invalid depth set falls back as a whole, never per landmark.
+    const image = p.map(v => ({ x: v.x * width, y: v.y * height, z: hasDepth ? v.z * width : 0 }));
+    const stableSize = options.stableHandSize !== false;
+    const size = palmSize(image, stableSize);
     if (size < 1) return null;
+    const world = result.worldLandmarks?.[index];
+    const worldSize = options.depthPinch !== false && valid3D(world) ? palmSize(world, stableSize) : 0;
+    // Never combine meters with image pixels. World ratios/angles are computed
+    // entirely in world space, with normalized image depth as the fallback.
+    const geometry = worldSize > 1e-6 ? world : image;
+    const geometrySize = worldSize > 1e-6 ? worldSize : size;
+    const ratio2D = distance(p[4], p[8]) / size;
+    const ratio3D = length3(geometry[4], geometry[8]) / geometrySize;
+    const ratio = Math.max(ratio2D, ratio3D);
     // Finger flexion changes the pinch ratio but must not steer navigation.
     const palm = [0, 5, 9, 13, 17].map(i => p[i]);
     const pointer = { x: palm.reduce((sum, v) => sum + v.x, 0) / palm.length,
       y: palm.reduce((sum, v) => sum + v.y, 0) / palm.length };
-    // Compare joint distances in image pixels, independent of hand rotation
-    // and handedness. Ignore the thumb so a relaxed fist is still neutral.
     const fingers = [5, 9, 13, 17].map(base => {
-      const pip = p[base + 1], dip = p[base + 2], tip = p[base + 3];
-      const ax = (pip.x - p[base].x) * width, ay = (pip.y - p[base].y) * height;
-      const bx = (tip.x - dip.x) * width, by = (tip.y - dip.y) * height;
-      const straight = (ax * bx + ay * by) / (Math.hypot(ax, ay) * Math.hypot(bx, by) || 1);
-      return { extended: straight > .7 && distance(tip, p[0]) > distance(pip, p[0]) + size * .15,
-        folded: distance(tip, p[0]) <= distance(pip, p[0]) * 1.15 };
+      const mcp = geometry[base], pip = geometry[base + 1], dip = geometry[base + 2], tip = geometry[base + 3];
+      const ax = pip.x - mcp.x, ay = pip.y - mcp.y, az = pip.z - mcp.z;
+      const bx = tip.x - dip.x, by = tip.y - dip.y, bz = tip.z - dip.z;
+      const straight = (ax * bx + ay * by + az * bz) /
+        (Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz) || 1);
+      const pipBend = bendAngle(mcp, pip, dip), dipBend = bendAngle(pip, dip, tip);
+      const anglesValid = pipBend !== null && dipBend !== null;
+      const useAngles = options.jointAngles !== false;
+      return { pipBend, dipBend,
+        extended: straight > .7 && length3(tip, geometry[0]) > length3(pip, geometry[0]) + geometrySize * .15 &&
+          (!useAngles || (anglesValid && pipBend <= 40 && dipBend <= 40)),
+        folded: length3(tip, geometry[0]) <= length3(pip, geometry[0]) * 1.15 &&
+          (!useAngles || (anglesValid && Math.max(pipBend, dipBend) >= 55)) };
     });
-    const thumbDown = fingers.every(f => f.folded) && (p[4].y - p[2].y) * height > size * .45 &&
+    // Evaluate extension in the selected geometry space, independently of the
+    // screen-space direction. A bent/degenerate CMC chain must not delete.
+    const mcpBend = bendAngle(geometry[1], geometry[2], geometry[3]);
+    const ipBend = bendAngle(geometry[2], geometry[3], geometry[4]);
+    const thumbExtended = mcpBend !== null && ipBend !== null && mcpBend <= 40 && ipBend <= 40 &&
+      length3(geometry[1], geometry[4]) > geometrySize * .5;
+    const thumbPointsDown = (p[4].y - p[2].y) * height > size * .45 &&
       Math.abs((p[4].x - p[2].x) * width) < (p[4].y - p[2].y) * height * .7 &&
       (p[4].y - p[3].y) * height > size * .15 && distance(p[4], p[5]) > size * .55;
+    const thumbDown = fingers.every(f => f.folded) && thumbPointsDown &&
+      (options.thumbExtension === false || thumbExtended);
     const pose = thumbDown ? 'thumbDown'
       : fingers[0].extended && fingers[1].extended && fingers.slice(2).every(f => f.folded) ? 'peace'
       : fingers[0].extended && fingers.slice(1).every(f => f.folded) ? 'point'
       : fingers.every(f => f.folded) ? 'fist' : null;
-    return { pointer, tip: p[8], wrist: p[0], handSize: size / width, ratio: distance(p[4], p[8]) / size,
+    return { pointer, tip: p[8], wrist: p[0], handSize: size / width, ratio,
+      measurements: { ratio2D, ratio3D, palmSize: size,
+        space: worldSize > 1e-6 ? 'world' : hasDepth ? 'image3D' : 'image2D', fingers,
+        thumb: { mcpBend, ipBend, extended: thumbExtended, pointsDown: thumbPointsDown } },
       pose, identity: category?.score >= .8 ? category.categoryName : null };
   }
-  function handFrame(result, width, height) {
-    const first = singleHandFrame(result, width, height, 0);
+  function handFrame(result, width, height, options = {}) {
+    const first = singleHandFrame(result, width, height, 0, options);
     if (!first || result.landmarks.length < 2) return first;
-    const second = singleHandFrame(result, width, height, 1);
+    const second = singleHandFrame(result, width, height, 1, options);
     if (!second) return null;
     // Palm centers avoid changes caused by finger flexion. Image-width units
     // preserve the aspect ratio; distance is independent of detection order.

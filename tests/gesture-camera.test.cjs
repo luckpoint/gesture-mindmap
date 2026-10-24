@@ -184,11 +184,27 @@ test('300ms worker results survive the watchdog and arm directional navigation',
 test('HTML and camera worker use the same revision to avoid mixing cached code', async () => {
   const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8');
   const scripts = [...html.matchAll(/<script src="(gestures\/[^" ]+)"/g)].map(m => new URL(m[1], 'http://localhost/'));
-  assert.equal(scripts.length, 2);
+  assert.equal(scripts.length, 3);
   const revisions = scripts.map(url => url.searchParams.get('v'));
   assert.ok(revisions[0]);
-  assert.equal(revisions[0], revisions[1]);
+  assert.ok(revisions.every(v => v === revisions[0]));
   const t = setup(); await t.session.start();
   assert.equal(new URL(t.workers[0].url, 'http://localhost/').searchParams.get('v'), revisions[0]);
   t.session.stop();
+});
+
+
+test('debug receives raw results and clears on tracking timeout and stop', async () => {
+  const t = setup(), debug = [];
+  t.session.io.debug = (...args) => debug.push(args);
+  await t.session.start();
+  const result = { landmarks: [] };
+  t.workers[0].onmessage({ data: { type: 'result', result, inferenceMs: 10 } });
+  assert.equal(debug[0][0], result);
+  assert.equal(debug[0][1], 640); assert.equal(debug[0][2], 480);
+  t.advance(TRACKING_TIMEOUT_MS + 1); [...t.intervals.values()][0]();
+  assert.equal(debug.at(-1)[0], null);
+  t.session.stop(); assert.equal(debug.at(-1)[0], null);
+  const count = debug.length;
+  t.session.result(result, 10); assert.equal(debug.length, count);
 });

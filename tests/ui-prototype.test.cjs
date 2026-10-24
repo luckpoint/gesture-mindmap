@@ -44,6 +44,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
         closest() { return this.contentEditable === 'plaintext-only' ? this : null; } }, attributes: {}, children: [], isConnected: false,
       contains(el) { return el === this || this.children.includes(el); },
       offsetWidth: 120, offsetHeight: 50,
+      getContext: () => ({ clearRect() {} }),
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
       append(...children) { for (const child of children) { this.children.push(child); child.isConnected = true; } },
       replaceChildren(...children) { this.children = children; },
@@ -82,6 +83,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   // Skip only the initial screen draw; all production handlers are registered.
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/debug.js'), 'utf8'), context);
   for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   for (const file of ['library.js', 'locks.js', 'history.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
@@ -1426,4 +1428,19 @@ test('read-only tabs can print without changing the map or history', async () =>
   t.windowHandlers.get('beforeprint')(); t.windowHandlers.get('afterprint')();
   assert.equal(printed, 1);
   assert.equal(t.run(`JSON.stringify(map) === before && history.length === 1 && future.length === 0`), true);
+});
+
+
+test('camera diagnostics toggle exposes and hides the skeleton and values', () => {
+  const t = setup();
+  t.elements.get('#handDebugToggle').onclick();
+  assert.equal(t.elements.get('#handSkeleton').hidden, false);
+  assert.equal(t.elements.get('#handDebugValues').hidden, false);
+  assert.equal(t.elements.get('#handDebugToggle').attributes['aria-pressed'], 'true');
+  t.run("toggleHand(); cameraSession.io.debug(null);");
+  assert.equal(t.elements.get('#handDebugValues').textContent, '手を検出していません');
+  t.elements.get('#handDebugToggle').onclick();
+  assert.equal(t.elements.get('#handSkeleton').hidden, true);
+  assert.equal(t.elements.get('#handDebugValues').hidden, true);
+  assert.equal(t.elements.get('#handDebugToggle').attributes['aria-pressed'], 'false');
 });

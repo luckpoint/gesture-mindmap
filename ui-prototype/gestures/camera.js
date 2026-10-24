@@ -29,7 +29,7 @@
         this.io.status(tr('cam.preparing'));
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261024-i18n-1');
+          this.worker = new Worker('gestures/hand-worker.js?v=20261024-hand-debug-2');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
             this.initTimer = setTimeout(() => reject(new Error(tr('cam.initTimeout'))), 30000);
@@ -55,7 +55,9 @@
         this.lastResult = performance.now();
         this.watchdog = setInterval(() => {
           const elapsed = performance.now() - this.lastResult;
-          if (elapsed > root.HandGestures.TRACKING_TIMEOUT_MS) this.io.frame(null, performance.now());
+          if (elapsed > root.HandGestures.TRACKING_TIMEOUT_MS) {
+            this.io.frame(null, performance.now()); this.io.debug?.(null);
+          }
           if (elapsed > 5000) this.fail(new Error(tr('cam.unresponsive')));
         }, 100);
         this.loop();
@@ -66,10 +68,11 @@
       this.lastResult = performance.now();
       const sample = root.HandGestures.handFrame(result, this.video.videoWidth, this.video.videoHeight);
       this.io.frame(sample, this.lastResult);
+      this.io.debug?.(result, this.video.videoWidth, this.video.videoHeight);
       const sentAt = this.sentAt;
       requestAnimationFrame(() => {
         if (!this.closed) this.io.metrics({ mode: this.mode, inferenceMs, displayMs: performance.now() - sentAt,
-          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261024-i18n-1" });
+          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261024-hand-debug-2" });
       });
       this.busy = false;
     }
@@ -109,6 +112,7 @@
     stop() {
       if (this.closed) return;
       this.closed = true;
+      this.io.debug?.(null);
       clearTimeout(this.initTimer); clearInterval(this.watchdog); cancelAnimationFrame(this.raf);
       this.rejectInit?.(new Error(tr('cam.stopped'))); this.rejectInit = null;
       this.stream?.getTracks().forEach(t => { t.onended = null; t.stop(); });

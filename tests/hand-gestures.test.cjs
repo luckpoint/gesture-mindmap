@@ -526,6 +526,7 @@ test('landmarks recognize peace and downward thumb separately from point and fis
   const peace = poseLandmarks('point');
   for (const index of [10, 11, 12]) peace[index] = { x: peace[9].x, y: ({ 10: .48, 11: .4, 12: .3 })[index] };
   const down = poseLandmarks('fist');
+  down[1] = { x: .5, y: .4 };
   down[2] = { x: .5, y: .55 }; down[3] = { x: .5, y: .72 }; down[4] = { x: .5, y: .95 };
   for (const [points, pose] of [[peace, 'peace'], [down, 'thumbDown']]) {
     for (const mirror of [false, true]) {
@@ -611,4 +612,170 @@ test('landmarks require two fists for pan and use an order-independent palm midp
     const mixed = handFrame({ landmarks: [left, poseLandmarks(pose)] }, 640, 480);
     assert.equal(mixed.pose, pose === 'point' ? 'point' : 'fist');
   }
+});
+
+// Geometry fixtures use pixel-equivalent 3D coordinates, then normalize x/y/z
+// separately like MediaPipe. This keeps rotations meaningful on non-square video.
+function geometryHand(pose = 'open') {
+  return poseLandmarks(pose).map(p => ({ x: p.x * 640, y: p.y * 480, z: 0 }));
+}
+function geometryResult(points, world) {
+  return { landmarks: [points.map(p => ({ x: p.x / 640, y: p.y / 480, z: p.z / 640 }))],
+    ...(world ? { worldLandmarks: [world] } : {}) };
+}
+function rotateHand(points, angle, axis = 'y') {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return points.map(p => {
+    const x = p.x - 320, y = p.y - 288;
+    return axis === 'y' ? { x: 320 + x * c + p.z * s, y: p.y, z: -x * s + p.z * c }
+      : { x: p.x, y: 288 + y * c - p.z * s, z: y * s + p.z * c };
+  });
+}
+
+test('joint angles reject a bent index with parallel first and last segments', () => {
+  const points = poseLandmarks('point');
+  points[6] = { x: .38, y: .5 }; points[7] = { x: .48, y: .45 }; points[8] = { x: .48, y: .35 };
+  const result = { landmarks: [points] };
+  assert.equal(handFrame(result, 640, 480, { jointAngles: false }).pose, 'point');
+  const frame = handFrame(result, 640, 480);
+  assert.equal(frame.pose, null);
+  assert.ok(frame.measurements.fingers[0].pipBend > 55);
+});
+
+test('short straight fingers near the wrist are not mistaken for a fist', () => {
+  const points = poseLandmarks('fist');
+  for (const base of [5, 9, 13, 17]) {
+    for (const [offset, x] of [[0, .38], [1, .30], [2, .29], [3, .28]]) points[base + offset] = { x, y: .6 };
+  }
+  assert.equal(handFrame({ landmarks: [points] }, 640, 480, { jointAngles: false }).pose, 'fist');
+  assert.equal(handFrame({ landmarks: [points] }, 640, 480).pose, null);
+});
+
+for (const pose of ['fist', 'point', 'peace', 'open']) test(`3D ${pose} survives tilt, mirroring and scale`, () => {
+  const points = geometryHand(pose === 'peace' ? 'point' : pose);
+  if (pose === 'peace') for (const i of [10, 11, 12]) points[i] = geometryHand()[i];
+  for (const axis of ['x', 'y']) for (const angle of [0, .7, 1.4]) for (const scale of [.5, 1, 1.5]) for (const mirror of [1, -1]) {
+    const rotated = rotateHand(points, angle, axis).map(p => ({ x: 320 + (p.x - 320) * scale * mirror,
+      y: 288 + (p.y - 288) * scale, z: p.z * scale }));
+    assert.equal(handFrame(geometryResult(rotated), 640, 480).pose, pose === 'open' ? null : pose);
+  }
+});
+
+for (const source of ['image3D', 'world']) test(`${source} distinguishes depth separation from an actual pinch`, () => {
+  const points = geometryHand(); points[4] = { ...points[8] };
+  const world = points.map(p => ({ x: p.x / 1000, y: p.y / 1000, z: p.z / 1000 }));
+  if (source === 'world') world[4].z += .12;
+  else points[4].z += 120;
+  const result = geometryResult(points, source === 'world' ? world : null);
+  const apart = handFrame(result, 640, 480);
+  assert.equal(apart.measurements.ratio2D, 0);
+  assert.ok(apart.ratio > .55);
+  assert.equal(apart.measurements.space, source);
+  assert.equal(handFrame(result, 640, 480, { depthPinch: false }).ratio, 0);
+  points[4].z = points[8].z; world[4] = { ...world[8] };
+  assert.equal(handFrame(geometryResult(points, source === 'world' ? world : null), 640, 480).ratio, 0);
+});
+
+test('depth overlap cannot start a drag or confirm a dialog, and real contact still can', () => {
+  const points = geometryHand(); points[4] = { ...points[8], z: 120 };
+  const apart = handFrame(geometryResult(points), 640, 480);
+  const t = setup(); t.stable(); t.stable(.5, .5, apart);
+  assert.equal(t.dragEvents.length, 0);
+  t.dialog(true); t.stable(.5, .5, apart); holdPose(t, null, apart);
+  assert.equal(t.dialogEvents.length, 0);
+  t.dialog(false); t.stable(); points[4].z = points[8].z;
+  t.stable(.5, .5, handFrame(geometryResult(points), 640, 480));
+  assert.equal(t.controller.state.grab, 'a');
+});
+
+test('palm size and pinch ratios stay invariant under depth rotation and distance scaling', () => {
+  const points = geometryHand(); points[4] = { ...points[8], x: points[8].x + 20 };
+  const baseline = handFrame(geometryResult(points), 640, 480);
+  for (const axis of ['x', 'y']) for (const angle of [.5, 1.3, Math.PI / 2]) for (const scale of [.5, 2]) {
+    const transformed = rotateHand(points, angle, axis).map(p => ({ x: p.x * scale, y: p.y * scale, z: p.z * scale }));
+    const frame = handFrame(geometryResult(transformed), 640, 480);
+    assert.ok(Math.abs(frame.handSize / scale - baseline.handSize) < 1e-8);
+    assert.ok(Math.abs(frame.ratio - baseline.ratio) < 1e-8);
+  }
+});
+
+test('multiple palm lengths limit a noisy middle MCP and retain the old size for comparison', () => {
+  const points = geometryHand();
+  const before = handFrame(geometryResult(points), 640, 480);
+  points[9].y -= 180;
+  const after = handFrame(geometryResult(points), 640, 480);
+  const legacy = handFrame(geometryResult(points), 640, 480, { stableHandSize: false });
+  assert.ok(Math.abs(after.handSize / before.handSize - 1) < .15);
+  assert.ok(legacy.handSize > before.handSize * 2);
+});
+
+test('invalid world and partial depth fall back to a complete usable coordinate space', () => {
+  const points = geometryHand();
+  const result = geometryResult(points, points.map(p => ({ ...p })));
+  result.worldLandmarks[0][7].z = NaN;
+  assert.equal(handFrame(result, 640, 480).measurements.space, 'image3D');
+  delete result.landmarks[0][8].z;
+  const frame = handFrame(result, 640, 480);
+  assert.equal(frame.measurements.space, 'image2D');
+  assert.ok(Number.isFinite(frame.ratio));
+  result.worldLandmarks[0] = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
+  assert.equal(handFrame(result, 640, 480).measurements.space, 'image2D');
+  for (const i of [6, 7, 8]) result.landmarks[0][i] = { ...result.landmarks[0][5] };
+  assert.equal(handFrame(result, 640, 480).measurements.fingers[0].extended, false);
+});
+
+test('world measurements do not depend on meter scale or normalized image aspect ratio', () => {
+  const points = geometryHand(); points[4] = { ...points[8], z: 20 };
+  const world = points.map(p => ({ x: p.x / 1000, y: p.y / 1000, z: p.z / 1000 }));
+  const first = handFrame(geometryResult(points, world), 640, 480);
+  const second = handFrame(geometryResult(points, world.map(p => ({ x: p.x * 100, y: p.y * 100, z: p.z * 100 }))), 640, 480);
+  assert.ok(Math.abs(first.ratio - second.ratio) < 1e-8);
+  const result = geometryResult(points, world);
+  result.landmarks[0] = result.landmarks[0].map(p => ({ x: p.x, y: p.y * .75, z: p.z }));
+  assert.ok(Math.abs(handFrame(result, 640, 640).ratio - first.ratio) < 1e-8);
+});
+
+function downwardThumb() {
+  const points = geometryHand('fist');
+  for (const [id, y] of [[1, 192], [2, 264], [3, 346], [4, 456]]) points[id] = { x: 320, y, z: 0 };
+  return points;
+}
+
+test('straight downward thumb survives mirroring, distance and moderate 3D tilt', () => {
+  for (const axis of ['x', 'y']) for (const angle of [0, .6, -.6]) for (const mirror of [1, -1]) for (const scale of [.5, 1.5]) {
+    const points = rotateHand(downwardThumb(), angle, axis).map(p => ({
+      x: 320 + (p.x - 320) * mirror * scale, y: 288 + (p.y - 288) * scale, z: p.z * scale }));
+    const frame = handFrame(geometryResult(points), 640, 480);
+    assert.equal(frame.pose, 'thumbDown');
+    assert.equal(frame.measurements.thumb.extended, true);
+  }
+});
+
+test('CMC and IP bends reject apparent downward thumbs and cannot request deletion', () => {
+  for (const change of [p => { p[1].x += 120; }, p => { p[3].x += 55; },
+    p => { p[1] = { ...p[2] }; }, p => { p[3].z = 150; }]) {
+    const points = downwardThumb(); change(points);
+    const result = geometryResult(points);
+    assert.equal(handFrame(result, 640, 480, { thumbExtension: false }).pose, 'thumbDown');
+    const frame = handFrame(result, 640, 480);
+    assert.equal(frame.pose, 'fist');
+    assert.equal(frame.measurements.thumb.extended, false);
+    const t = setup(); holdPose(t, frame.pose, frame);
+    assert.deepEqual(t.commands, []);
+  }
+});
+
+test('thumb extension uses world geometry and screen direction stays separate', () => {
+  const points = downwardThumb();
+  const world = points.map(p => ({ x: p.x / 1000, y: p.y / 1000, z: 0 }));
+  world[1].z = .15;
+  const frame = handFrame(geometryResult(points, world), 640, 480);
+  assert.equal(frame.measurements.space, 'world');
+  assert.equal(frame.pose, 'fist');
+  assert.equal(frame.measurements.thumb.pointsDown, true);
+  const sideways = downwardThumb().map(p => ({ x: 320 + p.y - 288, y: 288 - (p.x - 320), z: p.z }));
+  const side = handFrame(geometryResult(sideways), 640, 480);
+  assert.equal(side.measurements.thumb.extended, true);
+  assert.equal(side.measurements.thumb.pointsDown, false);
+  assert.equal(side.pose, 'fist');
 });
