@@ -556,6 +556,14 @@ test('arrows walk a radial branch by tree role: inward to the parent, outward to
   assert.deepEqual(['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown'].map(k => press(k)), ['study', 'social', 'japanese', 'science']);
 });
 
+test('cross keys on a top-level branch stay inside it instead of jumping past the root', () => {
+  const { t, press } = radialBranch();
+  assert.equal(press('ArrowUp', 'a'), 'study');
+  assert.equal(press('ArrowDown', 'a'), 'science');
+  t.run(`for (const id of ['math', 'study', 'social', 'japanese', 'science']) delete map.nodes[id]; invalidateTree();`);
+  assert.equal(press('ArrowUp', 'a'), 'a');
+});
+
 test('outward returns to the child last visited', () => {
   const { press } = radialBranch();
   press('ArrowLeft', 'math');

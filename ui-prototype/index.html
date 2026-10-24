@@ -1334,6 +1334,7 @@ function treeTarget(key, s) {
     if (children.some(n => n.id === lastChild.get(s.id))) return lastChild.get(s.id);
     return [...children].sort((a, b) => Math.abs(angle(a, s)) - Math.abs(angle(b, s)))[0]?.id ?? null;
   }
+  if (parent.id === map.root) return nearestInDirection(key, s, [...subtree(s.id)].map(id => map.nodes[id])) ?? s.id;
   const siblings = [...kids(parent.id)].sort((a, b) => angle(a, parent) - angle(b, parent));
   const step = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
   return siblings[siblings.indexOf(s) + step]?.id ?? s.id;
