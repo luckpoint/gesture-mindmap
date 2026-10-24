@@ -577,6 +577,11 @@ test('outward returns to the child last visited', () => {
   assert.equal(press('ArrowRight'), 'math');
 });
 
+test('outward on a leaf steps to the next sibling like the down key', () => {
+  const { press } = radialBranch();
+  assert.equal(press('ArrowRight', 'study'), 'social');
+});
+
 test('arrows fall back to the nearest node in a wider cone instead of a dead end', () => {
   const { press } = radialBranch();
   assert.equal(press('ArrowRight', 'science'), 'japanese');
