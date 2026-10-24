@@ -139,6 +139,33 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "nodeId",
+              "otherId"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "swap_nodes"
+                ]
+              },
+              "nodeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "otherId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              }
+            }
           }
         ]
       }

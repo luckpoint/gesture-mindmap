@@ -241,6 +241,23 @@ test('reparent reuses its exclusion set across pointer moves and redraws', () =>
   assert.equal(run('mode'), null);
 });
 
+test('dropping a node on a sibling swaps their subtrees in one undo step', () => {
+  const { run, elements } = setup();
+  const handlers = elements.get('#viewport').handlers, before = run('JSON.stringify(map)');
+  handlers.pointerdown(mouse(310, -130, 'a'));
+  handlers.pointermove(mouse(-320, -110));
+  assert.equal(run('gesture.swap'), 'b');
+  handlers.pointerup(mouse(-320, -110));
+  assert.equal(run(`[map.nodes.a.x, map.nodes.a.y, map.nodes.b.x, map.nodes.b.y].join()`), '-320,-110,310,-130');
+  assert.equal(run('map.nodes.a1.x < map.nodes.a.x && history.length'), 1);
+  run('undo();');
+  assert.equal(run('JSON.stringify(map)'), before);
+  handlers.pointerdown(mouse(310, -130, 'a'));
+  handlers.pointermove(mouse(-540, -200));
+  handlers.pointerup(mouse(-540, -200));
+  assert.equal(run('map.nodes.a.x === -540 && map.nodes.b.x === -320'), true);
+});
+
 test('205 drags retain only the latest 200 snapshots and support undo and redo', () => {
   const { run, elements } = setup();
   const handlers = elements.get('#viewport').handlers;

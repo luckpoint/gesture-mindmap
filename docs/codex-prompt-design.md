@@ -183,6 +183,7 @@ app-serverプロセスと接続は再利用する。一つの指示に対する�
 | `update_node` | `nodeId, text` | 文字列を書きかえ |
 | `reparent_node` | `nodeId, parentId` | 親を変える。座標は保持 |
 | `delete_node` | `nodeId, scope` | `scope` は `single` または `subtree` |
+| `swap_nodes` | `nodeId, otherId` | 同じ親を持つ2ノードの位置を子孫ごと入れ替える。親を中心に回転させ、子の広がる向きを保つ |
 
 操作配列は最大100件。型ごとに `additionalProperties: false` とし、文字列長・空欄・ID形式・statusと操作数の組み合わせも検証する。JSON Schemaを満たすだけで実行可能と判断しない。
 

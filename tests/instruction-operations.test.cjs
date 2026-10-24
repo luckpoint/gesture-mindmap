@@ -53,3 +53,12 @@ test('input rejects missing selection, oversized prompt and excessive map size w
   for (let i=0; i<500; i++) input.map.nodes['x'+i]={id:'x'+i,text:'x',parent:'root',x:0,y:0,order:0};
   assert.throws(() => O.validateInput(input)); assert.equal(Object.keys(input.map.nodes).length, 504);
 });
+test('swap_nodes rotates sibling subtrees around their parent and keeps order', () => {
+  const m = map(), result = O.prepare(m, proposal([{type:'swap_nodes',nodeId:'a',otherId:'c'}]));
+  const at = id => [result.map.nodes[id].x, result.map.nodes[id].y].map(v => v + 0);
+  assert.deepEqual([at('a'), at('b'), at('c')], [[-300, 0], [-500, 0], [300, 0]]);
+  assert.deepEqual([result.map.nodes.a.order, result.map.nodes.c.order], [1, 3]);
+  assert.equal(O.summary(result.counts), '3個移動しました');
+  for (const ops of [[{type:'swap_nodes',nodeId:'a',otherId:'b'}], [{type:'swap_nodes',nodeId:'root',otherId:'a'}], [{type:'swap_nodes',nodeId:'a',otherId:'a'}]])
+    assert.throws(() => O.prepare(m, proposal(ops)));
+});

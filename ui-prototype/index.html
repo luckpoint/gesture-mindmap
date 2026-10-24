@@ -716,7 +716,7 @@ function renderNode(n, blocked) {
   c.toggle('is-lost', hand?.grab === n.id && hand.state === 'lost');
   c.toggle('is-source', mode?.id === n.id);
   c.toggle('is-invalid', !!blocked && blocked.has(n.id) && n.id !== mode.id);
-  c.toggle('is-candidate', mode?.candidate === n.id);
+  c.toggle('is-candidate', mode?.candidate === n.id || gesture?.swap === n.id);
   c.toggle('is-delete-preview', !!deletion?.scope && (deletion.scope === 'branch' ? deletion.ids.includes(n.id) : deletion.id === n.id));
   c.toggle('is-promote-preview', deletion?.scope === 'single' && deletion.children.includes(n.id));
   const tag = tagFor(n.id);
@@ -1244,12 +1244,23 @@ function moveNodeDrag(g, x, y) {
   for (const p of g.orig.values()) { wx = clamp(wx, -BOUND - p.x, BOUND - p.x); wy = clamp(wy, -BOUND - p.y, BOUND - p.y); }
   for (const [id, p] of g.orig) { map.nodes[id].x = Math.round(p.x + wx); map.nodes[id].y = Math.round(p.y + wy); }
   g.moved = true;
+  const target = swapTarget(g, x, y);
+  if (target !== g.swap) { const prev = g.swap; g.swap = target; for (const id of [prev, target]) if (id) renderNode(map.nodes[id], null); }
   scheduleDragRender(g);
+}
+function swapTarget(g, x, y) {
+  const wx = (x - view.x) / view.s, wy = (y - view.y) / view.s;
+  return kids(map.nodes[g.id].parent).find(n => { const s = size(n); return n.id !== g.id && Math.abs(n.x - wx) < s.w / 2 && Math.abs(n.y - wy) < s.h / 2; })?.id ?? null;
 }
 function finishNodeDrag(g) {
   gesture = null;
   if (hand) hand.grab = null;
-  if (JSON.stringify(map) !== g.pre) { pushHistory(g.pre); future = []; changed(); }
+  if (g.swap) {
+    for (const [id, p] of g.orig) Object.assign(map.nodes[id], p);
+    pushHistory(g.pre); future = [];
+    InstructionOperations.swap(map, g.id, g.swap); changed();
+    toast('入れ替えました', '元に戻す', undo);
+  } else if (JSON.stringify(map) !== g.pre) { pushHistory(g.pre); future = []; changed(); }
   else render();
   updateHand();
 }

@@ -56,30 +56,41 @@
     pos ||= place(m, pid, Math.max(160, estimate({ text }).w), size);
     m.nodes[id] = { id, text, parent: pid, x: Math.round(pos.x), y: Math.round(pos.y), order: ++m.seq }; return id;
   }
-  const fields = { add_node: ['type', 'clientId', 'parentId', 'text'], update_node: ['type', 'nodeId', 'text'], reparent_node: ['type', 'nodeId', 'parentId'], delete_node: ['type', 'nodeId', 'scope'] };
+  const bound = v => Math.round(Math.max(-8000, Math.min(8000, v)));
+  function swap(m, a, b) {
+    const x = m.nodes[a], y = m.nodes[b];
+    if (!x || !y || a === b || x.parent === null || x.parent !== y.parent) fail('入れ替えられるのは同じ親を持つ2つのノードだけです');
+    const p = m.nodes[x.parent], angle = n => Math.atan2(n.y - p.y, n.x - p.x);
+    const moves = [[x, y], [y, x]].flatMap(([from, to]) => {
+      const t = angle(to) - angle(from), cos = Math.cos(t), sin = Math.sin(t);
+      return [...subtree(m, from.id)].map(id => { const n = m.nodes[id], dx = n.x - from.x, dy = n.y - from.y; return [n, to.x + dx * cos - dy * sin, to.y + dx * sin + dy * cos]; });
+    });
+    for (const [n, nx, ny] of moves) { n.x = bound(nx); n.y = bound(ny); }
+  }
+  const fields = { add_node: ['type', 'clientId', 'parentId', 'text'], update_node: ['type', 'nodeId', 'text'], reparent_node: ['type', 'nodeId', 'parentId'], delete_node: ['type', 'nodeId', 'scope'], swap_nodes: ['type', 'nodeId', 'otherId'] };
   function exact(value, keys) { return record(value) && Object.keys(value).length === keys.length && keys.every(k => own(value, k)); }
   function validateProposal(p) {
     if (!exact(p, ['status', 'message', 'operations']) || !['ok', 'needs_input', 'no_change'].includes(p.status) || typeof p.message !== 'string' || p.message.length > 1000 || !Array.isArray(p.operations) || p.operations.length > 100 ||
         (p.status === 'ok' ? !p.operations.length : p.operations.length)) fail('Codexの操作案の形式が正しくありません');
     for (const op of p.operations) {
       if (!record(op) || !fields[op.type] || !exact(op, fields[op.type])) fail('許可されていない操作です');
-      for (const k of ['clientId', 'parentId', 'nodeId']) if (own(op, k) && !identifier(op[k])) fail('ノードIDの形式が正しくありません');
+      for (const k of ['clientId', 'parentId', 'nodeId', 'otherId']) if (own(op, k) && !identifier(op[k])) fail('ノードIDの形式が正しくありません');
       if (own(op, 'text') && (typeof op.text !== 'string' || !op.text.trim() || op.text.length > 4000)) fail('ノードの文字は1〜4000文字で指定してください');
       if (op.type === 'delete_node' && !['single', 'subtree'].includes(op.scope)) fail('削除範囲が正しくありません');
     }
     return p;
   }
   function diff(before, after) {
-    const counts = { added: 0, updated: 0, reparented: 0, deleted: 0 };
+    const counts = { added: 0, updated: 0, reparented: 0, moved: 0, deleted: 0 };
     for (const [id, n] of Object.entries(after.nodes)) {
       if (!own(before.nodes, id)) counts.added++;
-      else { if (n.text !== before.nodes[id].text) counts.updated++; if (n.parent !== before.nodes[id].parent) counts.reparented++; }
+      else { if (n.text !== before.nodes[id].text) counts.updated++; if (n.parent !== before.nodes[id].parent) counts.reparented++; if (n.x !== before.nodes[id].x || n.y !== before.nodes[id].y) counts.moved++; }
     }
     for (const id of Object.keys(before.nodes)) if (!own(after.nodes, id)) counts.deleted++;
     return counts;
   }
   function summary(c) {
-    const parts = [[c.added, '追加'], [c.updated, '書きかえ'], [c.reparented, 'つなぎ替え'], [c.deleted, '削除']].filter(([n]) => n).map(([n, verb]) => `${n}個${verb}`);
+    const parts = [[c.added, '追加'], [c.updated, '書きかえ'], [c.reparented, 'つなぎ替え'], [c.moved, '移動'], [c.deleted, '削除']].filter(([n]) => n).map(([n, verb]) => `${n}個${verb}`);
     return parts.length ? parts.join('、') + 'しました' : '変更はありません';
   }
   function prepare(before, proposal, options = {}) {
@@ -98,6 +109,7 @@
           if (id === m.root || subtree(m, id).has(parent)) fail('中心や自分・子孫へのつなぎ替えはできません');
           if (n.parent !== parent) { n.parent = parent; n.order = ++m.seq; }
         }
+        if (op.type === 'swap_nodes') { swap(m, id, resolve(op.otherId)); focus.push(id); }
         if (op.type === 'delete_node') {
           if (id === m.root) fail('中心ノードは削除できません');
           const ids = op.scope === 'subtree' ? [...subtree(m, id)] : [id];
@@ -127,5 +139,5 @@
   const str = { type: 'string', minLength: 1, maxLength: 160 };
   const schemas = Object.entries(fields).map(([type, keys]) => ({ type: 'object', additionalProperties: false, required: keys, properties: Object.fromEntries(keys.map(k => [k, k === 'type' ? { type: 'string', enum: [type] } : k === 'scope' ? { type: 'string', enum: ['single', 'subtree'] } : k === 'text' ? { type: 'string', minLength: 1, maxLength: 4000 } : str])) }));
   const outputSchema = { type: 'object', additionalProperties: false, required: ['status', 'message', 'operations'], properties: { status: { type: 'string', enum: ['ok', 'needs_input', 'no_change'] }, message: { type: 'string', maxLength: 1000 }, operations: { type: 'array', maxItems: 100, items: { anyOf: schemas } } } };
-  return { valid, serialize, place, addNode, validateProposal, prepare, diff, summary, validateInput, outputSchema };
+  return { valid, serialize, place, addNode, swap, validateProposal, prepare, diff, summary, validateInput, outputSchema };
 });

@@ -6,6 +6,7 @@ export const developerInstructions = `日本語のマインドマップ編集指
 明示された編集だけを提案し、複数候補や削除範囲が不明ならneeds_inputと短い日本語の案内を返します。
 needs_inputのmessageには回答できる具体的な質問を書いてください。後続ターンのanswerは直前の質問への回答です。
 最終案は最初の指示と回答全体を踏まえた操作一式にしてください。質問中の編集はまだ適用されていません。
+兄弟ノードの位置の入れ替えはswap_nodes（同じ親の2ノード。子孫ごと移動）です。
 削除範囲はsingle（子を親へ昇格）かsubtree（子孫を含む）です。中心の削除とつなぎ替えはできません。
 追加clientIdは既存IDと重複させず、後続の操作からのみ参照できます。操作は最大100件です。
 対象がない場合や変更不要ならno_change、operationsは空です。needs_inputでもoperationsは空です。
