@@ -26,6 +26,7 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
       addEventListener(name, fn) { this.handlers[name] = fn; },
       setPointerCapture() {}, focus() { context.document.activeElement = this; }, setAttribute(name, value) { this.attributes[name] = value; },
       showModal() { this.open = true; }, close() { this.open = false; },
+      click() { this.clicked = (this.clicked || 0) + 1; },
       querySelector(selector) { return selector === '.node__text' ? this.firstChild : element(selector); },
     });
     return elements.get(key);
@@ -52,7 +53,7 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
   context.document.body = element('body');
   // Skip only the initial screen draw; all production handlers are registered.
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
-  for (const file of ['format.js', 'store.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
+  for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
   vm.runInContext(`
@@ -849,6 +850,29 @@ test('failed image storage never changes map, history or existing reference', as
     const beforeImageSave=JSON.stringify(map); imageStore.put=async()=>{throw Error('quota');};`);
   await assert.rejects(t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`),/quota/);
   assert.equal(t.run(`JSON.stringify(map) === beforeImageSave && history.length === 0`),true);
+});
+
+test('uploading as a child adds one named image node in a single undo and selects it', async () => {
+  const t=setup();
+  t.run(`const ref={assetId:'sha256:'+'c'.repeat(64),width:4,height:3};
+    let prepared; NodeImageUpload.prepare=async f=>(prepared=f,f); imageStore.put=async()=>ref;
+    const before=Object.keys(map.nodes).length; sel='a'; pickImage('a', true);`);
+  assert.equal(t.run(`$('#imageInput').clicked`),1);
+  await t.run(`$('#imageInput').onchange({target:{files:[new Blob(['x'],{type:'image/png'})], value:'x'}})`);
+  t.run(`const file=Object.assign(new Blob(['x'],{type:'image/png'}),{name:'海辺の電車.png'}); pickImage('a', true);`);
+  await t.run(`$('#imageInput').onchange({target:{files:[file], value:'x'}})`);
+  assert.equal(t.run(`const added=map.nodes[sel]; added.parent==='a' && added.text==='海辺の電車' && added.image.alt==='海辺の電車' && added.image.assetId===ref.assetId && prepared===file && Object.keys(map.nodes).length===before+2`),true);
+  t.run('undo()');assert.equal(t.run(`Object.keys(map.nodes).length===before+1`),true);
+});
+test('uploading onto a node keeps its text, and failures leave the map untouched', async () => {
+  const t=setup();
+  t.run(`const ref={assetId:'sha256:'+'d'.repeat(64),width:4,height:3};
+    NodeImageUpload.prepare=async f=>f; imageStore.put=async()=>ref; pickImage('b', false);`);
+  await t.run(`$('#imageInput').onchange({target:{files:[Object.assign(new Blob(['x']),{name:'p.jpg'})], value:'x'}})`);
+  assert.equal(t.run(`map.nodes.b.text==='図書館に行く' && map.nodes.b.image.alt==='図書館に行く' && history.length===1`),true);
+  t.run(`const beforeFail=JSON.stringify(map); NodeImageUpload.prepare=async()=>{throw Error('画像をデコードできません');}; pickImage('a', true);`);
+  await t.run(`$('#imageInput').onchange({target:{files:[new Blob(['x'])], value:'x'}})`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeFail && history.length===1 && notices.at(-1)==='画像をデコードできません'`),true);
 });
 
 test('bundle import retries a missing image even when node and asset IDs are unchanged', async () => {

@@ -107,3 +107,22 @@ test('verified writes repair corrupt existing bytes, deduplicate IDs and count r
   await assert.rejects(store.putMany([a]),/50MiB/);
   assert.equal(writes,before);assert.equal(records.get(a.assetId).blob,png);
 });
+
+test('uploads keep small supported files, shrink large or unsupported ones to JPEG, and name nodes from files', async t => {
+  const U=require('../ui-prototype/images/upload.js');
+  const old={bitmap:global.createImageBitmap,canvas:global.OffscreenCanvas};
+  t.after(()=>{global.createImageBitmap=old.bitmap;global.OffscreenCanvas=old.canvas;});
+  let size=[100,50],drawn;
+  global.createImageBitmap=async b=>{if(b.type==='broken')throw Error();return {width:size[0],height:size[1],close(){}};};
+  global.OffscreenCanvas=class{constructor(w,h){this.width=w;this.height=h;}
+    getContext(){return {fillRect(){},drawImage:(b,x,y,w,h)=>{drawn=[w,h];}};}
+    async convertToBlob(o){return new Blob(['j'],{type:o.type});}};
+  assert.equal(await U.prepare(png),png);
+  size=[4000,3000];const big=await U.prepare(png);
+  assert.equal(big.type,'image/jpeg');assert.deepEqual(drawn,[2048,1536]);
+  size=[10,10];assert.equal((await U.prepare(new Blob(['h'],{type:'image/heic'}))).type,'image/jpeg');assert.deepEqual(drawn,[10,10]);
+  size=[10,10];assert.equal((await U.prepare(new Blob([new Uint8Array(U.KEEP_BYTES+1)],{type:'image/png'}))).type,'image/jpeg');
+  await assert.rejects(U.prepare(new Blob(['x'],{type:'broken'})),/デコード/);
+  await assert.rejects(U.prepare(new Blob([])),/50MiB/);
+  assert.equal(U.name({name:'旅行 写真.JPG'}),'旅行 写真');assert.equal(U.name({name:'.png'}),'画像');assert.equal(U.name(new Blob([])),'画像');
+});

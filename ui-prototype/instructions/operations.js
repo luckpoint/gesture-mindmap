@@ -18,7 +18,7 @@
     for (let i = 0; i < queue.length; i++) for (const n of children(m, queue[i])) { out.add(n.id); queue.push(n.id); }
     return out;
   }
-  const estimate = n => ({ w: Math.max(n.image ? 232 : 0, Math.min(260, n.text.length * 18 + 40)), h: n.image ? 208 : 52 });
+  const estimate = n => (n.image ? { w: 208, h: 160 } : { w: Math.min(260, n.text.length * 18 + 40), h: 52 });
   function place(m, pid, w = 160, size = estimate) {
     const p = m.nodes[pid]; let base = 0;
     if (p.parent !== null) { const g = m.nodes[p.parent]; base = Math.atan2(p.y - g.y, p.x - g.x); }

@@ -100,6 +100,14 @@ button { font: inherit; color: inherit; }
 .node__image { width: 192px; height: 144px; margin: 0 auto 12px; position: relative; display: grid; place-items: center; font: 14px/1.5 var(--font-ui); }
 .node__image img { width: 192px; height: 144px; object-fit: contain; border-radius: var(--radius-sm); }
 .node__image span { position: absolute; inset: 0; display: grid; place-items: center; }
+.node.has-image { padding: 6px; }
+.node.has-image .node__image { margin: 0; }
+.node.has-image .node__text {
+  display: none; position: absolute; left: 6px; right: 6px; bottom: 6px; max-height: calc(100% - 12px); overflow: auto;
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent); font-size: var(--text-md);
+}
+.node.has-image.is-selected .node__text, .node.has-image.is-editing .node__text { display: block; }
 .node.is-invalid { opacity: 0.32; }
 .node.is-candidate { background: var(--color-accent-soft); outline: var(--rule-3) dashed var(--color-accent); outline-offset: 5px; }
 .node[data-tag]::before {
@@ -320,6 +328,8 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><circle cx="5" cy="19" r="2"/><path d="M7 18c1-6 5-10 12-10M15 4l4 4-4 4"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/></symbol>
+  <symbol id="i-image-child" viewBox="0 0 24 24"><rect x="3" y="7" width="14" height="12" rx="2"/><path d="m17 16-4-4-6 7M20 2v6M17 5h6"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></symbol>
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
@@ -359,10 +369,13 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   </div>
 </header>
 <input type="file" id="fileInput" accept="application/json,.json" hidden>
+<input type="file" id="imageInput" accept="image/*" hidden>
 
 <div class="node-menu panel" id="nodeMenu" role="toolbar" aria-label="選んだことばの操作" hidden>
   <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label">子を追加</span></button>
   <button class="btn" data-act="edit" title="書きかえ（Enter）"><svg class="i"><use href="#i-edit"/></svg><span class="btn__label">書きかえ</span></button>
+  <button class="btn" data-act="image-child"><svg class="i"><use href="#i-image-child"/></svg><span class="btn__label">画像の子を追加</span></button>
+  <button class="btn" data-act="image"><svg class="i"><use href="#i-image"/></svg><span class="btn__label">画像にする</span></button>
   <button class="btn" data-act="remove-image" hidden>画像を取り外す</button>
   <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label">つなぎ替え</span></button>
   <button class="btn btn--danger btn--icon" data-act="delete" aria-label="消す"><svg class="i"><use href="#i-trash"/></svg></button>
@@ -488,6 +501,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="gestures/camera.js?v=20261023-still-point-12"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
+<script src="images/upload.js"></script>
 <script src="instructions/operations.js"></script>
 <script src="instructions/client.js"></script>
 <script>
@@ -559,7 +573,7 @@ function branchColor(id) { return treeInfo().colors.get(id); }
 function depth(id) { return treeInfo().depths.get(id); }
 function size(n) {
   const el = els.get(n.id);
-  return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: Math.max(n.image ? 232 : 0, Math.min(260, n.text.length * 18 + 40)), h: n.image ? 208 : 52 };
+  return el ? { w: el.offsetWidth, h: el.offsetHeight } : (n.image ? { w: 208, h: 160 } : { w: Math.min(260, n.text.length * 18 + 40), h: 52 });
 }
 function place(pid, w = 160) { return InstructionOperations.place(map, pid, w, size); }
 function addNode(pid, text, pos) {
@@ -735,16 +749,35 @@ function renderNodeImage(el, ref) {
   imageStore.acquire(ref.assetId).then(url => { if (el.imageState === state) img.src = url; }, failed);
 }
 async function attachNodeImage(blob, target, alt) {
-  // The caller captures the target when opening the future generation dialog.
-  const { nodeId, mapSessionId: session, revision: baseRevision } = target;
+  // The caller captures the target before any slow decode, resize or storage step.
+  const { nodeId, child, mapSessionId: session, revision: baseRevision } = target;
   const conflict = () => session !== mapSessionId || baseRevision !== revision || !Object.hasOwn(map.nodes, nodeId) || editing || gesture || mode || deletion || hand?.grab;
   if (conflict()) throw new Error('マップが変わったか操作中のため、画像を追加できません');
   if (typeof alt !== 'string' || alt.length > 4000) throw new Error('画像の説明は4000文字までです');
   const asset = await imageStore.put(blob);
   if (conflict()) throw new Error('保存中にマップが変わったか操作中のため、画像を追加しませんでした');
-  commit(() => { map.nodes[nodeId].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height }; });
+  let id = nodeId;
+  commit(() => {
+    if (child) id = addNode(nodeId, alt, place(nodeId, 208));
+    map.nodes[id].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height };
+  });
+  if (child) { select(id); ensureVisible(map.nodes[id]); }
   toast('画像を追加しました');
 }
+let imagePick = null;
+function pickImage(nodeId, child) {
+  imagePick = { nodeId, child };
+  $('#imageInput').click();
+}
+$('#imageInput').onchange = async e => {
+  const file = e.target.files[0], pick = imagePick;
+  e.target.value = ''; imagePick = null;
+  if (!file || !pick || !map.nodes[pick.nodeId]) return;
+  const target = { ...pick, mapSessionId, revision };
+  const alt = pick.child ? NodeImageUpload.name(file) : map.nodes[pick.nodeId].text || NodeImageUpload.name(file);
+  try { await attachNodeImage(await NodeImageUpload.prepare(file), target, alt); }
+  catch (error) { toast(error.message || '画像を追加できませんでした'); }
+};
 function removeNodeImage(id) {
   if (!map.nodes[id]?.image || editing || gesture || mode || deletion || hand?.grab) return;
   commit(() => { delete map.nodes[id].image; });
@@ -759,6 +792,7 @@ function renderNode(n, blocked) {
   el.style.setProperty('--b', branchColor(n.id));
   const c = el.classList;
   c.toggle('is-root', n.id === map.root);
+  c.toggle('has-image', !!n.image);
   c.toggle('is-selected', n.id === sel && !mode && !editing && !hand?.grab);
   c.toggle('is-editing', editing?.id === n.id);
   c.toggle('is-dragging', gesture?.type === 'node' && gesture.moved && gesture.id === n.id && !hand);
@@ -823,6 +857,7 @@ function positionMenu() {
   if (!n || editing || mode || deletion || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
   menu.hidden = false;
   menu.querySelector('[data-act=remove-image]').hidden = !n.image;
+  menu.querySelector('[data-act=image] .btn__label').textContent = n.image ? '画像を変更' : '画像にする';
   for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
   const el = els.get(sel), half = el.offsetHeight / 2;
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -1504,7 +1539,7 @@ async function exportJson() {
 $('#nodeMenu').addEventListener('click', e => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act || !sel) return;
-  ({ child: () => addChildAndEdit(sel), edit: () => startEdit(sel), 'remove-image': () => removeNodeImage(sel), reparent: () => startReparent(sel), delete: () => removeNode(sel) })[act]();
+  ({ child: () => addChildAndEdit(sel), edit: () => startEdit(sel), image: () => pickImage(sel, false), 'image-child': () => pickImage(sel, true), 'remove-image': () => removeNodeImage(sel), reparent: () => startReparent(sel), delete: () => removeNode(sel) })[act]();
 });
 $('#addChild').onclick = () => addChildAndEdit(sel || map.root);
 $('#promptForm').onsubmit = e => { e.preventDefault(); void sendInstruction(); };
