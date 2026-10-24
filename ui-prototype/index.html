@@ -282,7 +282,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 
 .cam {
   position: fixed; left: var(--space-md); bottom: max(var(--space-md), env(safe-area-inset-bottom));
-  width: 208px; margin: 0; padding: 6px; z-index: 1;
+  width: 256px; margin: 0; padding: 6px; z-index: 1;
 }
 .cam { --cam-ring: var(--color-cam-line); }
 .cam:is([data-state="nohand"], [data-state="lost"], [data-state="starting"], [data-state="paused"], [data-state="blocked"]) { --cam-ring: var(--color-ink-3); }
@@ -330,7 +330,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 .dock { bottom: calc(var(--kb, 0px) + max(var(--space-md), env(safe-area-inset-bottom))); }
 body.keyboard-open .dock { display: none; }
 body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-inset-bottom)); }
-@media (max-width: 900px) { .cam { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); width: 144px; } .zoom { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); } }
+@media (max-width: 900px) { .cam { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); width: 176px; } .zoom { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); } }
 @media (max-width: 560px) { .topbar { flex-wrap: wrap; } .topbar .cluster:first-child { flex: 1; } .prompt { width: calc(100vw - 24px); } }
 
 /* ---------- dev panel ---------- */
