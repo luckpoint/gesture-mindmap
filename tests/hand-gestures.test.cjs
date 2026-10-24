@@ -191,13 +191,26 @@ for (const [pose, action] of [['peace', 'add'], ['thumbDown', 'delete']]) {
       assert.deepEqual(t.commands, [action], 'one fist frame must not rearm a fired command');
     });
   }
-  for (const moving of [false, true]) test(`${pose} requires neutral after a stable ${moving ? 'moving' : 'stationary'} pan`, () => {
+  for (const duringHold of [false, true]) test(`${pose} accepts a stationary fist ${duringHold ? 'during' : 'before'} its hold`, () => {
+    const t = setup(); t.stable();
+    if (duringHold) for (let i = 0; i < 6; i++) t.feed(.5, .5, { pose });
+    for (let i = 0; i < 8; i++) t.feed(.5 + (i % 2 ? .001 : -.001), .5, { pose: 'fist' });
+    assert.equal(t.controller.state.state, 'panning');
+    assert.deepEqual(t.pans, []);
+    for (let i = 0; i < 12; i++) t.feed(.5, .5, { pose });
+    assert.deepEqual(t.commands, [], 'the command still needs a fresh 600ms hold');
+    t.feed(.5, .5, { pose });
+    holdPose(t, pose);
+    assert.deepEqual(t.commands, [action]);
+    t.stable(.5, .5, { pose: 'fist' });
+    holdPose(t, pose);
+    assert.deepEqual(t.commands, [action, action], 'a stationary fist can rearm a fired command');
+  });
+  test(`${pose} requires neutral after a moving pan`, () => {
     const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
     t.stable(.5, .5, { pose: 'fist' });
-    if (moving) {
-      t.feed(.45, .5, { pose: 'fist' });
-      assert.ok(t.pans.length > 0);
-    }
+    t.feed(.45, .5, { pose: 'fist' });
+    assert.ok(t.pans.length > 0);
     holdPose(t, pose); holdPose(t, pose);
     assert.deepEqual(t.commands, []);
     assert.equal(t.controller.state.state, 'commandReset');

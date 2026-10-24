@@ -65,7 +65,7 @@
       this.identity = null; this.wrist = null; this.lastSwitch = -Infinity;
       this.zoomDistance = null; this.zoomPendingAt = null; this.zoomLastAt = null;
       this.panLastAt = null; this.panPendingAt = null; this.panRaw = null;
-      this.panActive = false;
+      this.panMoved = false;
       this.palmFrame = null;
       this.zoomPalms = null; this.panMode = null; this.dialogPoint = false;
       this.commandPose = null; this.commandAt = null; this.commandPoint = null;
@@ -229,9 +229,9 @@
         this.commandPose = null; this.commandAt = null; s.progress = 0;
         return false;
       }
-      // A transient fist during pose recognition has not started a pan yet.
-      // Only a pan that passed the stability wait requires neutral rearming.
-      if (s.grab || this.zoomLastAt !== null || this.panActive) {
+      // A stationary fist can be part of forming a command pose, even after
+      // the pan stability wait. Require neutral rearming only after movement.
+      if (s.grab || this.zoomLastAt !== null || this.panMoved) {
         this.commandHeld = true; this.cancel();
       }
       if (this.commandHeld) {
@@ -309,9 +309,11 @@
       if (now - this.panPendingAt < c.stable) {
         this.rebaseDrag(point, now); s.state = 'panWaiting';
       } else {
-        this.panActive = true;
         const x = s.x, y = s.y;
-        this.moveDrag(point, now, (nextX, nextY) => this.io.pan(nextX - x, nextY - y));
+        this.moveDrag(point, now, (nextX, nextY) => {
+          this.panMoved = true;
+          this.io.pan(nextX - x, nextY - y);
+        });
         s.state = 'panning';
       }
       this.io.paint(s);
