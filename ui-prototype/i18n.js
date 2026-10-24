@@ -1076,7 +1076,12 @@
   "landing.mapsDo": "Undo/Redo is saved per map. Import and export JSON, or print on A4.",
   "landing.iconsAlt": "The icon palette open on the right, with illustrations of people to add as a child node.",
   "landing.end": "Start by growing one idea.",
-  "landing.endNote": "Hand control needs a device with a camera."
+  "landing.endNote": "Hand control needs a device with a camera.",
+  "landing.legalAria": "Legal",
+  "landing.terms": "Terms of Service",
+  "landing.termsHref": "/legal/en/terms",
+  "landing.privacy": "Privacy Policy",
+  "landing.privacyHref": "/legal/en/privacy"
 });
   Object.assign(ja, {
   "landing.title": "手で広げるマインドマップ",
@@ -1139,7 +1144,12 @@
   "landing.mapsDo": "マップごとにUndo/Redoを保存。JSONの読み込み・書き出しとA4印刷にも対応。",
   "landing.iconsAlt": "右側にアイコンパレットを開いた画面。人物のイラストを子ノードとして追加できる",
   "landing.end": "まずは、ひとつ広げてみる。",
-  "landing.endNote": "手で操作するにはカメラ付きの端末が必要です。"
+  "landing.endNote": "手で操作するにはカメラ付きの端末が必要です。",
+  "landing.legalAria": "規約とポリシー",
+  "landing.terms": "利用規約",
+  "landing.termsHref": "/legal/ja/terms",
+  "landing.privacy": "プライバシーポリシー",
+  "landing.privacyHref": "/legal/ja/privacy"
 });
   const messages = { en, ja };
   const detect = languages => /^ja(-|$)/i.test(languages?.[0] || '') ? 'ja' : 'en';
@@ -1149,10 +1159,10 @@
     const value = messages[lang][key] ?? en[key] ?? key;
     return typeof value === 'function' ? value(...args) : value;
   }
-  const ATTRS = { i18n: null, i18nAriaLabel: 'aria-label', i18nTitle: 'title', i18nPlaceholder: 'placeholder', i18nAlt: 'alt', i18nContent: 'content', i18nSrc: 'src' };
+  const ATTRS = { i18n: null, i18nAriaLabel: 'aria-label', i18nTitle: 'title', i18nPlaceholder: 'placeholder', i18nAlt: 'alt', i18nContent: 'content', i18nSrc: 'src', i18nHref: 'href' };
   function apply(doc) {
     doc.documentElement.lang = lang;
-    for (const el of doc.querySelectorAll('[data-i18n],[data-i18n-aria-label],[data-i18n-title],[data-i18n-placeholder],[data-i18n-alt],[data-i18n-content],[data-i18n-src]'))
+    for (const el of doc.querySelectorAll('[data-i18n],[data-i18n-aria-label],[data-i18n-title],[data-i18n-placeholder],[data-i18n-alt],[data-i18n-content],[data-i18n-src],[data-i18n-href]'))
       for (const [key, attr] of Object.entries(ATTRS)) if (el.dataset[key]) attr ? el.setAttribute(attr, t(el.dataset[key])) : el.textContent = t(el.dataset[key]);
   }
   if (globalThis.document?.querySelectorAll) apply(globalThis.document);

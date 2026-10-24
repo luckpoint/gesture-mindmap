@@ -49,7 +49,7 @@ test('user-facing code keeps Japanese only in the dictionary', () => {
   const walk = dir => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) { if (!['vendor', 'mediapipe'].includes(entry.name)) walk(path); }
+      if (entry.isDirectory()) { if (!['vendor', 'mediapipe', 'legal'].includes(entry.name)) walk(path); }
       else if (/\.(js|html)$/.test(entry.name) && entry.name !== 'i18n.js') files.push(path);
     }
   };

@@ -208,3 +208,17 @@ test('relay serves the landing page at /landing with a CTA back to the app', asy
     assert.equal(image.headers.get('content-type'),'image/webp');
   }
 });
+
+test('relay serves the legal pages linked from the landing footer', async t => {
+  const {createRelay}=await import('../server/index.mjs');
+  const {server}=createRelay();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{server.closeAllConnections();server.close();});
+  const base='http://127.0.0.1:'+server.address().port;
+  const {messages}=require('../ui-prototype/i18n.js');
+  for (const href of Object.values(messages).flatMap(m=>[m['landing.termsHref'],m['landing.privacyHref']])) {
+    const page=await fetch(base+href);
+    assert.equal(page.status,200,href);
+    assert.match(await page.text(),/© 2026 Luckpoint Factory/);
+  }
+});
