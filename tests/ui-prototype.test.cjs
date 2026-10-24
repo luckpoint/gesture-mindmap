@@ -39,7 +39,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   const frames = new Map(), intervals = new Map();
   function element(key) {
     if (!elements.has(key)) elements.set(key, {
-      dataset: {}, style: { setProperty(name, value) { this[name] = value; } }, classList: { add() {}, remove() {}, toggle() {} },
+      dataset: {}, style: { setProperty(name, value) { this[name] = value; } }, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
       firstChild: { textContent: '', dataset: {}, focus() { context.document.activeElement = this; },
         closest() { return this.contentEditable === 'plaintext-only' ? this : null; } }, attributes: {}, children: [], isConnected: false,
       contains(el) { return el === this || this.children.includes(el); },
@@ -1225,6 +1225,17 @@ test('node menu flips below the selection when it would cover a node above', () 
   assert.equal(menuY(), 400 - 25 - 50 - 40);
   t.run(`Object.assign(map.nodes.a1, { x: 600, y: 300 });`);
   assert.equal(menuY(), 400 + 25 + 16);
+});
+for (const narrow of [false, true]) test(`node menu ${narrow ? 'stays docked' : 'hides'} while panning or dragging on ${narrow ? 'narrow' : 'wide'} canvases`, () => {
+  const t = setup({ renderUI: true });
+  t.context.document.body.classList.contains = name => narrow && name === 'canvas-narrow';
+  const menu = t.elements.get('#nodeMenu');
+  for (const type of ['pan', 'node']) {
+    t.run(`select('a'); gesture = { type: '${type}', moved: true }; positionMenu();`);
+    assert.equal(menu.hidden, !narrow);
+    t.run(`gesture = null; positionMenu();`);
+    assert.equal(menu.hidden, false);
+  }
 });
 test('the image action switches both its full and short labels once the node has an image', () => {
   const t = setup({ renderUI: true });

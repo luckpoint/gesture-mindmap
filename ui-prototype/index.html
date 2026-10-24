@@ -1299,7 +1299,8 @@ function renderEdges() {
 }
 function positionMenu() {
   const menu = $('#nodeMenu'), n = sel && map.nodes[sel];
-  if (!n || editing || mode || deletion || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
+  const docked = document.body.classList.contains('canvas-narrow');
+  if (!n || editing || mode || deletion || hand?.grab || (gesture?.moved && !docked)) { menu.hidden = true; return; }
   menu.hidden = false;
   menu.querySelector('[data-act=remove-image]').hidden = !n.image;
   const imageKey = n.image ? 'node.changeImage' : 'node.image';
