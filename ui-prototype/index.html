@@ -284,7 +284,13 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   position: fixed; left: var(--space-md); bottom: max(var(--space-md), env(safe-area-inset-bottom));
   width: 208px; margin: 0; padding: 6px; z-index: 1;
 }
-.cam__view { position: relative; aspect-ratio: 4 / 3; border-radius: var(--radius-sm); background: var(--color-cam); overflow: hidden; display: grid; place-items: center; }
+.cam { --cam-ring: var(--color-cam-line); }
+.cam:is([data-state="nohand"], [data-state="lost"], [data-state="starting"], [data-state="paused"], [data-state="blocked"]) { --cam-ring: var(--color-ink-3); }
+.cam:is([data-state="dragging"], [data-state="panning"], [data-state="zooming"], [data-state="dialog"], [data-state="commandReset"], [data-state$="Waiting"]) { --cam-ring: var(--color-accent); }
+.cam__view { position: relative; aspect-ratio: 4 / 3; border: 3px solid var(--cam-ring); border-radius: var(--radius-sm); background: var(--color-cam); overflow: hidden; display: grid; place-items: center; transition: border-color .2s; }
+.cam__progress { position: absolute; left: 0; bottom: 0; height: 4px; width: calc(var(--p, 0) * 100%); background: var(--color-accent); }
+#camToggle { position: absolute; top: 4px; right: 4px; min-height: 28px; min-width: 28px; border-radius: 50%; background: #0006; color: var(--color-paper); }
+#camToggle .i { width: 16px; height: 16px; }
 .cam__view video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .cam__skeleton { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .cam.is-debug { width: min(400px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; }
@@ -292,8 +298,21 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 .cam__debug { margin: 6px; font: 11px/1.6 monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink); }
 .cam__msg { position: absolute; inset: 0; display: grid; place-items: center; background: #183329aa; }
 .cam__msg { color: var(--color-paper); font-size: var(--text-xs); font-weight: 700; text-align: center; padding: 0 12px; line-height: 1.6; }
-.cam figcaption { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 4px 2px 0 6px; font-size: var(--text-xs); color: var(--color-ink-2); }
-.cam.is-collapsed .cam__view { display: none; }
+.cam figcaption { display: flex; align-items: center; gap: 4px; padding: 4px 0 0 4px; font-size: var(--text-xs); }
+.cam figcaption #handHelp { flex: 1; min-width: 0; font-weight: 700; }
+.cam__lock { display: inline-flex; color: var(--color-ink-3); }
+.cam__lock .i { width: 14px; height: 14px; }
+#handGuideToggle { min-height: 28px; min-width: 28px; font-weight: 700; }
+.cam__tips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; font-size: var(--text-xs); }
+.cam__tips:empty { display: none; }
+.cam__tips li { padding: 1px 6px; border-radius: 999px; background: var(--color-accent-soft); color: var(--color-ink); }
+.cam__guide { display: grid; }
+.cam__guide li { padding: 0 2px; background: none; }
+#handTips:has(+ .cam__guide:not([hidden])) { display: none; }
+.cam.is-collapsed { width: auto; padding: 4px; border-radius: 50%; }
+.cam.is-collapsed .cam__view { width: 64px; aspect-ratio: 1; border-radius: 50%; }
+.cam.is-collapsed > :not(.cam__view), .cam.is-collapsed .cam__msg, .cam.is-collapsed .cam__skeleton { display: none; }
+.cam.is-collapsed #camToggle { inset: 0; width: 100%; height: 100%; opacity: 0; }
 
 /* ---------- instruction field ---------- */
 .prompt { position: fixed; left: 50%; bottom: calc(var(--kb, 0px) + 100px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); padding: 12px; z-index: 4; }
@@ -381,6 +400,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-maps" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></symbol>
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></symbol>
@@ -545,18 +565,22 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <div class="cam__view">
     <video id="camVideo" autoplay muted playsinline data-i18n-aria-label="cam.preview"></video>
     <canvas class="cam__skeleton" id="handSkeleton" aria-hidden="true" hidden></canvas>
-    <span class="cam__msg" id="camMsg" data-i18n="cam.showHand" hidden></span>
+    <span class="cam__msg" id="camMsg" role="status" aria-live="polite" hidden></span>
+    <span class="cam__progress" id="handProgress" aria-hidden="true"></span>
+    <button class="btn btn--icon" id="camToggle" data-i18n-aria-label="cam.hide" data-i18n-title="cam.hide"><svg class="i"><use href="#i-minus"/></svg></button>
   </div>
   <figcaption>
-    <span id="handStatus" role="status" aria-live="polite" data-i18n="cam.status"></span>
-    <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px" data-i18n="cam.hide"></button>
+    <span id="handHelp" role="status" aria-live="polite"></span>
+    <span class="cam__lock" role="img" data-i18n-aria-label="cam.status" data-i18n-title="cam.status"><svg class="i"><use href="#i-lock"/></svg></span>
+    <button class="btn btn--quiet btn--icon" id="handGuideToggle" aria-expanded="false" aria-controls="handGuide" data-i18n-aria-label="cam.guide" data-i18n-title="cam.guide">?</button>
   </figcaption>
+  <ul class="cam__tips" id="handTips"></ul>
+  <ul class="cam__tips cam__guide" id="handGuide" hidden></ul>
   <select id="camSelect" data-i18n-aria-label="cam.select" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
   <button class="btn btn--quiet" id="handDebugToggle" aria-pressed="false" aria-controls="handSkeleton handDebugValues" data-i18n="cam.debug"></button>
   <label><input id="handSpeech" type="checkbox" aria-describedby="handSpeechNote"><span data-i18n="speech.hand"></span></label>
   <p id="handSpeechNote" data-i18n="speech.handNote"></p>
   <pre class="cam__debug" id="handDebugValues" hidden></pre>
-  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)" data-i18n="hand.help"></p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
@@ -615,14 +639,14 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <p id="paletteStatus" role="status"></p>
   </div>
 </aside>
-<script src="i18n.js?v=20261024-thumb-tilt-1"></script>
+<script src="i18n.js?v=20261024-cam-panel-1"></script>
 <script src="icons/catalog.js"></script>
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
 <script src="speech/controller.js?v=20261024-1"></script>
-<script src="gestures/controller.js?v=20261024-thumb-tilt-1"></script>
-<script src="gestures/debug.js?v=20261024-thumb-tilt-1"></script>
-<script src="gestures/camera.js?v=20261024-thumb-tilt-1"></script>
+<script src="gestures/controller.js?v=20261024-cam-panel-1"></script>
+<script src="gestures/debug.js?v=20261024-cam-panel-1"></script>
+<script src="gestures/camera.js?v=20261024-cam-panel-1"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -1726,7 +1750,7 @@ function applyInstruction() {
 }
 
 /* ---------- camera hand input ---------- */
-let handController = null, cameraSession = null, handPaintKey = '', handMode = 'worker';
+let handController = null, cameraSession = null, handPaintKey = '', handMode = 'worker', camStatus = '';
 const handDebug = new HandDebugOverlay($('#handSkeleton'), $('#handDebugValues'));
 $('#handDebugToggle').onclick = () => {
   const enabled = !handDebug.enabled;
@@ -1736,7 +1760,7 @@ $('#handDebugToggle').onclick = () => {
 };
 function stopHand() {
   cameraSession?.stop(); cameraSession = null;
-  handController?.cancel(); handController = null; hand = null;
+  handController?.cancel(); handController = null; hand = null; camStatus = '';
   $('#cam').hidden = true; $('#handCursor').hidden = true;
   $('#handBtn').setAttribute('aria-pressed', 'false');
   render();
@@ -1787,7 +1811,7 @@ function toggleHand(inputMode = 'worker') {
   $('#handBtn').setAttribute('aria-pressed', 'true');
   const session = new CameraSession({
     video: $('#camVideo'),
-    status: message => { $('#handStatus').textContent = message; },
+    status: message => { camStatus = message; updateHand(); },
     frame: (frame, now) => handController?.update(frame, now),
     debug: (result, width, height) => handDebug.draw(result, width, height),
     metrics: m => { $('#handMetrics').textContent = tr('dev.metrics', m); },
@@ -1803,14 +1827,31 @@ function toggleHand(inputMode = 'worker') {
   let deviceId; try { deviceId = localStorage.getItem(CAMERA_KEY) || undefined; } catch {}
   session.start(inputMode, deviceId);
 }
+const HAND_COMMANDS = ['grab', 'add', 'delete', 'pan'];
+const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, pinchWaiting: HAND_COMMANDS, dragging: ['drop'], neutral: ['pause', 'pan'],
+  paused: ['resume'], panning: ['stop'], zooming: ['spread', 'oneHand'], dialog: ['dialogLeft', 'dialogRight'] };
+const tipItems = tips => tips.map(tip => Object.assign(document.createElement('li'), { textContent: tr('hand.tip.' + tip) }));
+$('#handGuide').replaceChildren(...tipItems(['point', 'grab', 'add', 'delete', 'fist', 'pan', 'zoom', 'pause']));
+$('#handGuideToggle').onclick = () => {
+  const open = $('#handGuide').hidden;
+  $('#handGuide').hidden = !open;
+  $('#handGuideToggle').setAttribute('aria-expanded', String(open));
+};
 function updateHand() {
   if (!hand) return;
   $('#handCursor').hidden = true;
-  const message = tr('hand.' + hand.state, Math.round(hand.progress * 100));
-  $('#handHelp').textContent = message;
-  if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : hand.state === 'dialog' ? message : tr('delete.handHelp');
-  $('#camMsg').hidden = hand.state === 'ready' || hand.state === 'dragging' || hand.state === 'zooming' || hand.state === 'panning';
-  $('#camMsg').textContent = message;
+  const message = tr('hand.' + hand.state), unseen = !!camStatus || hand.state === 'nohand' || hand.state === 'lost';
+  const tips = unseen ? [] : HAND_TIPS[hand.state] || [];
+  $('#cam').dataset.state = camStatus ? 'starting' : hand.state;
+  $('#camMsg').hidden = !unseen;
+  $('#camMsg').textContent = unseen ? camStatus || message : '';
+  $('#handHelp').textContent = unseen ? '' : message;
+  $('#handProgress').style.setProperty('--p', hand.progress || 0);
+  if ($('#handTips').dataset.tips !== tips.join()) {
+    $('#handTips').dataset.tips = tips.join();
+    $('#handTips').replaceChildren(...tipItems(tips));
+  }
+  if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : tr('delete.handHelp');
 }
 function beginNodeDrag(id, x, y, fromHand = false) {
   animId++;
@@ -2168,8 +2209,8 @@ let promptHidden = !instructionsEnabled;
 try { promptHidden ||= !!localStorage.getItem(PROMPT_KEY); } catch {}
 setPromptHidden(promptHidden, false);
 $('#camToggle').onclick = () => {
-  const c = $('#cam').classList.toggle('is-collapsed');
-  $('#camToggle').textContent = tr(c ? 'cam.show' : 'cam.hide');
+  const label = tr($('#cam').classList.toggle('is-collapsed') ? 'cam.show' : 'cam.hide');
+  $('#camToggle').setAttribute('aria-label', label); $('#camToggle').title = label;
 };
 $('#dev').addEventListener('click', e => {
   const d = e.target.closest('[data-dev]')?.dataset.dev;

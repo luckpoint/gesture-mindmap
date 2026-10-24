@@ -718,17 +718,29 @@ test('tracking recovery and manual selection reset the directional baseline', ()
   assert.equal(t.run(`sel === 'a' && JSON.stringify(map) === originalMap`), true);
 });
 
-test('camera UI distinguishes detection, readiness, pinch and loss without a cursor', () => {
+test('camera UI shows each message in one place with tips for the current state', () => {
   const t = setup({ handUI: true }); prepareHand(t);
-  assert.match(t.elements.get('#handHelp').textContent, /手を認識しています/);
-  assert.equal(t.elements.get('#camMsg').hidden, true);
+  const help = t.elements.get('#handHelp'), msg = t.elements.get('#camMsg'), tips = () => t.elements.get('#handTips').children.map(c => c.textContent).join();
+  assert.match(help.textContent, /指の向きで選択/);
+  assert.equal(msg.hidden, true);
+  assert.equal(msg.textContent, '');
+  assert.match(tips(), /つまんで移動.*子を追加.*削除.*マップ移動/);
+  assert.equal(t.elements.get('#cam').dataset.state, 'ready');
   assert.equal(t.elements.get('#handCursor').hidden, true);
   t.run('interruptHand(); handSample();');
-  assert.match(t.elements.get('#camMsg').textContent, /手を認識しました/);
+  assert.match(help.textContent, /手を開いたまま/);
   t.run('handSample(.5, .5, .1);');
-  assert.match(t.elements.get('#camMsg').textContent, /親指と人差し指/);
+  assert.match(help.textContent, /つまんでいます/);
   t.run('cameraSession.io.frame(null, handTime);');
-  assert.match(t.elements.get('#camMsg').textContent, /追跡が途切れました/);
+  assert.match(msg.textContent, /見失いました/);
+  assert.equal(msg.hidden, false);
+  assert.equal(help.textContent, '');
+  assert.equal(tips(), '');
+  t.run(`cameraSession.io.status(tr('cam.preparing'));`);
+  assert.match(msg.textContent, /準備/);
+  assert.equal(t.elements.get('#cam').dataset.state, 'starting');
+  t.run(`cameraSession.io.status('');`);
+  assert.match(msg.textContent, /見失いました/);
 });
 
 test('pinch moves the active subtree, freezes directional selection and commits one undo step', () => {
@@ -736,7 +748,7 @@ test('pinch moves the active subtree, freezes directional selection and commits 
   t.run(`view.s = 2; handSample(.4); Object.assign(handController.config, { smoothing: 1, gain: 1, deadzone: 0 });
     stableHand(.4, .5, .1);`);
   assert.equal(t.run(`sel === 'a' && hand.grab === 'a' && gesture.hand && JSON.stringify(map) === originalMap`), true);
-  assert.match(t.elements.get('#handHelp').textContent, /つかみ中/);
+  assert.match(t.elements.get('#handHelp').textContent, /ノードを移動中/);
   t.run('handSample(.3, .5, .1);');
   assert.equal(t.run(`sel === 'a' && map.nodes.a.x === 260 && map.nodes.a1.x === 460 && history.length === 0`), true);
   t.run('stableHand(.2);'); // Finger opening motion must not move the node.
@@ -779,7 +791,7 @@ test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/histo
   `);
   assert.equal(t.run('view.s < scaleBefore'), true);
   assert.equal(t.run('Math.abs((W()/2-view.x)/view.s-centerBefore.x) < 1e-8 && Math.abs((H()/2-view.y)/view.s-centerBefore.y) < 1e-8'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /両手を広げると縮小/);
+  assert.match(t.elements.get('#handHelp').textContent, /ズーム中/);
   assert.equal(t.elements.get('#camMsg').hidden, true);
   t.run('zoomSample(.4);');
   assert.equal(t.run('Math.abs(view.s-scaleBefore) < 1e-8'), true);
@@ -807,13 +819,13 @@ test('camera fist and pause toggle cancel previews, retain map and show resumabl
     poseSample('fist');
   `);
   assert.equal(t.run('!gesture && !hand.grab && history.length === 0 && JSON.stringify(map) === originalMap'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /片手のグーは待機/);
+  assert.match(t.elements.get('#handHelp').textContent, /待機中/);
   t.run(`for (let i = 0; i < 20; i++) {
     cameraSession.io.frame({ pointer: { x: .1 + i * .02, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .1, pose: 'point' }, handTime);
     handTime += 50;
   }`);
   assert.equal(t.run('hand.state === "neutral" && !handController.paused && !gesture && sel === "root" && history.length === 0 && JSON.stringify(map) === originalMap'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /動かしている間も待機/);
+  assert.match(t.elements.get('#handHelp').textContent, /待機中/);
   t.run(`for (let i = 0; i < 42; i++) poseSample('point');`);
   assert.match(t.elements.get('#handHelp').textContent, /一時停止中/);
   t.run(`stableHand(.1); stableHand(.1, .5, .1);`);
@@ -982,7 +994,7 @@ test('two fists pan the viewport, revert node previews and keep scale, nodes and
   `);
   assert.equal(t.run('view.x > beforePan.x && view.y < beforePan.y && view.s === beforePan.s'), true);
   assert.equal(t.run('!gesture && JSON.stringify(map) === originalMap && history.length === 0'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /両手グーでマップを移動中/);
+  assert.match(t.elements.get('#handHelp').textContent, /マップを移動中/);
   assert.equal(t.elements.get('#camMsg').hidden, true);
   t.run(`const stoppedPan = { ...view }; panSample(.2, .2, 'fist');`);
   assert.equal(t.run('JSON.stringify(view) === JSON.stringify(stoppedPan)'), true);
