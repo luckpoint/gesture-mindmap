@@ -21,6 +21,8 @@ ENABLE_CODEX_INSTRUCTIONS=true npm start
 
 Cloudflare Workersで公開する際は、`ui-prototype/` を静的アセットとして配信し、同梱の `features.js`（`instructions: false`）を使用します。Node.jsの中継サーバーは公開構成に含めません。ローカル中継では環境変数から同じURLの設定を返すため、ONで使った後も静的ファイルの設定はOFFのままです。機能フラグはブラウザの保存設定やURLパラメータでは切り替えません。
 
+最新仕様・料金の調査と、ビルド・配信・データ移行・公開前の確認項目は [Cloudflare Workersデプロイ設計](docs/cloudflare-workers-deployment-design.md) を参照してください（2026年10月24日調査、未デプロイ）。
+
 ONでは既存のCLIログインを使い、認証情報をブラウザへ渡しません。CLIの版が異なる場合や起動・認証に失敗した場合も、通常のマップ編集・JSON書き出しは使えます。静的ファイルの配信では指示欄とCodex連携は無効です。
 
 下部の入力欄に指示を入力し、Enterまたは送信ボタンで実行します。Shift+Enterで改行、⌘K / Ctrl+Kで入力欄に移動できます。送信時点の選択ノードとマップ全体を渡し、毎回新しいスレッドを使います。削除を含む指示は、範囲と同時変更を確認してからまとめて反映します。一回のUndoで指示全体を戻せます。
