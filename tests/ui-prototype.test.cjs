@@ -33,7 +33,7 @@ function memoryLibrary() {
     watchList() { return () => {}; },
   };
 }
-function setup({ renderUI = false, handUI = false, stored = {}, instructions = true } = {}) {
+function setup({ renderUI = false, handUI = false, stored = {}, instructions = true, lang = 'ja' } = {}) {
   const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
   let timerId = 0;
   const frames = new Map(), intervals = new Map();
@@ -58,7 +58,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
     return elements.get(key);
   }
   const context = vm.createContext({
-    MindmapFeatures: { instructions },
+    MindmapFeatures: { instructions }, navigator: { languages: [lang] },
     console, TextEncoder, AbortSignal, Blob, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: true }),
     document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
@@ -79,6 +79,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   });
   context.document.body = element('body');
   // Skip only the initial screen draw; all production handlers are registered.
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
@@ -1252,4 +1253,16 @@ test('node menu flips below the selection when it would cover a node above', () 
   assert.equal(menuY(), 400 - 25 - 50 - 40);
   t.run(`Object.assign(map.nodes.a1, { x: 600, y: 300 });`);
   assert.equal(menuY(), 400 + 25 + 16);
+});
+
+test('an English browser gets English samples, dialogs and notices', () => {
+  const t = setup({ lang: 'en' });
+  assert.equal(t.run(`map.title + ' / ' + map.nodes.root.text`), 'Weekend map / Things to do this weekend');
+  t.run(`removeNode('a');`);
+  assert.equal(t.run(`$('#deleteTitle').textContent`), 'Delete “Play in the park”?');
+  t.run(`chooseDeleteScope('branch');`);
+  assert.equal(t.run(`$('#deleteConfirm').textContent`), 'Delete 2 nodes');
+  t.run(`confirmDelete();`);
+  assert.equal(t.run('notices.at(-1)'), 'Deleted');
+  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 86400e3].map(d => ago(1e9 - d, 1e9)))`)), ['just now', '5 min ago', '2 hr ago', '1 day ago']);
 });

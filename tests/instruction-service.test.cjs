@@ -1,3 +1,4 @@
+require('../ui-prototype/i18n.js').use('ja');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');

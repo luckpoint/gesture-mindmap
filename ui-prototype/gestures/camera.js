@@ -1,4 +1,5 @@
 (function (root) {
+  const tr = root.I18n.t;
   class CameraSession {
     constructor(io) { this.io = io; this.closed = false; this.busy = false; this.worker = null; }
     async open(deviceId) {
@@ -12,27 +13,27 @@
     }
     async start(mode = 'worker', deviceId) {
       try {
-        if (!isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('HTTPSまたはlocalhostで開いてください');
-        this.io.status('カメラの許可を待っています');
+        if (!isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error(tr('cam.needsSecure'));
+        this.io.status(tr('cam.waitingPermission'));
         const stream = await this.open(deviceId);
         if (this.closed) { stream.getTracks().forEach(t => t.stop()); return; }
         this.stream = stream;
         const cameras = (await navigator.mediaDevices.enumerateDevices?.() || []).filter(d => d.kind === 'videoinput');
         if (this.closed) return;
         this.io.cameras?.(cameras, stream.getVideoTracks()[0].getSettings?.().deviceId);
-        stream.getVideoTracks()[0].onended = () => this.fail(new Error('カメラが切断されました'));
+        stream.getVideoTracks()[0].onended = () => this.fail(new Error(tr('cam.disconnected')));
         this.video = this.io.video;
         this.video.srcObject = stream;
         await this.video.play();
         if (this.closed) return;
-        this.io.status('手の認識を準備しています');
+        this.io.status(tr('cam.preparing'));
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261023-still-point-12');
+          this.worker = new Worker('gestures/hand-worker.js?v=20261024-i18n-1');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
-            this.initTimer = setTimeout(() => reject(new Error('推論の準備がタイムアウトしました')), 30000);
-            this.worker.onerror = () => { const error = new Error('Workerを開始できません。認識資産とブラウザを確認してください'); reject(error); this.fail(error); };
+            this.initTimer = setTimeout(() => reject(new Error(tr('cam.initTimeout'))), 30000);
+            this.worker.onerror = () => { const error = new Error(tr('cam.workerFailed')); reject(error); this.fail(error); };
             this.worker.onmessage = ({ data }) => {
               if (this.closed) return;
               if (data.type === 'ready') { clearTimeout(this.initTimer); this.rejectInit = null; resolve(); }
@@ -50,12 +51,12 @@
           this.detector = detector;
         }
         if (this.closed) return;
-        this.io.status('片手のグーは待機、両手グーでマップ移動／人差し指だけを立てて静止で一時停止・再開／片手で選択・移動、両手でズーム');
+        this.io.status(tr('cam.running'));
         this.lastResult = performance.now();
         this.watchdog = setInterval(() => {
           const elapsed = performance.now() - this.lastResult;
           if (elapsed > root.HandGestures.TRACKING_TIMEOUT_MS) this.io.frame(null, performance.now());
-          if (elapsed > 5000) this.fail(new Error('カメラ認識が応答しません。もう一度開始してください'));
+          if (elapsed > 5000) this.fail(new Error(tr('cam.unresponsive')));
         }, 100);
         this.loop();
       } catch (error) { this.fail(error); }
@@ -68,7 +69,7 @@
       const sentAt = this.sentAt;
       requestAnimationFrame(() => {
         if (!this.closed) this.io.metrics({ mode: this.mode, inferenceMs, displayMs: performance.now() - sentAt,
-          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261023-still-point-12" });
+          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261024-i18n-1" });
       });
       this.busy = false;
     }
@@ -84,7 +85,7 @@
           const start = performance.now(), result = this.detector.detectForVideo(this.video, now);
           const duration = performance.now() - start;
           this.slowFrames = duration > 120 ? (this.slowFrames || 0) + 1 : 0;
-          if (this.slowFrames >= 3) throw new Error('低頻度の認識でも画面操作が止まるため、手操作を停止しました');
+          if (this.slowFrames >= 3) throw new Error(tr('cam.tooSlow'));
           this.result(result, duration);
         } catch (error) { this.fail(error); }
       }
@@ -101,14 +102,15 @@
     fail(error) {
       if (this.closed) return;
       this.stop();
-      const message = { NotAllowedError: 'カメラが許可されませんでした。ブラウザの設定を確認して再試行してください', NotFoundError: '利用できるカメラがありません', NotReadableError: 'カメラを使えません。ほかのアプリの使用状況を確認してください' }[error.name] || error.message;
+      const key = { NotAllowedError: 'cam.notAllowed', NotFoundError: 'cam.notFound', NotReadableError: 'cam.notReadable' }[error.name];
+      const message = key ? tr(key) : error.message;
       this.io.error(message);
     }
     stop() {
       if (this.closed) return;
       this.closed = true;
       clearTimeout(this.initTimer); clearInterval(this.watchdog); cancelAnimationFrame(this.raf);
-      this.rejectInit?.(new Error('停止しました')); this.rejectInit = null;
+      this.rejectInit?.(new Error(tr('cam.stopped'))); this.rejectInit = null;
       this.stream?.getTracks().forEach(t => { t.onended = null; t.stop(); });
       if (this.video) { this.video.pause(); this.video.srcObject = null; }
       this.detector?.close();

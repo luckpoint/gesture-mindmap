@@ -1,3 +1,4 @@
+require('../ui-prototype/i18n.js').use('ja');
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { createRxDatabase, addRxPlugin } = require('rxdb');

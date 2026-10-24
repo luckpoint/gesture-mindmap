@@ -1,10 +1,11 @@
 /* Shared map/reference validation; image bytes never belong in a map snapshot. */
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('../i18n.js') : root.I18n);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.NodeImageFormat = api;
-})(globalThis, () => {
+})(globalThis, I18n => {
   'use strict';
+  const tr = I18n.t;
   const MAX_IMAGE = 10 * 1024 * 1024, MAX_TOTAL = 50 * 1024 * 1024, MAX_FILE = 75 * 1024 * 1024;
   const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
   const assetId = v => typeof v === 'string' && /^sha256:[a-f0-9]{64}$/.test(v);
@@ -31,15 +32,15 @@
     return true;
   }
   function migrate(map) {
-    if (!validMap(map)) throw new Error('マップの形式が正しくありません');
+    if (!validMap(map)) throw new Error(tr('map.invalid'));
     const copy = JSON.parse(JSON.stringify(map)); copy.version = 2; return copy;
   }
   function references(map) {
-    if (!validMap(map)) throw new Error('マップの形式が正しくありません');
+    if (!validMap(map)) throw new Error(tr('map.invalid'));
     const refs = new Map();
     for (const n of Object.values(map.nodes)) if (n.image) {
       const old = refs.get(n.image.assetId);
-      if (old && (old.width !== n.image.width || old.height !== n.image.height)) throw new Error('画像の寸法が一致しません');
+      if (old && (old.width !== n.image.width || old.height !== n.image.height)) throw new Error(tr('image.sizeMismatch'));
       refs.set(n.image.assetId, n.image);
     }
     return refs;
@@ -51,7 +52,7 @@
   }
   function unbase64(value) {
     // A repeated four-character regex over a 10MiB image can overflow V8's stack.
-    if (typeof value !== 'string' || value.length > Math.ceil(MAX_IMAGE / 3) * 4 || value.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new Error('画像データが正しくありません');
+    if (typeof value !== 'string' || value.length > Math.ceil(MAX_IMAGE / 3) * 4 || value.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw new Error(tr('image.invalidData'));
     return Uint8Array.from(atob(value), c => c.charCodeAt(0));
   }
   async function exportBundle(map, store) {
@@ -60,10 +61,10 @@
     const assets = {}; let total = 0;
     for (const [id, ref] of refs) {
       const asset = await store.get(id);
-      if (!asset) throw new Error('画像を読み込めません。画像込みで書き出せませんでした');
+      if (!asset) throw new Error(tr('image.exportMissing'));
       await store.verify(asset.blob, { ...ref, mime: asset.mime });
       total += asset.blob.size;
-      if (total > MAX_TOTAL) throw new Error('画像の総容量は50MiBまでです');
+      if (total > MAX_TOTAL) throw new Error(tr('image.totalLimit'));
       assets[id] = { mime: asset.mime, width: ref.width, height: ref.height, data: base64(new Uint8Array(await asset.blob.arrayBuffer())) };
     }
     return { format: 'mindmap-bundle', version: 1, map: snapshot, assets };
@@ -71,18 +72,18 @@
   async function importBundle(value, store) {
     if (!record(value) || value.format !== 'mindmap-bundle') {
       const map = migrate(value);
-      if (references(map).size) throw new Error('画像付きbundleが必要です');
+      if (references(map).size) throw new Error(tr('bundle.required'));
       return map;
     }
-    if (value.version !== 1 || !record(value.assets) || value.map?.version !== 2) throw new Error('bundleの形式が正しくありません');
+    if (value.version !== 1 || !record(value.assets) || value.map?.version !== 2) throw new Error(tr('bundle.invalid'));
     const map = migrate(value.map), refs = references(map), keys = Object.keys(value.assets);
-    if (keys.length !== refs.size || keys.some(id => !refs.has(id))) throw new Error('画像の過不足があります');
+    if (keys.length !== refs.size || keys.some(id => !refs.has(id))) throw new Error(tr('bundle.mismatch'));
     const pending = []; let total = 0;
     for (const [id, ref] of refs) {
       const a = value.assets[id];
-      if (!record(a) || !mime(a.mime) || a.width !== ref.width || a.height !== ref.height) throw new Error('画像の形式・寸法が正しくありません');
+      if (!record(a) || !mime(a.mime) || a.width !== ref.width || a.height !== ref.height) throw new Error(tr('bundle.assetInvalid'));
       const bytes = unbase64(a.data); total += bytes.length;
-      if (total > MAX_TOTAL) throw new Error('画像の総容量は50MiBまでです');
+      if (total > MAX_TOTAL) throw new Error(tr('image.totalLimit'));
       pending.push(await store.verify(new Blob([bytes], { type: a.mime }), { ...ref, mime: a.mime }));
     }
     await store.putMany(pending);

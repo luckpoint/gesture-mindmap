@@ -1,6 +1,8 @@
 # 多言語化（英語・日本語）設計
 
-2026年10月24日。状態：提案。実装はまだ行っていない。
+2026年10月24日。状態：段階1〜5を実装済み。段階2（中継サーバーとCodex）は後続。
+
+> 実装時の変更：静的HTMLはキーだけを持ち、英語も含めて `apply` で文字を入れる（英語を二重に持たない）。相対時刻は `Intl.RelativeTimeFormat` だとICUにより表記が変わるため辞書の関数にした。開発者向けの `console` 出力とOPFS Workerの内部エラーは英語固定で辞書に入れない。英語の訳は実装時に作成し、対訳表は `i18n.js` の辞書冒頭にある。
 
 ## 1. 要件と決定
 
@@ -56,7 +58,7 @@ I18n.apply(root)       // data-i18n 属性を一括反映
 
   テンプレート記法や複数形ライブラリは入れない。
 - 現在の言語にキーがなければ英語、それもなければキー文字列を返す。テストで鍵の過不足を検出するため、本番でこの経路に入ることは想定しない。
-- 日付は `I18n.lang` を `toLocaleString` に渡す。「たった今／N分前」は `Intl.RelativeTimeFormat(I18n.lang, { numeric: 'auto' })` に置き換え、辞書に持たない。
+- 日付は `I18n.lang` を `toLocaleString` に渡す。「たった今／N分前」は辞書の関数（`time.*`）で返す。
 
 ### 3.2 静的HTML
 
@@ -70,8 +72,8 @@ I18n.apply(root)       // data-i18n 属性を一括反映
 
 - 対応属性は `data-i18n`（textContent）、`data-i18n-aria-label`、`data-i18n-title`、`data-i18n-placeholder` の4つだけ。
 - SVGアイコンと文字が同じ要素にあるボタンは、文字を `<span>` で包む（`btn__label` が既にあるものはそれを使う）。
-- HTMLに直接書く初期文字は英語にする。`<html lang="en">` を既定とし、`apply` で `document.documentElement.lang` と `document.title` も更新する。
-- `i18n.js` はほかのスクリプトより先、インラインスクリプトの前に同期読み込みする。日本語環境で英語が一瞬見える可能性はあるが、初回描画前に実行されるため実害は小さい。気になれば `apply` を `<body>` 直後の小さなインラインスクリプトに移す。
+- HTMLには文字を書かず、キーだけを持たせる。`<html lang="en">` を既定とし、`apply` で `document.documentElement.lang` も更新する。`<title>` も `data-i18n` で埋める。
+- `i18n.js` はほかのスクリプトより先に同期読み込みし、読み込み時に `apply(document)` を実行する。`<body>` 末尾で実行されるため、初回描画前に文字が入る。
 - `innerHTML` で組み立てている `#modeMsg`（`「<b></b>」をどこにつなぐ？`）は、前後の文言を辞書から取り `textContent` で組み立てる。
 
 ### 3.3 インラインスクリプトとモジュール
@@ -79,7 +81,7 @@ I18n.apply(root)       // data-i18n 属性を一括反映
 - インラインスクリプトの日本語リテラルは、すべて `t('…')` に置き換える。`const t = I18n.t;` を先頭に置く。
 - 手操作の案内（`ready`、`addWaiting` など）は状態名をそのままキーにする（`hand.<state>`）。
 - `images/*.js`、`instructions/*.js`、`storage/library.js`、`gestures/camera.js` は、UMDのfactory引数に `I18n` を追加し、`throw new Error(t('error.…'))` にする。エラーコード化はしない（画面側の `toast(error.message)` を変えずに済むため）。
-- `opfs-worker.js` は `importScripts('../i18n.js')` で読み込む。Worker内の `navigator.languages` で同じ判定になるが、念のため親から `lang` を渡して `I18n.use()` する。
+- `opfs-worker.js` のエラーは画面に出ない内部検査（store側が自分の文言に置き換える）のため、英語固定にして `i18n.js` を読み込まない。
 
 ### 3.4 ローカル中継とCodex（段階2）
 
@@ -145,5 +147,5 @@ I18n.apply(root)       // data-i18n 属性を一括反映
 
 ## 7. 決めていないこと
 
-- 段階2（中継とCodex）を同時に出すか、後に回すか。
-- 英語の文言の最終確認者。初版は実装時に訳し、UIの用語（ノード、つなぎ替え、指示欄など）の対訳表を辞書の冒頭にまとめる。
+- 段階2（中継とCodex）は後に回す（決定済み）。
+- 英語の文言は実装時に訳した（決定済み）。用語の対訳表は `i18n.js` の辞書冒頭にある。

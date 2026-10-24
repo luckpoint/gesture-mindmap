@@ -1,17 +1,18 @@
 /* Shared by the browser and the relay. No state, DOM, or model output is trusted. */
 (function (root, factory) {
-  const api = factory(typeof module === 'object' && module.exports ? require('../images/format.js') : root.NodeImageFormat);
+  const api = typeof module === 'object' && module.exports ? factory(require('../images/format.js'), require('../i18n.js')) : factory(root.NodeImageFormat, root.I18n);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.InstructionOperations = api;
-})(globalThis, ImageFormat => {
+})(globalThis, (ImageFormat, I18n) => {
   'use strict';
+  const tr = I18n.t;
   const own = (o, k) => Object.hasOwn(o, k);
   const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
   const clone = v => JSON.parse(JSON.stringify(v));
   const identifier = v => typeof v === 'string' && v.length > 0 && v.length <= 160 && !['__proto__', 'prototype', 'constructor'].includes(v) && !/[\s\x00-\x1f]/.test(v);
   const fail = message => { throw new Error(message); };
   const valid = ImageFormat.validMap;
-  function serialize(map) { if (!valid(map)) fail('マップの形式が正しくありません'); return clone(map); }
+  function serialize(map) { if (!valid(map)) fail(tr('map.invalid')); return clone(map); }
   function children(m, id) { return Object.values(m.nodes).filter(n => n.parent === id).sort((a, b) => a.order - b.order); }
   function subtree(m, id) {
     const out = new Set([id]); const queue = [id];
@@ -36,7 +37,7 @@
     return point(base, dist);
   }
   function addNode(m, pid, text, pos, size = estimate) {
-    if (!own(m.nodes, pid)) fail('追加先が見つかりません');
+    if (!own(m.nodes, pid)) fail(tr('ops.missingParent'));
     let id; do { id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); } while (own(m.nodes, id));
     pos ||= place(m, pid, Math.max(160, estimate({ text }).w), size);
     m.nodes[id] = { id, text, parent: pid, x: Math.round(pos.x), y: Math.round(pos.y), order: ++m.seq }; return id;
@@ -44,7 +45,7 @@
   const bound = v => Math.round(Math.max(-8000, Math.min(8000, v)));
   function swap(m, a, b) {
     const x = m.nodes[a], y = m.nodes[b];
-    if (!x || !y || a === b || x.parent === null || x.parent !== y.parent) fail('入れ替えられるのは同じ親を持つ2つのノードだけです');
+    if (!x || !y || a === b || x.parent === null || x.parent !== y.parent) fail(tr('ops.swapSiblings'));
     const p = m.nodes[x.parent], angle = n => Math.atan2(n.y - p.y, n.x - p.x);
     const moves = [[x, y], [y, x]].flatMap(([from, to]) => {
       const t = angle(to) - angle(from), cos = Math.cos(t), sin = Math.sin(t);
@@ -56,12 +57,12 @@
   function exact(value, keys) { return record(value) && Object.keys(value).length === keys.length && keys.every(k => own(value, k)); }
   function validateProposal(p) {
     if (!exact(p, ['status', 'message', 'operations']) || !['ok', 'needs_input', 'no_change'].includes(p.status) || typeof p.message !== 'string' || p.message.length > 1000 || !Array.isArray(p.operations) || p.operations.length > 100 ||
-        (p.status === 'ok' ? !p.operations.length : p.operations.length)) fail('Codexの操作案の形式が正しくありません');
+        (p.status === 'ok' ? !p.operations.length : p.operations.length)) fail(tr('ops.badProposal'));
     for (const op of p.operations) {
-      if (!record(op) || !fields[op.type] || !exact(op, fields[op.type])) fail('許可されていない操作です');
-      for (const k of ['clientId', 'parentId', 'nodeId', 'otherId']) if (own(op, k) && !identifier(op[k])) fail('ノードIDの形式が正しくありません');
-      if (own(op, 'text') && (typeof op.text !== 'string' || !op.text.trim() || op.text.length > 4000)) fail('ノードの文字は1〜4000文字で指定してください');
-      if (op.type === 'delete_node' && !['single', 'subtree'].includes(op.scope)) fail('削除範囲が正しくありません');
+      if (!record(op) || !fields[op.type] || !exact(op, fields[op.type])) fail(tr('ops.notAllowed'));
+      for (const k of ['clientId', 'parentId', 'nodeId', 'otherId']) if (own(op, k) && !identifier(op[k])) fail(tr('ops.badId'));
+      if (own(op, 'text') && (typeof op.text !== 'string' || !op.text.trim() || op.text.length > 4000)) fail(tr('ops.textLength'));
+      if (op.type === 'delete_node' && !['single', 'subtree'].includes(op.scope)) fail(tr('ops.badScope'));
     }
     return p;
   }
@@ -75,15 +76,14 @@
     return counts;
   }
   function summary(c) {
-    const parts = [[c.added, '追加'], [c.updated, '書きかえ'], [c.reparented, 'つなぎ替え'], [c.moved, '移動'], [c.deleted, '削除']].filter(([n]) => n).map(([n, verb]) => `${n}個${verb}`);
-    return parts.length ? parts.join('、') + 'しました' : '変更はありません';
+    return tr('ops.summary', c);
   }
   function prepare(before, proposal, options = {}) {
     validateProposal(proposal); const m = serialize(before), refs = new Map(), used = new Set(Object.keys(m.nodes)), deletions = [], focus = [];
-    const resolve = id => { const key = refs.get(id) || id; if (!own(m.nodes, key)) fail('対象のノードが見つかりません（前方参照や削除済みを含みます）'); return key; };
+    const resolve = id => { const key = refs.get(id) || id; if (!own(m.nodes, key)) fail(tr('ops.missingNode')); return key; };
     for (const op of proposal.operations) {
       if (op.type === 'add_node') {
-        if (used.has(op.clientId)) fail('追加ノードの仮IDが重複しています');
+        if (used.has(op.clientId)) fail(tr('ops.duplicateClientId'));
         const parent = resolve(op.parentId), id = addNode(m, parent, op.text, undefined, options.size);
         refs.set(op.clientId, id); used.add(op.clientId); used.add(id); focus.push(id);
       } else {
@@ -91,12 +91,12 @@
         if (op.type === 'update_node') { n.text = op.text; focus.push(id); }
         if (op.type === 'reparent_node') {
           const parent = resolve(op.parentId);
-          if (id === m.root || subtree(m, id).has(parent)) fail('中心や自分・子孫へのつなぎ替えはできません');
+          if (id === m.root || subtree(m, id).has(parent)) fail(tr('ops.badReparent'));
           if (n.parent !== parent) { n.parent = parent; n.order = ++m.seq; }
         }
         if (op.type === 'swap_nodes') { swap(m, id, resolve(op.otherId)); focus.push(id); }
         if (op.type === 'delete_node') {
-          if (id === m.root) fail('中心ノードは削除できません');
+          if (id === m.root) fail(tr('delete.root'));
           const ids = op.scope === 'subtree' ? [...subtree(m, id)] : [id];
           deletions.push({ name: n.text, scope: op.scope, count: ids.length, names: ids.map(key => m.nodes[key].text) }); focus.push(n.parent);
           if (op.scope === 'single') {
@@ -107,18 +107,18 @@
           for (const key of ids) delete m.nodes[key];
         }
       }
-      if (!valid(m)) fail('変更後のマップが正しくありません');
+      if (!valid(m)) fail(tr('ops.badResult'));
     }
-    if (Object.keys(m.nodes).length > 500) fail('マップは500ノードまでです');
+    if (Object.keys(m.nodes).length > 500) fail(tr('ops.tooManyNodes'));
     const counts = diff(before, m), changed = Object.values(counts).some(Boolean);
     return { map: changed ? m : serialize(before), counts, changed, deletions, focusId: focus.reverse().find(id => own(m.nodes, id)) || m.root };
   }
   function validateInput(input) {
     if (!exact(input, ['requestId', 'clientSessionId', 'mapSessionId', 'baseRevision', 'prompt', 'selectedNodeId', 'map']) ||
         !['requestId', 'clientSessionId', 'mapSessionId'].every(k => identifier(input[k])) || !Number.isSafeInteger(input.baseRevision) || input.baseRevision < 0 ||
-        typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 4000) fail('指示は1〜4000文字で入力してください');
-    if (!valid(input.map) || Object.keys(input.map.nodes).length > 500) fail('正しい形式の500ノード以下のマップが必要です');
-    if (input.selectedNodeId !== null && (typeof input.selectedNodeId !== 'string' || !own(input.map.nodes, input.selectedNodeId))) fail('選択中のノードが見つかりません');
+        typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 4000) fail(tr('ops.promptLength'));
+    if (!valid(input.map) || Object.keys(input.map.nodes).length > 500) fail(tr('ops.badMap'));
+    if (input.selectedNodeId !== null && (typeof input.selectedNodeId !== 'string' || !own(input.map.nodes, input.selectedNodeId))) fail(tr('ops.missingSelection'));
     return input;
   }
   const str = { type: 'string', minLength: 1, maxLength: 160 };

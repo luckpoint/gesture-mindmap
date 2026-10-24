@@ -23,7 +23,7 @@ function setup(options = {}) {
   const bitmaps = [];
   const context = vm.createContext({
     isSecureContext: true,
-    navigator: { mediaDevices: { getUserMedia: options.getUserMedia || (async () => stream), enumerateDevices: async () => options.devices || [] } },
+    navigator: { languages: ['ja'], mediaDevices: { getUserMedia: options.getUserMedia || (async () => stream), enumerateDevices: async () => options.devices || [] } },
     Worker, performance: { now: () => now },
     createImageBitmap: options.createImageBitmap || (async () => { const b = { closes: 0, close() { this.closes++; } }; bitmaps.push(b); return b; }),
     requestAnimationFrame: fn => { frames.set(++counter, fn); return counter; }, cancelAnimationFrame: id => frames.delete(id),
@@ -31,6 +31,7 @@ function setup(options = {}) {
     setInterval: fn => { intervals.set(++counter, fn); return counter; }, clearInterval: id => intervals.delete(id),
     HandGestures: { TRACKING_TIMEOUT_MS, handFrame: () => ({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, identity: 'Left' }) },
   });
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/camera.js'), 'utf8'), context);
   const session = new context.CameraSession({ video, status: s => events.push(s), error: e => events.push(['error', e]), frame: (...args) => events.push(['frame', ...args]), metrics: m => events.push(['metrics', m]), cameras: (...args) => events.push(['cameras', ...args]) });
   return { session, context, timers, intervals, frames, events, workers, track, stream, video, bitmaps, advance: n => { now += n; } };

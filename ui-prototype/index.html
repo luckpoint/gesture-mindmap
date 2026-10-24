@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>マインドマップ試作</title>
+<title data-i18n="app.title"></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Maru+Gothic:wght@500;700&display=swap">
@@ -362,64 +362,64 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></symbol>
 </svg>
 
-<main id="viewport" tabindex="0" aria-label="マップ。Tabで子を追加、Enterで兄弟を追加、Spaceで書きかえ、矢印で選択を移動">
+<main id="viewport" tabindex="0" data-i18n-aria-label="viewport.label">
   <div id="world">
     <svg id="edges" width="1" height="1"></svg>
     <div id="nodes"></div>
   </div>
 </main>
-<div class="edge-hint" id="edgeHint" aria-hidden="true">ここがキャンバスの端です</div>
+<div class="edge-hint" id="edgeHint" aria-hidden="true" data-i18n="edge.hint"></div>
 
 <header class="topbar">
   <div class="cluster panel">
     <div class="menu">
-      <button class="btn" id="mapsBtn" aria-expanded="false" aria-controls="mapsMenu" disabled><svg class="i"><use href="#i-maps"/></svg><span class="btn__label--wide">マップ</span></button>
+      <button class="btn" id="mapsBtn" aria-expanded="false" aria-controls="mapsMenu" disabled><svg class="i"><use href="#i-maps"/></svg><span class="btn__label--wide" data-i18n="maps.button"></span></button>
       <div class="menu__list maps panel" id="mapsMenu" hidden>
-        <button class="btn" id="newMapBtn"><svg class="i"><use href="#i-plus"/></svg>新しいマップ</button>
-        <ul class="maps__list" id="mapsList" aria-label="マップの一覧"></ul>
+        <button class="btn" id="newMapBtn"><svg class="i"><use href="#i-plus"/></svg><span data-i18n="maps.new"></span></button>
+        <ul class="maps__list" id="mapsList" data-i18n-aria-label="maps.list"></ul>
         <div class="maps__usage" id="mapsUsage" hidden>
-          <span>画像の使用量</span><span class="maps__usage-value" id="mapsUsageText"></span>
+          <span data-i18n="maps.usage"></span><span class="maps__usage-value" id="mapsUsageText"></span>
           <div class="maps__bar"><span id="mapsUsageBar"></span></div>
         </div>
       </div>
     </div>
-    <input class="title" id="title" aria-label="マップの名前" autocomplete="off" spellcheck="false">
+    <input class="title" id="title" data-i18n-aria-label="title.label" autocomplete="off" spellcheck="false">
     <div class="save" id="save" data-state="saving" role="status">
-      <span class="save__dot"></span><span class="save__text" id="saveText">読み込み中…</span>
+      <span class="save__dot"></span><span class="save__text" id="saveText" data-i18n="save.loading"></span>
     </div>
-    <button class="btn btn--danger" id="saveExport" hidden>書き出す</button>
+    <button class="btn btn--danger" id="saveExport" data-i18n="file.export" hidden></button>
   </div>
   <div class="cluster cluster--tools panel">
-    <button class="btn btn--icon" id="undo" aria-label="元に戻す（⌘Z）" title="元に戻す（⌘Z）" disabled><svg class="i"><use href="#i-undo"/></svg></button>
-    <button class="btn btn--icon" id="redo" aria-label="やり直す（⇧⌘Z）" title="やり直す（⇧⌘Z）" disabled><svg class="i"><use href="#i-redo"/></svg></button>
+    <button class="btn btn--icon" id="undo" data-i18n-aria-label="history.undo" data-i18n-title="history.undo" disabled><svg class="i"><use href="#i-undo"/></svg></button>
+    <button class="btn btn--icon" id="redo" data-i18n-aria-label="history.redo" data-i18n-title="history.redo" disabled><svg class="i"><use href="#i-redo"/></svg></button>
     <span class="sep"></span>
     <div class="menu">
-      <button class="btn" id="fileBtn" aria-expanded="false" aria-controls="fileMenu"><svg class="i"><use href="#i-file"/></svg><span class="btn__label--wide">ファイル</span></button>
+      <button class="btn" id="fileBtn" aria-expanded="false" aria-controls="fileMenu"><svg class="i"><use href="#i-file"/></svg><span class="btn__label--wide" data-i18n="file.button"></span></button>
       <div class="menu__list panel" id="fileMenu" hidden>
-        <button class="btn" id="exportBtn"><svg class="i"><use href="#i-down"/></svg>書き出す（JSON）</button>
-        <button class="btn" id="importBtn"><svg class="i"><use href="#i-up"/></svg>読み込む</button>
+        <button class="btn" id="exportBtn"><svg class="i"><use href="#i-down"/></svg><span data-i18n="file.exportJson"></span></button>
+        <button class="btn" id="importBtn"><svg class="i"><use href="#i-up"/></svg><span data-i18n="file.import"></span></button>
       </div>
     </div>
-    <button class="btn btn--quiet" id="devBtn" aria-expanded="false" aria-controls="dev"><svg class="i"><use href="#i-flask"/></svg><span class="btn__label--wide">検証</span></button>
+    <button class="btn btn--quiet" id="devBtn" aria-expanded="false" aria-controls="dev"><svg class="i"><use href="#i-flask"/></svg><span class="btn__label--wide" data-i18n="dev.button"></span></button>
   </div>
 </header>
 <input type="file" id="fileInput" accept="application/json,.json" hidden>
 <input type="file" id="imageInput" accept="image/*" hidden>
 
-<div class="node-menu panel" id="nodeMenu" role="toolbar" aria-label="選んだことばの操作" hidden>
-  <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label">子を追加</span></button>
-  <button class="btn" data-act="edit" title="書きかえ（Enter）"><svg class="i"><use href="#i-edit"/></svg><span class="btn__label">書きかえ</span></button>
-  <button class="btn" data-act="image-child"><svg class="i"><use href="#i-image-child"/></svg><span class="btn__label">画像の子を追加</span></button>
-  <button class="btn" data-act="image"><svg class="i"><use href="#i-image"/></svg><span class="btn__label">画像にする</span></button>
-  <button class="btn" data-act="remove-image" hidden>画像を取り外す</button>
-  <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label">つなぎ替え</span></button>
-  <button class="btn btn--danger btn--icon" data-act="delete" aria-label="消す"><svg class="i"><use href="#i-trash"/></svg></button>
+<div class="node-menu panel" id="nodeMenu" role="toolbar" data-i18n-aria-label="node.menu" hidden>
+  <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label" data-i18n="node.addChild"></span></button>
+  <button class="btn" data-act="edit" data-i18n-title="node.editTitle"><svg class="i"><use href="#i-edit"/></svg><span class="btn__label" data-i18n="node.edit"></span></button>
+  <button class="btn" data-act="image-child"><svg class="i"><use href="#i-image-child"/></svg><span class="btn__label" data-i18n="node.imageChild"></span></button>
+  <button class="btn" data-act="image"><svg class="i"><use href="#i-image"/></svg><span class="btn__label" data-i18n="node.image"></span></button>
+  <button class="btn" data-act="remove-image" data-i18n="node.removeImage" hidden></button>
+  <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label" data-i18n="node.reparent"></span></button>
+  <button class="btn btn--danger btn--icon" data-act="delete" data-i18n-aria-label="node.delete"><svg class="i"><use href="#i-trash"/></svg></button>
 </div>
 
 <div class="banner panel" id="modeBanner" role="status" hidden>
   <span class="banner__msg" id="modeMsg"></span>
-  <button class="btn btn--primary" id="modeOk" disabled>ここにつなぐ</button>
-  <button class="btn" id="modeCancel">やめる</button>
+  <button class="btn btn--primary" id="modeOk" data-i18n="reparent.ok" disabled></button>
+  <button class="btn" id="modeCancel" data-i18n="reparent.cancel"></button>
 </div>
 
 <div class="notices" id="notices">
@@ -427,136 +427,137 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <div class="toast panel" id="toast" role="status" aria-live="polite" hidden></div>
 </div>
 <dialog class="delete-dialog" id="instructionDialog" aria-labelledby="instructionTitle">
-  <h2 id="instructionTitle">指示の変更を確認</h2>
-  <p>削除範囲と、同時に行う変更を確認してください。すべての変更をまとめて反映します。</p>
+  <h2 id="instructionTitle" data-i18n="instruction.confirmTitle"></h2>
+  <p data-i18n="instruction.confirmBody"></p>
   <div id="instructionScopes"></div>
   <p class="delete-dialog__preview" id="instructionPreview" role="status" aria-live="polite"></p>
-  <div class="delete-dialog__actions"><button class="btn" id="instructionCancel">キャンセル</button><button class="btn btn--danger" id="instructionConfirm">まとめて反映</button></div>
+  <div class="delete-dialog__actions"><button class="btn" id="instructionCancel" data-i18n="common.cancel"></button><button class="btn btn--danger" id="instructionConfirm" data-i18n="instruction.applyAll"></button></div>
 </dialog>
 
 <dialog class="delete-dialog" id="deleteDialog" aria-labelledby="deleteTitle" aria-describedby="deleteDescription">
   <h2 id="deleteTitle"></h2>
-  <p id="deleteDescription">削除する範囲を選んでください。あとから「元に戻す」で取り消せます。</p>
+  <p id="deleteDescription"></p>
   <fieldset class="delete-dialog__options" id="deleteOptions">
-    <legend style="font-size:14px;margin-bottom:8px">削除する範囲</legend>
-    <label class="delete-option"><input type="radio" name="deleteScope" id="deleteSingle" value="single"><span><strong>このノードだけ削除</strong><small id="deleteSingleDetail"></small></span></label>
-    <label class="delete-option"><input type="radio" name="deleteScope" id="deleteBranch" value="branch"><span><strong>子孫もまとめて削除</strong><small id="deleteBranchDetail"></small></span></label>
+    <legend style="font-size:14px;margin-bottom:8px" data-i18n="delete.legend"></legend>
+    <label class="delete-option"><input type="radio" name="deleteScope" id="deleteSingle" value="single"><span><strong data-i18n="delete.singleOption"></strong><small id="deleteSingleDetail"></small></span></label>
+    <label class="delete-option"><input type="radio" name="deleteScope" id="deleteBranch" value="branch"><span><strong data-i18n="delete.branchOption"></strong><small id="deleteBranchDetail"></small></span></label>
   </fieldset>
-  <p class="delete-dialog__preview" id="deletePreview" aria-live="polite">範囲を選ぶと、削除後のつながりを表示します。</p>
-  <p id="deleteHandHelp">手で操作：開いた手を上下に動かして項目を選び、つまんで少し保持すると決定します。</p>
+  <p class="delete-dialog__preview" id="deletePreview" aria-live="polite"></p>
+  <p id="deleteHandHelp" data-i18n="delete.handHelp"></p>
   <div class="delete-dialog__actions">
-    <button class="btn" id="deleteCancel" autofocus>キャンセル</button>
-    <button class="btn btn--danger" id="deleteConfirm" disabled>削除する</button>
+    <button class="btn" id="deleteCancel" data-i18n="common.cancel" autofocus></button>
+    <button class="btn btn--danger" id="deleteConfirm" disabled></button>
   </div>
 </dialog>
 
 <dialog class="delete-dialog" id="mapDeleteDialog" aria-labelledby="mapDeleteTitle">
   <h2 id="mapDeleteTitle"></h2>
-  <p>元に戻せません。必要なら先に書き出してください。</p>
+  <p data-i18n="maps.deleteBody"></p>
   <div class="delete-dialog__actions">
-    <button class="btn" id="mapDeleteCancel" autofocus>キャンセル</button>
-    <button class="btn btn--danger" id="mapDeleteConfirm">削除する</button>
+    <button class="btn" id="mapDeleteCancel" data-i18n="common.cancel" autofocus></button>
+    <button class="btn btn--danger" id="mapDeleteConfirm" data-i18n="common.delete"></button>
   </div>
 </dialog>
 
-<dialog class="image-dialog" id="imageDialog" aria-label="画像を拡大表示">
+<dialog class="image-dialog" id="imageDialog" data-i18n-aria-label="image.viewer">
   <img id="imageViewerImg" alt="">
-  <form method="dialog"><button class="btn">閉じる</button></form>
+  <form method="dialog"><button class="btn" data-i18n="common.close"></button></form>
 </dialog>
 
 <dialog class="keys-dialog" id="keysDialog" aria-labelledby="keysTitle">
-  <h2 id="keysTitle">キーボードショートカット</h2>
+  <h2 id="keysTitle" data-i18n="keys.title"></h2>
   <dl>
-    <dt>Space</dt><dd>書きかえ（全選択）</dd>
-    <dt>⇧Space / F2</dt><dd>書きかえ（行末から）</dd>
-    <dt>Enter</dt><dd>兄弟を追加</dd>
-    <dt>Tab</dt><dd>子を追加</dd>
-    <dt>Delete</dt><dd>消す</dd>
-    <dt>矢印</dt><dd>選択を移動（⌥で位置を動かす）</dd>
-    <dt>右・左の枝</dt><dd>←/→で親子へ、↑/↓で前/次の兄弟へ</dd>
-    <dt>上・下の枝</dt><dd>↑/↓で親子へ、←/→で前/次の兄弟へ</dd>
-    <dt>子への移動</dt><dd>枝の外向きキーで先頭の子へ。内向きキーで親へ戻る</dd>
-    <dt>⌘Z / ⇧⌘Z</dt><dd>元に戻す / やり直す</dd>
-    <dt>⇧1</dt><dd>全体を表示</dd>
-    <dt>⇧2</dt><dd>選んだノードに寄る</dd>
-    <dt>⌘= / ⌘-</dt><dd>拡大 / 縮小</dd>
-    <dt>⌘0</dt><dd>100%にもどす</dd>
-    <dt id="promptShortcutKey" hidden>⌘K</dt><dd id="promptShortcutHelp" hidden>指示の入力欄へ移動</dd>
-    <dt>⇧H</dt><dd>手で操作のオン / オフ</dd>
-    <dt>?</dt><dd>この一覧</dd>
+    <dt>Space</dt><dd data-i18n="keys.editAll"></dd>
+    <dt>⇧Space / F2</dt><dd data-i18n="keys.editEnd"></dd>
+    <dt>Enter</dt><dd data-i18n="keys.addSibling"></dd>
+    <dt>Tab</dt><dd data-i18n="node.addChild"></dd>
+    <dt>Delete</dt><dd data-i18n="node.delete"></dd>
+    <dt data-i18n="keys.arrows"></dt><dd data-i18n="keys.arrowsHelp"></dd>
+    <dt data-i18n="keys.sideBranch"></dt><dd data-i18n="keys.sideBranchHelp"></dd>
+    <dt data-i18n="keys.verticalBranch"></dt><dd data-i18n="keys.verticalBranchHelp"></dd>
+    <dt data-i18n="keys.toChild"></dt><dd data-i18n="keys.toChildHelp"></dd>
+    <dt>⌘Z / ⇧⌘Z</dt><dd data-i18n="keys.undoRedo"></dd>
+    <dt>⇧1</dt><dd data-i18n="view.fit"></dd>
+    <dt>⇧2</dt><dd data-i18n="keys.focus"></dd>
+    <dt>⌘= / ⌘-</dt><dd data-i18n="keys.zoom"></dd>
+    <dt>⌘0</dt><dd data-i18n="keys.reset"></dd>
+    <dt id="promptShortcutKey" hidden>⌘K</dt><dd id="promptShortcutHelp" data-i18n="keys.prompt" hidden></dd>
+    <dt>⇧H</dt><dd data-i18n="keys.hand"></dd>
+    <dt>?</dt><dd data-i18n="keys.help"></dd>
   </dl>
-  <form method="dialog"><button class="btn">閉じる</button></form>
+  <form method="dialog"><button class="btn" data-i18n="common.close"></button></form>
 </dialog>
 
-<nav class="dock panel" aria-label="おもな操作">
-  <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
-  <button class="btn dock__btn" id="promptToggle" hidden aria-expanded="false" aria-controls="prompt" title="指示欄（⌘K）"><svg class="i"><use href="#i-send"/></svg>指示欄</button>
-  <button class="btn dock__btn" id="handBtn" aria-pressed="false" title="手で操作（⇧H）"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
-  <button class="btn dock__btn" id="fitBtn" title="全体を表示（⇧1）"><svg class="i"><use href="#i-fit"/></svg>全体を表示</button>
+<nav class="dock panel" data-i18n-aria-label="dock.label">
+  <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg><span data-i18n="node.addChild"></span></button>
+  <button class="btn dock__btn" id="promptToggle" hidden aria-expanded="false" aria-controls="prompt" data-i18n-title="prompt.toggleTitle"><svg class="i"><use href="#i-send"/></svg><span data-i18n="prompt.toggle"></span></button>
+  <button class="btn dock__btn" id="handBtn" aria-pressed="false" data-i18n-title="hand.buttonTitle"><svg class="i"><use href="#i-hand"/></svg><span data-i18n="hand.button"></span></button>
+  <button class="btn dock__btn" id="fitBtn" data-i18n-title="view.fitTitle"><svg class="i"><use href="#i-fit"/></svg><span data-i18n="view.fit"></span></button>
 </nav>
 
-<div class="zoom panel" role="group" aria-label="拡大と縮小">
-  <button class="btn btn--icon" id="zoomOut" aria-label="縮小" title="縮小（⌘-）"><svg class="i"><use href="#i-minus"/></svg></button>
-  <button class="btn zoom__label" id="zoomLabel" title="100%にもどす（⌘0）">100%</button>
-  <button class="btn btn--icon" id="zoomIn" aria-label="拡大" title="拡大（⌘=）"><svg class="i"><use href="#i-plus"/></svg></button>
+<div class="zoom panel" role="group" data-i18n-aria-label="zoom.label">
+  <button class="btn btn--icon" id="zoomOut" data-i18n-aria-label="zoom.out" data-i18n-title="zoom.outTitle"><svg class="i"><use href="#i-minus"/></svg></button>
+  <button class="btn zoom__label" id="zoomLabel" data-i18n-title="zoom.resetTitle">100%</button>
+  <button class="btn btn--icon" id="zoomIn" data-i18n-aria-label="zoom.in" data-i18n-title="zoom.inTitle"><svg class="i"><use href="#i-plus"/></svg></button>
 </div>
 
 <figure class="cam panel" id="cam" hidden>
   <div class="cam__view">
-    <video id="camVideo" autoplay muted playsinline aria-label="カメラのプレビュー"></video>
-    <span class="cam__msg" id="camMsg" hidden>カメラに手を<br>映してください</span>
+    <video id="camVideo" autoplay muted playsinline data-i18n-aria-label="cam.preview"></video>
+    <span class="cam__msg" id="camMsg" data-i18n="cam.showHand" hidden></span>
   </div>
   <figcaption>
-    <span id="handStatus" role="status" aria-live="polite">カメラ（保存しません）</span>
-    <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px">隠す</button>
+    <span id="handStatus" role="status" aria-live="polite" data-i18n="cam.status"></span>
+    <button class="btn btn--quiet" id="camToggle" style="min-height:32px;padding:0 8px" data-i18n="cam.hide"></button>
   </figcaption>
-  <select id="camSelect" aria-label="カメラを選ぶ" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
-  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)">ピースで子を追加、親指を下げて削除確認（約0.6秒保持）。片手のグーは待機、両手グーでマップ移動、人差し指だけを立てて静止で一時停止・再開。</p>
+  <select id="camSelect" data-i18n-aria-label="cam.select" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
+  <p id="handHelp" role="status" style="margin:4px 6px;font-size:var(--text-xs)" data-i18n="hand.help"></p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
-<section class="prompt panel" id="prompt" aria-label="マップへの指示" hidden>
+<section class="prompt panel" id="prompt" data-i18n-aria-label="prompt.label" hidden>
   <div class="prompt__head">
     <p class="prompt__target" id="promptTarget"></p>
-    <button class="btn btn--icon btn--quiet" id="promptHide" aria-label="指示欄を隠す" title="指示欄を隠す"><svg class="i"><use href="#i-close"/></svg></button>
+    <button class="btn btn--icon btn--quiet" id="promptHide" data-i18n-aria-label="prompt.hide" data-i18n-title="prompt.hide"><svg class="i"><use href="#i-close"/></svg></button>
   </div>
   <p class="prompt__question" id="promptQuestion" role="status" aria-live="polite" hidden></p>
   <form class="prompt__form" id="promptForm">
-    <textarea class="prompt__input" id="promptInput" rows="1" maxlength="4000" aria-label="マップへの指示" placeholder="マップへの指示を入力" aria-describedby="promptQuestion promptNote promptConnection"></textarea>
-    <button class="btn btn--primary" id="promptSend" type="submit">送信</button>
+    <textarea class="prompt__input" id="promptInput" rows="1" maxlength="4000" data-i18n-aria-label="prompt.label" data-i18n-placeholder="prompt.placeholder" aria-describedby="promptQuestion promptNote promptConnection"></textarea>
+    <button class="btn btn--primary" id="promptSend" type="submit" data-i18n="prompt.send"></button>
   </form>
-  <p class="prompt__note" id="promptNote">指示と現在のマップをCodexへ送信します</p>
+  <p class="prompt__note" id="promptNote" data-i18n="prompt.note"></p>
   <p class="prompt__connection" id="promptConnection" role="status" hidden></p>
 </section>
 
-<aside class="dev panel" id="dev" aria-label="検証用の表示" hidden>
-  <h2>検証用の表示</h2>
-  <p>カメラ映像と手の座標は保存しません。Workerが利用できない場合は低頻度の推論を試せます。</p>
-  <h3>手で操作</h3>
+<aside class="dev panel" id="dev" data-i18n-aria-label="dev.title" hidden>
+  <h2 data-i18n="dev.title"></h2>
+  <p data-i18n="dev.note"></p>
+  <h3 data-i18n="hand.button"></h3>
   <div class="dev__row">
-    <button class="btn" id="handFallback">低頻度で試す（5fps）</button>
-    <output id="handMetrics">未計測</output>
+    <button class="btn" id="handFallback" data-i18n="dev.fallback"></button>
+    <output id="handMetrics" data-i18n="dev.unmeasured"></output>
   </div>
-  <h3>保存</h3>
+  <h3 data-i18n="dev.save"></h3>
   <div class="dev__row">
-    <button class="btn" data-dev="s-saving">保存中</button>
-    <button class="btn" data-dev="s-error">失敗</button>
-    <button class="btn" data-dev="s-saved">保存済み</button>
+    <button class="btn" data-dev="s-saving" data-i18n="save.saving"></button>
+    <button class="btn" data-dev="s-error" data-i18n="save.error"></button>
+    <button class="btn" data-dev="s-saved" data-i18n="save.saved"></button>
   </div>
-  <h3>キャンバス</h3>
+  <h3 data-i18n="dev.canvas"></h3>
   <div class="dev__row">
-    <button class="btn" data-dev="edge">端まで移動</button>
-    <button class="btn" data-dev="reset">見本のマップに戻す</button>
+    <button class="btn" data-dev="edge" data-i18n="dev.edge"></button>
+    <button class="btn" data-dev="reset" data-i18n="dev.reset"></button>
   </div>
-  <h3>画像</h3>
+  <h3 data-i18n="dev.images"></h3>
   <div class="dev__row">
-    <button class="btn" data-dev="gc-skew">次の起動で24時間後とみなして掃除</button>
+    <button class="btn" data-dev="gc-skew" data-i18n="dev.gcSkew"></button>
   </div>
 </aside>
 
+<script src="i18n.js"></script>
 <script src="features.js"></script>
-<script src="gestures/controller.js?v=20261023-still-point-12"></script>
-<script src="gestures/camera.js?v=20261023-still-point-12"></script>
+<script src="gestures/controller.js?v=20261024-i18n-1"></script>
+<script src="gestures/camera.js?v=20261024-i18n-1"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -568,6 +569,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script>
 const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
 const instructionsEnabled = globalThis.MindmapFeatures?.instructions === true;
+const tr = I18n.t;
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
@@ -590,21 +592,21 @@ let saveTimer, saveDirty = false, saveWrite = null, toastTimer, hintTimer, viewT
 /* ---------- model ---------- */
 function sample() {
   const list = [
-    ['root', '週末にやりたいこと', null, 0, 0],
-    ['a', '公園で遊ぶ', 'root', 310, -130], ['a1', 'ブランコ', 'a', 540, -220],
-    ['b', '図書館に行く', 'root', -320, -110], ['b1', '恐竜の本', 'b', -540, -200],
-    ['c', 'ホットケーキを作る', 'root', 20, 220], ['c1', 'バナナをのせる', 'c', 260, 330],
+    ['root', null, 0, 0],
+    ['a', 'root', 310, -130], ['a1', 'a', 540, -220],
+    ['b', 'root', -320, -110], ['b1', 'b', -540, -200],
+    ['c', 'root', 20, 220], ['c1', 'c', 260, 330],
   ];
-  const nodes = Object.fromEntries(list.map(([id, text, parent, x, y], order) => [id, { id, text, parent, x, y, order }]));
-  return { version: 2, title: '週末のマップ', root: 'root', seq: list.length, nodes };
+  const nodes = Object.fromEntries(list.map(([id, parent, x, y], order) => [id, { id, text: tr('sample.' + id), parent, x, y, order }]));
+  return { version: 2, title: tr('sample.title'), root: 'root', seq: list.length, nodes };
 }
 function valid(m) { return InstructionOperations.valid(m); }
 function blankMap() {
-  return { version: 2, title: '新しいマップ', root: 'root', seq: 0, nodes: { root: { id: 'root', text: '中心のテーマ', parent: null, x: 0, y: 0, order: 0 } } };
+  return { version: 2, title: tr('maps.new'), root: 'root', seq: 0, nodes: { root: { id: 'root', text: tr('maps.rootText'), parent: null, x: 0, y: 0, order: 0 } } };
 }
 function serializeMap() { return InstructionOperations.serialize(map); }
 const readOnly = () => !mapClaim.editable;
-function refuseReadOnly() { if (readOnly()) toast('別のタブで編集中です'); return readOnly(); }
+function refuseReadOnly() { if (readOnly()) toast(tr('save.readonly')); return readOnly(); }
 let treeCache = null;
 function invalidateTree() { treeCache = null; }
 function treeInfo() {
@@ -674,9 +676,9 @@ function changed() {
 }
 function endStaleInstruction() {
   if (instructionUndoButton) instructionUndoButton.disabled = true;
-  if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
+  if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', tr('instruction.conflictApply'));
   if (instruction?.state === 'awaiting_input' || instruction?.state === 'answering') {
-    endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel();
+    endInstruction('conflict', tr('instruction.conflictQuestion')); instructionClient.cancel();
   }
 }
 function updateAccess() {
@@ -712,8 +714,8 @@ async function flushSave() {
   const changes = { cursor: cursor(), put: [...unsaved.values()], drop: [...dropped] };
   unsaved = new Map(); dropped = new Set();
   saveWrite = (async () => {
-    if (!library) throw new Error('このブラウザでは保存できません');
-    if (forceSaveFail) throw new Error('保存できませんでした');
+    if (!library) throw new Error(tr('save.unsupported'));
+    if (forceSaveFail) throw new Error(tr('save.error'));
     await library.save(id, snapshot, changes);
   })();
   try { await saveWrite; if (!saveDirty) setSave('saved'); }
@@ -729,7 +731,7 @@ async function flushSave() {
 function setSave(state) {
   if (state === 'saved' && readOnly()) state = 'readonly';
   $('#save').dataset.state = state;
-  $('#saveText').textContent = { saving: '保存中…', saved: '保存済み', error: '保存できませんでした', readonly: '別のタブで編集中です' }[state];
+  $('#saveText').textContent = tr('save.' + state);
   $('#saveExport').hidden = state !== 'error';
   resizeNotices();
 }
@@ -770,7 +772,7 @@ function showMap(id, m, claim, log = { cursor: 0, entries: [] }) {
 }
 function showRemote(m) {
   if (!readOnly() || switching) return;
-  if (!m) { mapClaim.release(); mapClaim = { editable: false, release() {} }; toast('このマップは別のタブで削除されました'); void openFallback().catch(failOpen); return; }
+  if (!m) { mapClaim.release(); mapClaim = { editable: false, release() {} }; toast(tr('maps.deletedElsewhere')); void openFallback().catch(failOpen); return; }
   map = m; invalidateTree(); revision++;
   if (!map.nodes[sel]) sel = null;
   $('#title').value = map.title;
@@ -782,13 +784,13 @@ async function grantEdit(id) {
   stopWatch?.(); stopWatch = null;
   if (m) { map = m; useLog(m, log); invalidateTree(); revision++; if (!map.nodes[sel]) sel = map.root; $('#title').value = map.title; render(); }
   setSave('saved'); updateAccess(); renderMapList();
-  toast('編集できるようになりました');
+  toast(tr('maps.editable'));
 }
 async function openMap(id) {
   const claim = await MapLocks.claim(id, { granted: () => { void grantEdit(id); } });
   try {
     const [m, log] = await Promise.all([library.load(id), claim.editable ? library.log(id) : undefined]);
-    if (!m) throw new Error('マップを読み込めません');
+    if (!m) throw new Error(tr('maps.loadFailed'));
     showMap(id, m, claim, log);
   } catch (error) { claim.release(); throw error; }
 }
@@ -796,19 +798,19 @@ async function openFallback() {
   const [first] = await library.list();
   await openMap(first?.id ?? await library.create(sample()));
 }
-function failOpen(error) { console.error(error); toast('マップを開けませんでした'); }
+function failOpen(error) { console.error(error); toast(tr('maps.openFailed')); }
 function busyOperation() { return !!(editing || gesture || mode || deletion || hand?.grab); }
 async function leaveMap() {
-  if (busyOperation()) throw new Error('操作を終えてから切り替えてください');
+  if (busyOperation()) throw new Error(tr('maps.finishBeforeSwitch'));
   const base = revision;
   if (!readOnly()) await flushSave();
-  if (saveDirty || revision !== base) throw new Error('マップが変わったため切り替えませんでした');
+  if (saveDirty || revision !== base) throw new Error(tr('maps.changedNoSwitch'));
   storeView(); stopWatch?.(); stopWatch = null;
   mapClaim.release(); mapClaim = { editable: false, release() {} };
 }
 async function switchMap(target) {
-  if (!library) throw new Error('このブラウザでは保存できません');
-  if (switching) throw new Error('切り替え中です');
+  if (!library) throw new Error(tr('save.unsupported'));
+  if (switching) throw new Error(tr('maps.switching'));
   switching = true;
   const previous = mapId;
   try {
@@ -820,12 +822,12 @@ async function switchMap(target) {
 async function deleteMap(id) {
   if (id !== mapId) {
     const claim = await MapLocks.claim(id, { wait: false });
-    if (!claim.editable) throw new Error('別のタブで編集中のマップは削除できません');
+    if (!claim.editable) throw new Error(tr('maps.cantDeleteEditing'));
     try { await library.remove(id); } finally { claim.release(); }
   } else {
-    if (readOnly()) throw new Error('別のタブで編集中のマップは削除できません');
-    if (busyOperation()) throw new Error('操作を終えてから削除してください');
-    if (switching) throw new Error('切り替え中です');
+    if (readOnly()) throw new Error(tr('maps.cantDeleteEditing'));
+    if (busyOperation()) throw new Error(tr('maps.finishBeforeDelete'));
+    if (switching) throw new Error(tr('maps.switching'));
     switching = true;
     try {
       const dirty = saveDirty; clearTimeout(saveTimer); saveDirty = false;
@@ -850,7 +852,7 @@ async function cleanImages(now) {
       for (const e of (await library.log(id)).entries) MapHistory.references(e).forEach(ref => refs.add(ref));
     }
     const removed = await imageStore.gc(refs, now);
-    if (removed) console.info(`使われていない画像${removed}件を削除しました`);
+    if (removed) console.info(`Removed ${removed} unused images`);
   });
 }
 let mapList = [], busyMaps = new Set(), mapSizes = new Map(), imageBytes = null;
@@ -858,26 +860,26 @@ const editedElsewhere = id => busyMaps.has(id) && (id !== mapId || readOnly());
 const formatBytes = n => n < 1024 ? n + ' B' : n < 1024 ** 2 ? Math.round(n / 1024) + ' KB' : (n / 1024 ** 2).toFixed(1) + ' MB';
 function ago(t, now = Date.now()) {
   const min = Math.floor((now - t) / 60000);
-  if (min < 1) return 'たった今';
-  if (min < 60) return min + '分前';
-  if (min < 24 * 60) return Math.floor(min / 60) + '時間前';
-  if (min < 7 * 24 * 60) return Math.floor(min / (24 * 60)) + '日前';
-  return new Date(t).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+  if (min < 1) return tr('time.now');
+  if (min < 60) return tr('time.minutes', min);
+  if (min < 24 * 60) return tr('time.hours', Math.floor(min / 60));
+  if (min < 7 * 24 * 60) return tr('time.days', Math.floor(min / (24 * 60)));
+  return new Date(t).toLocaleDateString(I18n.lang, { month: 'numeric', day: 'numeric' });
 }
 function renderMapList() {
   const list = $('#mapsList');
   list.replaceChildren(...mapList.map(m => {
     const row = Object.assign(document.createElement('li'), { className: 'maps__row' + (m.id === mapId ? ' maps__row--current' : '') });
-    const open = Object.assign(document.createElement('button'), { className: 'btn maps__open', title: '更新 ' + new Date(m.updatedAt).toLocaleString('ja-JP') });
+    const open = Object.assign(document.createElement('button'), { className: 'btn maps__open', title: tr('maps.updated', new Date(m.updatedAt).toLocaleString(I18n.lang)) });
     open.dataset.open = m.id; open.setAttribute('aria-current', m.id === mapId);
     const size = mapSizes.get(m.id);
-    const name = Object.assign(document.createElement('span'), { className: 'maps__name', textContent: m.title || '無題のマップ' });
+    const name = Object.assign(document.createElement('span'), { className: 'maps__name', textContent: m.title || tr('maps.untitled') });
     const bytes = Object.assign(document.createElement('span'), { className: 'maps__size', textContent: size ? formatBytes(size.bytes) : '—' });
-    const meta = Object.assign(document.createElement('span'), { className: 'maps__meta', textContent: [ago(m.updatedAt), size?.images && `画像 ${size.images}枚`, editedElsewhere(m.id) && '編集中（別のタブ）'].filter(Boolean).join(' · ') });
+    const meta = Object.assign(document.createElement('span'), { className: 'maps__meta', textContent: [ago(m.updatedAt), size?.images && tr('maps.images', size.images), editedElsewhere(m.id) && tr('maps.editedElsewhere')].filter(Boolean).join(' · ') });
     open.append(name, bytes, meta);
     const remove = Object.assign(document.createElement('button'), { className: 'btn btn--icon maps__remove', innerHTML: '<svg class="i"><use href="#i-trash"/></svg>' });
     remove.dataset.remove = m.id; remove.disabled = editedElsewhere(m.id);
-    remove.setAttribute('aria-label', `「${m.title || '無題のマップ'}」を削除`);
+    remove.setAttribute('aria-label', tr('maps.deleteLabel', m.title || tr('maps.untitled')));
     row.append(open, remove);
     return row;
   }));
@@ -908,7 +910,7 @@ let mapDeleting = null;
 function confirmMapDelete(id) {
   const m = mapList.find(item => item.id === id); if (!m) return;
   mapDeleting = id;
-  $('#mapDeleteTitle').textContent = `「${m.title || '無題のマップ'}」を削除しますか？`;
+  $('#mapDeleteTitle').textContent = tr('delete.title', m.title || tr('maps.untitled'));
   $('#mapDeleteDialog').showModal();
 }
 
@@ -991,10 +993,10 @@ function nodeEl(id) {
   return el;
 }
 function tagFor(id) {
-  if (hand?.grab === id) return hand.state === 'lost' ? '手が見えません' : 'つかみ中';
-  if (hand?.hover === id) return 'つかめる';
-  if (mode?.id === id) return 'つなぎ替え中';
-  if (mode?.candidate === id) return 'ここにつなぐ';
+  if (hand?.grab === id) return tr(hand.state === 'lost' ? 'hand.cantSee' : 'hand.grabbing');
+  if (hand?.hover === id) return tr('hand.grabbable');
+  if (mode?.id === id) return tr('reparent.active');
+  if (mode?.candidate === id) return tr('reparent.ok');
   return '';
 }
 let dragFrame = null;
@@ -1024,11 +1026,11 @@ function renderNodeImage(el, ref) {
   const frame = document.createElement('div'); frame.className = 'node__image';
   const img = document.createElement('img'); img.alt = ref.alt; img.draggable = false;
   img.width = 192; img.height = 144;
-  const message = document.createElement('span'); message.textContent = '画像を読み込み中…';
+  const message = document.createElement('span'); message.textContent = tr('image.loading');
   frame.append(img, message); el.prepend(frame);
   const state = el.imageState = { id: ref.assetId, frame, img };
   img.onload = () => { if (el.imageState === state) { message.hidden = true; renderEdges(); positionMenu(); } };
-  const failed = () => { if (el.imageState === state) { state.failed = true; img.hidden = true; message.hidden = false; message.textContent = '画像を読み込めません'; } };
+  const failed = () => { if (el.imageState === state) { state.failed = true; img.hidden = true; message.hidden = false; message.textContent = tr('image.loadFailed'); } };
   img.onerror = failed;
   imageStore.acquire(ref.assetId).then(url => { if (el.imageState === state) img.src = url; }, failed);
 }
@@ -1036,17 +1038,17 @@ async function attachNodeImage(blob, target, alt) {
   // The caller captures the target before any slow decode, resize or storage step.
   const { nodeId, child, mapSessionId: session, revision: baseRevision } = target;
   const conflict = () => readOnly() || session !== mapSessionId || baseRevision !== revision || !Object.hasOwn(map.nodes, nodeId) || editing || gesture || mode || deletion || hand?.grab;
-  if (conflict()) throw new Error('マップが変わったか操作中のため、画像を追加できません');
-  if (typeof alt !== 'string' || alt.length > 4000) throw new Error('画像の説明は4000文字までです');
+  if (conflict()) throw new Error(tr('image.conflict'));
+  if (typeof alt !== 'string' || alt.length > 4000) throw new Error(tr('image.altTooLong'));
   const asset = await imageStore.put(blob);
-  if (conflict()) throw new Error('保存中にマップが変わったか操作中のため、画像を追加しませんでした');
+  if (conflict()) throw new Error(tr('image.conflictSaved'));
   let id = nodeId;
   commit(() => {
     if (child) id = addNode(nodeId, alt, place(nodeId, 208));
     map.nodes[id].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height };
   });
   if (child) { select(id); ensureVisible(map.nodes[id]); }
-  toast('画像を追加しました');
+  toast(tr('image.added'));
 }
 let imagePick = null;
 function pickImage(nodeId, child) {
@@ -1058,7 +1060,7 @@ async function adoptImageFile(file, pick) {
   const target = { ...pick, mapSessionId, revision };
   const alt = pick.child ? NodeImageUpload.name(file) : map.nodes[pick.nodeId].text || NodeImageUpload.name(file);
   try { await attachNodeImage(await NodeImageUpload.prepare(file), target, alt); }
-  catch (error) { toast(error.message || '画像を追加できませんでした'); }
+  catch (error) { toast(error.message || tr('image.addFailed')); }
 }
 $('#imageInput').onchange = async e => {
   const file = e.target.files[0], pick = imagePick;
@@ -1088,7 +1090,7 @@ vp.addEventListener('drop', async e => {
   setDropTarget(null);
   const id = nodeIdAt(e), file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
   if (!id || !map.nodes[id] || refuseReadOnly()) return;
-  if (!file) { toast('画像ファイルをドロップしてください'); return; }
+  if (!file) { toast(tr('image.dropFile')); return; }
   await adoptImageFile(file, { nodeId: id, child: false });
 });
 let viewing = null;
@@ -1097,14 +1099,14 @@ function openImageViewer(id) {
   if (!ref || els.get(id)?.imageState?.failed) return false;
   const img = $('#imageViewerImg'), assetId = viewing = ref.assetId;
   img.alt = ref.alt; img.removeAttribute('src');
-  imageStore.acquire(assetId).then(url => { if (viewing === assetId) img.src = url; }, () => { if (viewing === assetId) { $('#imageDialog').close(); toast('画像を読み込めません'); } });
+  imageStore.acquire(assetId).then(url => { if (viewing === assetId) img.src = url; }, () => { if (viewing === assetId) { $('#imageDialog').close(); toast(tr('image.loadFailed')); } });
   $('#imageDialog').showModal();
   return true;
 }
 function removeNodeImage(id) {
   if (!map.nodes[id]?.image || editing || gesture || mode || deletion || hand?.grab) return;
   commit(() => { delete map.nodes[id].image; });
-  toast('画像を取り外しました');
+  toast(tr('image.removed'));
 }
 function renderNode(n, blocked) {
   const el = nodeEl(n.id), t = el.nodeText;
@@ -1137,7 +1139,7 @@ function render() {
   for (const n of Object.values(map.nodes)) renderNode(n, blocked);
   renderEdges();
   positionMenu();
-  $('#promptTarget').textContent = map.nodes[sel] ? '選択中：' + map.nodes[sel].text : '対象：中心ノード';
+  $('#promptTarget').textContent = map.nodes[sel] ? tr('prompt.selected', map.nodes[sel].text) : tr('prompt.targetRoot');
 }
 function curve(a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -1180,7 +1182,7 @@ function positionMenu() {
   if (!n || editing || mode || deletion || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
   menu.hidden = false;
   menu.querySelector('[data-act=remove-image]').hidden = !n.image;
-  menu.querySelector('[data-act=image] .btn__label').textContent = n.image ? '画像を変更' : '画像にする';
+  menu.querySelector('[data-act=image] .btn__label').textContent = tr(n.image ? 'node.changeImage' : 'node.image');
   for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
   const el = els.get(sel), half = el.offsetHeight / 2;
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -1204,7 +1206,7 @@ function startEdit(id, isNew = false, atEnd = false) {
   sel = id;
   render();
   const t = els.get(id).nodeText;
-  t.dataset.placeholder = 'ことばを入れる';
+  t.dataset.placeholder = tr('node.placeholder');
   t.contentEditable = 'plaintext-only';
   t.focus();
   const r = document.createRange();
@@ -1254,7 +1256,7 @@ function addSiblingAndEdit() {
 }
 function removeNode(id) {
   if (!map.nodes[id]) return;
-  if (id === map.root) { toast('中心ノードは削除できません'); return; }
+  if (id === map.root) { toast(tr('delete.root')); return; }
   if (refuseReadOnly()) return;
   interruptHand();
   if (editing) finishEdit();
@@ -1262,12 +1264,12 @@ function removeNode(id) {
   if (mode) endReparent();
   const ids = [...subtree(id)], children = kids(id).map(n => n.id);
   deletion = { id, ids, children, parent: map.nodes[id].parent, scope: children.length ? null : 'single', snapshot: JSON.stringify(map) };
-  $('#deleteTitle').textContent = `「${map.nodes[id].text}」を削除しますか？`;
-  $('#deleteDescription').textContent = children.length ? '削除する範囲を選んでください。あとから「元に戻す」で取り消せます。' : 'このノード1個を削除します。あとから「元に戻す」で取り消せます。';
+  $('#deleteTitle').textContent = tr('delete.title', map.nodes[id].text);
+  $('#deleteDescription').textContent = tr(children.length ? 'delete.choose' : 'delete.only');
   $('#deleteOptions').hidden = !children.length;
   $('#deleteSingle').checked = false; $('#deleteBranch').checked = false;
-  $('#deleteSingleDetail').textContent = `1個を削除。子${children.length}個を「${map.nodes[deletion.parent].text}」へつなぎ直します。孫以下も残り、位置は変わりません。`;
-  $('#deleteBranchDetail').textContent = `このノードと子孫${ids.length - 1}個、合計${ids.length}個を削除します。`;
+  $('#deleteSingleDetail').textContent = tr('delete.singleDetail', children.length, map.nodes[deletion.parent].text);
+  $('#deleteBranchDetail').textContent = tr('delete.branchDetail', ids.length);
   updateDeletePreview();
   if (!$('#deleteDialog').open) $('#deleteDialog').showModal();
   $('#deleteCancel').focus();
@@ -1282,11 +1284,11 @@ function chooseDeleteScope(scope) {
 function updateDeletePreview() {
   const d = deletion;
   $('#deleteConfirm').disabled = !d?.scope;
-  $('#deleteConfirm').textContent = d?.scope === 'branch' ? `子孫を含む${d.ids.length}個を削除` : d?.scope ? 'この1個を削除' : '削除する';
-  $('#deletePreview').textContent = !d?.scope ? '範囲を選ぶと、削除後のつながりを表示します。'
-    : d.scope === 'branch' ? `「${map.nodes[d.id].text}」以下の${d.ids.length}個を削除します。親の「${map.nodes[d.parent].text}」は残ります。`
-    : d.children.length ? `「${map.nodes[d.parent].text}」につなぎ直す子：\n${d.children.map(id => map.nodes[id].text).join('、')}\n孫以下のつながり・位置は保持します。`
-    : 'このノードだけを削除します。';
+  $('#deleteConfirm').textContent = d?.scope === 'branch' ? tr('delete.branchConfirm', d.ids.length) : tr(d?.scope ? 'delete.singleConfirm' : 'common.delete');
+  $('#deletePreview').textContent = !d?.scope ? tr('delete.previewEmpty')
+    : d.scope === 'branch' ? tr('delete.previewBranch', map.nodes[d.id].text, d.ids.length, map.nodes[d.parent].text)
+    : d.children.length ? tr('delete.previewReconnect', map.nodes[d.parent].text, d.children.map(id => map.nodes[id].text))
+    : tr('delete.previewSingle');
 }
 function closeDelete() {
   if (!deletion) return;
@@ -1300,7 +1302,7 @@ function confirmDelete() {
   if (JSON.stringify(map) !== d.snapshot) {
     const id = d.id; closeDelete();
     if (map.nodes[id]) removeNode(id);
-    toast('マップが変わったため、削除内容をもう一度確認してください'); return;
+    toast(tr('delete.changed')); return;
   }
   closeDelete();
   commit(() => {
@@ -1313,7 +1315,7 @@ function confirmDelete() {
     }
     invalidateTree(); sel = d.parent;
   });
-  toast('削除しました', '元に戻す', undo);
+  toast(tr('delete.done'), tr('common.undo'), undo);
 }
 function deleteHandItems() {
   return [deletion?.children.length ? $('#deleteSingle') : null, deletion?.children.length ? $('#deleteBranch') : null,
@@ -1393,7 +1395,7 @@ function startReparent(id) {
   interruptHand();
   if (id === map.root) return;
   mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
-  $('#modeMsg').innerHTML = `「<b></b>」をどこにつなぐ？`;
+  $('#modeMsg').innerHTML = tr('reparent.where');
   $('#modeMsg b').textContent = map.nodes[id].text;
   $('#modeBanner').hidden = false; resizeNotices();
   $('#modeOk').disabled = true;
@@ -1415,7 +1417,7 @@ function confirmReparent() {
   commit(() => { map.nodes[id].parent = candidate; map.nodes[id].order = ++map.seq; invalidateTree(); });
   sel = id;
   render();
-  toast('つなぎ替えました', '元に戻す', undo);
+  toast(tr('reparent.done'), tr('common.undo'), undo);
 }
 
 /* ---------- instructions ---------- */
@@ -1447,7 +1449,7 @@ function instructionToast(message, actions = [], transient = false, error = fals
     if (action.undo) instructionUndoButton = button;
   }
   if (!instruction) {
-    const close = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: '閉じる' });
+    const close = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: tr('common.close') });
     close.onclick = () => { t.hidden = true; }; t.append(close);
   }
   if (transient) instructionTimer = setTimeout(() => { if (!instruction) t.hidden = true; }, 5000);
@@ -1457,7 +1459,7 @@ async function checkCodexStatus() {
   try {
     const status = await instructionClient.status();
     $('#promptConnection').textContent = status.reason || ''; $('#promptConnection').hidden = status.available;
-  } catch { $('#promptConnection').textContent = '指示を使うにはMacで ENABLE_CODEX_INSTRUCTIONS=true npm start を実行し、そのURLを開いてください。'; $('#promptConnection').hidden = false; }
+  } catch { $('#promptConnection').textContent = tr('prompt.connection'); $('#promptConnection').hidden = false; }
 }
 function instructionConflict(run) {
   return run.session !== mapSessionId || run.revision !== revision || !!(editing || gesture || mode || deletion || hand?.grab);
@@ -1465,27 +1467,27 @@ function instructionConflict(run) {
 function endInstruction(state, message, counts) {
   const run = instruction; if (!run) return;
   instruction = null; $('#promptSend').disabled = false;
-  $('#promptSend').textContent = '送信'; $('#promptQuestion').hidden = true;
-  $('#promptInput').placeholder = 'マップへの指示を入力'; $('#promptInput').setAttribute('aria-label', 'マップへの指示');
+  $('#promptSend').textContent = tr('prompt.send'); $('#promptQuestion').hidden = true;
+  $('#promptInput').placeholder = tr('prompt.placeholder'); $('#promptInput').setAttribute('aria-label', tr('prompt.label'));
   if ($('#instructionDialog').open) $('#instructionDialog').close();
   const input = $('#promptInput'), actions = [];
   if (state === 'succeeded') {
     if (draftVersion === run.sentDraftVersion && input.value === run.sentText) { input.value = ''; draftVersion++; }
     if (counts) {
       const token = historyToken;
-      actions.push({ label: '元に戻す', undo: true, run: () => { if (historyToken === token) { undo(); $('#instructionToast').hidden = true; } } });
+      actions.push({ label: tr('common.undo'), undo: true, run: () => { if (historyToken === token) { undo(); $('#instructionToast').hidden = true; } } });
     }
   } else if (input.value !== run.text) {
-    actions.push({ label: '入力に戻す', run: () => { input.value = run.text; draftVersion++; resizePrompt(); input.focus(); } });
+    actions.push({ label: tr('instruction.backToInput'), run: () => { input.value = run.text; draftVersion++; resizePrompt(); input.focus(); } });
   }
-  if (state === 'failed') actions.push({ label: '再試行', run: () => { if (!instruction) void sendInstruction(run.text); } });
+  if (state === 'failed') actions.push({ label: tr('instruction.retry'), run: () => { if (!instruction) void sendInstruction(run.text); } });
   instructionToast(message, actions, ['succeeded', 'cancelled', 'no_change'].includes(state), state === 'failed' || state === 'conflict');
   resizePrompt();
 }
 function cancelInstruction() {
   if (!instruction) return;
   // Invalidate the browser request before asking the relay to interrupt it.
-  endInstruction('cancelled', '中止しました'); instructionClient.cancel();
+  endInstruction('cancelled', tr('instruction.cancelled')); instructionClient.cancel();
 }
 async function sendInstruction(retryText) {
   if (!instructionsEnabled) return;
@@ -1493,7 +1495,7 @@ async function sendInstruction(retryText) {
   if (instruction) return;
   const text = typeof retryText === 'string' ? retryText : $('#promptInput').value;
   if (!text.trim()) return;
-  if (readOnly()) { instructionToast('別のタブで編集中のため、このタブでは指示できません', [], false, true); return; }
+  if (readOnly()) { instructionToast(tr('instruction.readOnly'), [], false, true); return; }
   if (deletion || $('#instructionDialog').open) return;
   if (editing) finishEdit();
   interruptHand();
@@ -1503,41 +1505,41 @@ async function sendInstruction(retryText) {
     mapSessionId, baseRevision: revision, prompt: text, selectedNodeId: map.nodes[sel] ? sel : null, map: serializeMap() };
   try {
     InstructionOperations.validateInput(input);
-    if (new TextEncoder().encode(JSON.stringify(input)).length > 1024 * 1024) throw new Error('送信データは1MiBまでです。マップを小さくしてください');
+    if (new TextEncoder().encode(JSON.stringify(input)).length > 1024 * 1024) throw new Error(tr('instruction.tooLarge'));
   } catch (error) { instructionToast(error.message, [], false, true); return; }
   const run = instruction = { id: input.requestId, session: mapSessionId, revision, selection: sel, text, draftVersion, sentText: text, sentDraftVersion: draftVersion, state: 'thinking', snapshot: input.map };
   $('#promptSend').disabled = true;
-  instructionToast('考えています', [{ label: '中止', run: cancelInstruction }]);
+  instructionToast(tr('instruction.thinking'), [{ label: tr('common.stop'), run: cancelInstruction }]);
   try {
     const proposal = await instructionClient.run(input, (state, data) => {
       if (instruction !== run) return;
       if (state === 'awaiting_input') {
-        if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel(); return; }
+        if (instructionConflict(run)) { endInstruction('conflict', tr('instruction.conflictQuestion')); instructionClient.cancel(); return; }
         const field = $('#promptInput');
         if (draftVersion === run.sentDraftVersion && field.value === run.sentText) { field.value = ''; draftVersion++; }
         run.state = state; run.questionId = data.questionId;
         $('#promptQuestion').textContent = data.message; $('#promptQuestion').hidden = false;
-        field.placeholder = '質問への回答を入力'; field.setAttribute('aria-label', 'Codexへの回答'); setPromptHidden(false);
-        $('#promptSend').textContent = '回答'; $('#promptSend').disabled = false;
-        instructionToast('回答を待っています', [{ label: '中止', run: cancelInstruction }]); resizePrompt();
+        field.placeholder = tr('prompt.answerPlaceholder'); field.setAttribute('aria-label', tr('prompt.answerLabel')); setPromptHidden(false);
+        $('#promptSend').textContent = tr('prompt.answer'); $('#promptSend').disabled = false;
+        instructionToast(tr('instruction.waitingAnswer'), [{ label: tr('common.stop'), run: cancelInstruction }]); resizePrompt();
       } else if (state === 'thinking') {
         run.state = state; $('#promptQuestion').hidden = true; $('#promptSend').disabled = true;
-        instructionToast('考えています', [{ label: '中止', run: cancelInstruction }]); resizePrompt();
+        instructionToast(tr('instruction.thinking'), [{ label: tr('common.stop'), run: cancelInstruction }]); resizePrompt();
       }
     });
     if (instruction !== run || instructionClient.applied.has(run.id)) return;
-    if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください'); return; }
+    if (instructionConflict(run)) { endInstruction('conflict', tr('instruction.conflictApply')); return; }
     InstructionOperations.validateProposal(proposal);
-    if (proposal.status !== 'ok') { endInstruction(proposal.status, proposal.message || (proposal.status === 'no_change' ? '変更はありません' : 'ノードを選択して、もう一度指示してください')); return; }
+    if (proposal.status !== 'ok') { endInstruction(proposal.status, proposal.message || tr(proposal.status === 'no_change' ? 'instruction.noChange' : 'instruction.selectNode')); return; }
     run.proposal = proposal; run.state = 'validating';
     run.prepared = InstructionOperations.prepare(run.snapshot, proposal, { size });
     if (run.prepared.deletions.length) confirmInstruction(); else applyInstruction();
-  } catch (error) { if (instruction === run) endInstruction('failed', error.message || 'Codexに接続できませんでした'); }
+  } catch (error) { if (instruction === run) endInstruction('failed', error.message || tr('instruction.connectFailed')); }
 }
 async function answerInstruction() {
   const run = instruction, field = $('#promptInput'), answer = field.value;
   if (!run || run.state !== 'awaiting_input' || !answer.trim()) return;
-  if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel(); return; }
+  if (instructionConflict(run)) { endInstruction('conflict', tr('instruction.conflictQuestion')); instructionClient.cancel(); return; }
   const questionId = run.questionId;
   run.sentText = answer; run.sentDraftVersion = draftVersion;
   run.state = 'answering'; $('#promptSend').disabled = true;
@@ -1545,7 +1547,7 @@ async function answerInstruction() {
   catch (error) {
     if (instruction !== run || run.questionId !== questionId || run.state !== 'answering') return;
     run.state = 'awaiting_input'; $('#promptSend').disabled = false;
-    instructionToast(error.message || '回答を送信できませんでした', [{ label: '中止', run: cancelInstruction }], false, true);
+    instructionToast(error.message || tr('instruction.answerFailed'), [{ label: tr('common.stop'), run: cancelInstruction }], false, true);
   }
 }
 function confirmInstruction() {
@@ -1555,38 +1557,38 @@ function confirmInstruction() {
     if (op.type !== 'delete_node') return;
     const row = document.createElement('label'); row.className = 'delete-option';
     const name = run.snapshot.nodes[op.nodeId]?.text || op.nodeId;
-    const span = document.createElement('span'); span.textContent = `「${name}」の削除範囲`;
-    const select = document.createElement('select'); select.setAttribute('aria-label', `「${name}」の削除範囲`);
-    for (const [value, text] of [['single', 'このノードだけ'], ['subtree', '子孫を含む']]) {
+    const span = document.createElement('span'); span.textContent = tr('instruction.scopeOf', name);
+    const select = document.createElement('select'); select.setAttribute('aria-label', tr('instruction.scopeOf', name));
+    for (const [value, text] of [['single', tr('instruction.scopeSingle')], ['subtree', tr('instruction.scopeSubtree')]]) {
       const option = document.createElement('option'); option.value = value; option.textContent = text; select.append(option);
     }
     select.value = op.scope; select.onchange = () => { run.proposal.operations[index].scope = select.value; updateInstructionPreview(); };
     row.append(span); row.append(select); scopes.append(row);
   });
   updateInstructionPreview();
-  instructionToast('削除内容を確認してください', [{ label: '中止', run: cancelInstruction }]);
+  instructionToast(tr('instruction.review'), [{ label: tr('common.stop'), run: cancelInstruction }]);
   $('#instructionDialog').showModal(); $('#instructionCancel').focus();
 }
 function updateInstructionPreview() {
   const run = instruction; if (!run) return;
   try {
     run.prepared = InstructionOperations.prepare(run.snapshot, run.proposal, { size });
-    $('#instructionPreview').textContent = run.prepared.deletions.map(d => `「${d.name}」：${d.scope === 'single' ? 'このノードだけ' : '子孫を含む'} ${d.count}個\n${d.names.join('、')}`).join('\n\n') + '\n\n全体：' + InstructionOperations.summary(run.prepared.counts);
+    $('#instructionPreview').textContent = run.prepared.deletions.map(d => tr('instruction.previewItem', d.name, tr(d.scope === 'single' ? 'instruction.scopeSingle' : 'instruction.scopeSubtree'), d.count, d.names)).join('\n\n') + '\n\n' + tr('instruction.total', InstructionOperations.summary(run.prepared.counts));
     $('#instructionConfirm').disabled = false;
   } catch (error) { run.prepared = null; $('#instructionPreview').textContent = error.message; $('#instructionConfirm').disabled = true; }
 }
 function applyInstruction() {
   const run = instruction; if (!run || !run.prepared) return;
-  if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください'); return; }
+  if (instructionConflict(run)) { endInstruction('conflict', tr('instruction.conflictApply')); return; }
   const candidate = run.prepared;
-  if (!candidate.changed) { endInstruction('no_change', '変更はありません'); return; }
+  if (!candidate.changed) { endInstruction('no_change', tr('instruction.noChange')); return; }
   let target = candidate.focusId, preserveView = false;
   if (sel !== run.selection) {
     preserveView = !!candidate.map.nodes[sel]; target = sel;
     while (target && !candidate.map.nodes[target]) target = map.nodes[target]?.parent;
     target ||= candidate.map.root;
   }
-  run.state = 'applying'; instructionToast('変更を反映しています');
+  run.state = 'applying'; instructionToast(tr('instruction.applying'));
   // No await from the final revision check through publishing this one history entry.
   commit(() => { map = candidate.map; invalidateTree(); sel = target; });
   instructionClient.applied.add(run.id);
@@ -1651,10 +1653,10 @@ function toggleHand(inputMode = 'worker') {
     video: $('#camVideo'),
     status: message => { $('#handStatus').textContent = message; },
     frame: (frame, now) => handController?.update(frame, now),
-    metrics: m => { $('#handMetrics').textContent = `${m.mode} / 検出 ${m.hands}手 / 座標 ${m.frameValid ? "有効" : "なし"} / 推論 ${m.inferenceMs.toFixed(1)}ms / フレーム取得→表示 ${m.displayMs.toFixed(1)}ms / ${m.revision}`; },
+    metrics: m => { $('#handMetrics').textContent = tr('dev.metrics', m); },
     cameras: (cameras, active) => {
       const select = $('#camSelect');
-      select.replaceChildren(...cameras.map((c, i) => new Option(c.label || `カメラ ${i + 1}`, c.deviceId, false, c.deviceId === active)));
+      select.replaceChildren(...cameras.map((c, i) => new Option(c.label || tr('cam.label', i + 1), c.deviceId, false, c.deviceId === active)));
       select.hidden = cameras.length < 2;
     },
     error: message => { if (cameraSession !== session) return; stopHand(); toast(message); },
@@ -1667,28 +1669,9 @@ function toggleHand(inputMode = 'worker') {
 function updateHand() {
   if (!hand) return;
   $('#handCursor').hidden = true;
-  const message = {
-    ready: '手を認識しています。方向で選択、つまんで移動。ピースで子を追加、親指を下げて削除確認。片手のグーは待機、両手グーでマップ移動、人差し指だけを立てて静止で一時停止。両手を広げると縮小、近づけると拡大します。',
-    addWaiting: `ピース：子を追加 ${Math.round(hand.progress * 100)}%。そのまま保持してください。`,
-    deleteWaiting: `親指を下：削除確認 ${Math.round(hand.progress * 100)}%。そのまま保持してください。`,
-    commandReset: 'グーまたは開いた手に戻すと、次の操作ができます。',
-    dialog: `確認画面：開いた手を上下に動かして項目へ移動し、つまんで保持すると決定します。${hand.progress ? ` 決定 ${Math.round(hand.progress * 100)}%` : ''}`,
-    panWaiting: '両手グーを認識しました。そのまま少し待ってください。',
-    panning: '両手グーでマップを移動中です。どちらかの手を開くと止まります。',
-    zoomWaiting: '両手を認識しました。そのまま少し待ってください。',
-    zooming: '両手を広げると縮小、近づけると拡大します。片手に戻すと選択・移動できます。',
-    dragging: 'つかみ中です。手全体を動かし、指を開いて確定します。',
-    waiting: '手を認識しました。指を開いたまま少し待ってください。',
-    neutral: '片手のグーは待機です。人差し指を立てて動かしている間も待機し、約2秒静止すると一時停止します。両手グーでマップを移動できます。',
-    toggleWaiting: '人差し指だけを立てて約2秒静止すると切り替わります。切替後はグーか開いた手に戻してください。',
-    pinchWaiting: '手を認識しています。親指と人差し指を離すと方向選択に戻ります。',
-    paused: '一時停止中です。グーに戻してから、人差し指だけを立てて約2秒静止すると再開します。',
-    blocked: '通常操作を優先しています。編集や操作を終えると再開します。',
-    lost: '手の追跡が途切れました。手のひら全体をカメラに映してください。',
-    nohand: '手がまだ見つかりません。手のひら全体をカメラに映してください。',
-  }[hand.state];
+  const message = tr('hand.' + hand.state, Math.round(hand.progress * 100));
   $('#handHelp').textContent = message;
-  if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : hand.state === 'dialog' ? message : '手で操作：開いた手を上下に動かして項目へ移動し、つまんで保持すると決定します。';
+  if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : hand.state === 'dialog' ? message : tr('delete.handHelp');
   $('#camMsg').hidden = hand.state === 'ready' || hand.state === 'dragging' || hand.state === 'zooming' || hand.state === 'panning';
   $('#camMsg').textContent = message;
 }
@@ -1725,7 +1708,7 @@ function finishNodeDrag(g) {
   if (g.swap) {
     for (const [id, p] of g.orig) Object.assign(map.nodes[id], p);
     InstructionOperations.swap(map, g.id, g.swap); record(g.pre); changed();
-    toast('入れ替えました', '元に戻す', undo);
+    toast(tr('swap.done'), tr('common.undo'), undo);
   } else if (JSON.stringify(map) !== g.pre) { record(g.pre); changed(); }
   else render();
   updateHand();
@@ -1913,8 +1896,8 @@ async function exportJson() {
     a.download = `${snapshot.title || 'map'}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
-    toast('書き出しました。ブラウザのデータを消すと画像も失われるため、JSONを保管してください');
-  } catch (error) { toast(error.message || '書き出せませんでした'); }
+    toast(tr('file.exported'));
+  } catch (error) { toast(error.message || tr('file.exportFailed')); }
 }
 $('#nodeMenu').addEventListener('click', e => {
   const act = e.target.closest('[data-act]')?.dataset.act;
@@ -1959,7 +1942,7 @@ $('#exportBtn').onclick = exportJson;
 $('#saveExport').onclick = exportJson;
 $('#importBtn').onclick = () => { toggleFileMenu(false); $('#fileInput').click(); };
 async function importMap(m) {
-  if (!valid(m) || m.version !== 2) throw new Error('マップの形式が正しくありません');
+  if (!valid(m) || m.version !== 2) throw new Error(tr('map.invalid'));
   await switchMap(() => library.create(m));
 }
 let importRequest = 0;
@@ -1969,20 +1952,20 @@ $('#fileInput').onchange = async e => {
   if (!f) return;
   const request = ++importRequest;
   try {
-    if (f.size > NodeImageFormat.MAX_FILE) throw new Error('読み込めるJSONは75MiBまでです');
+    if (f.size > NodeImageFormat.MAX_FILE) throw new Error(tr('file.tooLarge'));
     const value = JSON.parse(await f.text());
     if (request !== importRequest) return;
     const m = await NodeImageFormat.importBundle(value, imageStore);
     if (request !== importRequest) return;
     await importMap(m);
-    toast('新しいマップとして読み込みました');
-  } catch (error) { if (request === importRequest) toast((error.message || '読み込めませんでした') + '。作業中のマップを維持しています'); }
+    toast(tr('file.imported'));
+  } catch (error) { if (request === importRequest) toast(tr('file.importKept', error.message || tr('file.importFailed'))); }
 };
 $('#mapsBtn').onclick = () => toggleMapsMenu($('#mapsMenu').hidden);
 $('#newMapBtn').onclick = async () => {
   toggleMapsMenu(false);
   try { await switchMap(() => library.create(blankMap())); startEdit(map.root); }
-  catch (error) { toast(error.message || '作成できませんでした'); }
+  catch (error) { toast(error.message || tr('maps.createFailed')); }
 };
 $('#mapsList').onclick = async e => {
   const open = e.target.closest('[data-open]')?.dataset.open, remove = e.target.closest('[data-remove]')?.dataset.remove;
@@ -1990,14 +1973,14 @@ $('#mapsList').onclick = async e => {
   if (!open) return;
   toggleMapsMenu(false);
   if (open === mapId) return;
-  try { await switchMap(open); } catch (error) { toast(error.message || '切り替えられませんでした'); }
+  try { await switchMap(open); } catch (error) { toast(error.message || tr('maps.switchFailed')); }
 };
 $('#mapDeleteCancel').onclick = () => $('#mapDeleteDialog').close();
 $('#mapDeleteDialog').addEventListener('close', () => { mapDeleting = null; });
 $('#mapDeleteConfirm').onclick = async () => {
   const id = mapDeleting; $('#mapDeleteDialog').close();
   if (!id) return;
-  try { await deleteMap(id); toast('マップを削除しました'); } catch (error) { toast(error.message || '削除できませんでした'); }
+  try { await deleteMap(id); toast(tr('maps.deleted')); } catch (error) { toast(error.message || tr('maps.deleteFailed')); }
 };
 $('#title').oninput = e => { if (map.title !== e.target.value) commit(() => { map.title = e.target.value; }); };
 $('#title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) vp.focus(); };
@@ -2019,7 +2002,7 @@ try { promptHidden ||= !!localStorage.getItem(PROMPT_KEY); } catch {}
 setPromptHidden(promptHidden, false);
 $('#camToggle').onclick = () => {
   const c = $('#cam').classList.toggle('is-collapsed');
-  $('#camToggle').textContent = c ? '表示' : '隠す';
+  $('#camToggle').textContent = tr(c ? 'cam.show' : 'cam.hide');
 };
 $('#dev').addEventListener('click', e => {
   const d = e.target.closest('[data-dev]')?.dataset.dev;
@@ -2027,8 +2010,8 @@ $('#dev').addEventListener('click', e => {
   if (d === 's-saving') { clearTimeout(saveTimer); setSave('saving'); }
   if (d === 's-error') { forceSaveFail = true; scheduleSave(); }
   if (d === 's-saved') { forceSaveFail = false; scheduleSave(); }
-  if (d === 'edge') { animateTo(centerOn({ x: BOUND, y: 0 })); setTimeout(() => { edgeHint('right'); toast('「全体を表示」で戻れます'); }, 300); }
-  if (d === 'gc-skew') { try { localStorage.setItem(GC_SKEW_KEY, '1'); } catch {} toast('次の起動で、24時間後とみなして使われていない画像を消します'); }
+  if (d === 'edge') { animateTo(centerOn({ x: BOUND, y: 0 })); setTimeout(() => { edgeHint('right'); toast(tr('dev.edgeToast')); }, 300); }
+  if (d === 'gc-skew') { try { localStorage.setItem(GC_SKEW_KEY, '1'); } catch {} toast(tr('dev.gcSkewToast')); }
   if (d === 'reset' && !readOnly()) { commit(() => { map = sample(); mapSessionId = InstructionTransport.id('map_'); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
 });
 document.addEventListener('pointerdown', e => {
@@ -2075,18 +2058,18 @@ void (async () => {
   } catch (error) {
     console.error(error);
     mapClaim = { editable: true, release() {} }; updateAccess(); setSave('error');
-    toast('このブラウザでは保存できません。書き出して保管してください'); return;
+    toast(tr('save.unsupportedExport')); return;
   }
-  try { await library.migrateLegacy(localStorage); } catch (error) { console.error('移行できませんでした', error); }
+  try { await library.migrateLegacy(localStorage); } catch (error) { console.error('Migration failed', error); }
   try {
     const moved = await imageStore.migrate(NodeImageStore.indexedDBLegacy());
-    if (moved?.broken) console.warn(`壊れた画像${moved.broken}件は移しませんでした`);
-  } catch (error) { console.error('画像を移せませんでした', error); }
+    if (moved?.broken) console.warn(`Skipped ${moved.broken} broken images`);
+  } catch (error) { console.error('Image migration failed', error); }
   navigator.storage?.persist?.().catch(() => {});
   let last = null; try { last = localStorage.getItem(LAST_KEY); } catch {}
   try { if (last && await library.load(last)) await openMap(last); else await openFallback(); } catch (error) { failOpen(error); }
   let skew = 0; try { if (localStorage.getItem(GC_SKEW_KEY)) skew = NodeImageStore.DAY; localStorage.removeItem(GC_SKEW_KEY); } catch {}
-  cleanImages(Date.now() + skew).catch(error => console.error('画像を掃除できませんでした', error));
+  cleanImages(Date.now() + skew).catch(error => console.error('Image cleanup failed', error));
   library.watchList(list => { mapList = list; if (!$('#mapsMenu').hidden) void refreshMapsMenu(); else renderMapList(); });
   $('#mapsBtn').disabled = false;
 })();

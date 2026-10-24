@@ -1,10 +1,11 @@
 /* Maps on RxDB. The app sees plain map objects and never touches RxDB itself. */
 (function (root, factory) {
-  const api = factory(typeof module === 'object' && module.exports ? require('../images/format.js') : root.NodeImageFormat);
+  const api = typeof module === 'object' && module.exports ? factory(require('../images/format.js'), require('../i18n.js')) : factory(root.NodeImageFormat, root.I18n);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.MapLibrary = api;
-})(globalThis, F => {
+})(globalThis, (F, I18n) => {
   'use strict';
+  const tr = I18n.t;
   const LEGACY = 'mindmap-proto:v1';
   const time = { type: 'number', minimum: 0, maximum: 1e15, multipleOf: 1 };
   const schema = {
@@ -46,11 +47,11 @@
     // with its cursor, so an interrupted save leaves a map that is complete.
     async save(id, map, { cursor, put = [], drop = [] } = {}) {
       const m = F.migrate(map), doc = await this.maps.findOne(id).exec();
-      if (!doc) throw new Error('マップが見つかりません');
+      if (!doc) throw new Error(tr('maps.notFound'));
       if (drop.length) await this.history.bulkRemove(drop.map(seq => id + '|' + seq));
       if (put.length) {
         const { error } = await this.history.bulkUpsert(put.map(e => ({ ...e, id: id + '|' + e.seq, mapId: id })));
-        if (error.length) throw new Error('履歴を保存できません');
+        if (error.length) throw new Error(tr('history.saveFailed'));
       }
       await doc.incrementalPatch({ ...m, ...(cursor === undefined ? {} : { cursor }), updatedAt: Date.now() });
     }
