@@ -51,8 +51,16 @@ const { chromium } = require('playwright');
     await page.evaluate(()=>new Promise(r=>setTimeout(r,800)));
     await page.reload(); await page.waitForLoadState('networkidle');
     await page.waitForFunction(id=>els.get(id)?.querySelector('img')?.naturalWidth===320 && els.get('root').querySelector('img')?.naturalWidth===2048,child);
+    await fit(); await page.locator(`[data-id=${child}] .node__image img`).dblclick();
+    await page.waitForFunction(()=>$('#imageDialog').open && $('#imageViewerImg').naturalWidth===320);
+    const big = await page.locator('#imageViewerImg').boundingBox();
+    assert.ok(big.width > 600, JSON.stringify(big));
+    assert.equal(await page.evaluate(()=>!editing),true);
+    await page.screenshot({path:out+'/image-viewer.png'});
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(()=>!$('#imageDialog').open && !editing),true);
     assert.deepEqual(errors,[]);
-    console.log('Browser checks passed: menu upload as child and onto a node, image-only card, text on selection, resize to 2048px JPEG, reload.');
+    console.log('Browser checks passed: menu upload as child and onto a node, image-only card, text on selection, resize to 2048px JPEG, reload, double-click viewer.');
   } finally {
     await browser?.close(); service.close();server.closeAllConnections();await new Promise(r=>server.close(r));
   }

@@ -41,7 +41,11 @@ button { font: inherit; color: inherit; }
 .keys-dialog dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0 0 20px; font-size: var(--text-sm); }
 .keys-dialog dt { font-weight: 700; white-space: nowrap; }
 .keys-dialog dd { margin: 0; }
-.delete-dialog :focus-visible, .keys-dialog :focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+.image-dialog { max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); padding: 12px; border: 1px solid var(--color-rule); border-radius: var(--radius-lg); background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-2); }
+.image-dialog::backdrop { background: oklch(31% 0.022 60 / .6); }
+.image-dialog img { display: block; width: calc(100vw - 58px); height: calc(100dvh - 110px); object-fit: contain; border-radius: var(--radius-sm); }
+.image-dialog form { display: flex; justify-content: end; margin-top: 12px; }
+.delete-dialog :focus-visible, .keys-dialog :focus-visible, .image-dialog :focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
 .node.is-delete-preview { opacity: .45; outline: 3px dashed var(--color-danger); outline-offset: 4px; }
 .node.is-promote-preview { outline: 3px dashed var(--color-focus); outline-offset: 4px; }
 .edge.is-delete-preview { stroke-dasharray: 4 7; opacity: .4; }
@@ -415,6 +419,11 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   </div>
 </dialog>
 
+<dialog class="image-dialog" id="imageDialog" aria-label="画像を拡大表示">
+  <img id="imageViewerImg" alt="">
+  <form method="dialog"><button class="btn">閉じる</button></form>
+</dialog>
+
 <dialog class="keys-dialog" id="keysDialog" aria-labelledby="keysTitle">
   <h2 id="keysTitle">キーボードショートカット</h2>
   <dl>
@@ -778,6 +787,16 @@ $('#imageInput').onchange = async e => {
   try { await attachNodeImage(await NodeImageUpload.prepare(file), target, alt); }
   catch (error) { toast(error.message || '画像を追加できませんでした'); }
 };
+let viewing = null;
+function openImageViewer(id) {
+  const ref = map.nodes[id]?.image;
+  if (!ref || els.get(id)?.imageState?.failed) return false;
+  const img = $('#imageViewerImg'), assetId = viewing = ref.assetId;
+  img.alt = ref.alt; img.removeAttribute('src');
+  imageStore.acquire(assetId).then(url => { if (viewing === assetId) img.src = url; }, () => { if (viewing === assetId) { $('#imageDialog').close(); toast('画像を読み込めません'); } });
+  $('#imageDialog').showModal();
+  return true;
+}
 function removeNodeImage(id) {
   if (!map.nodes[id]?.image || editing || gesture || mode || deletion || hand?.grab) return;
   commit(() => { delete map.nodes[id].image; });
@@ -1441,8 +1460,9 @@ vp.addEventListener('lostpointercapture', e => {
   endPointer(e);
 });
 vp.addEventListener('dblclick', e => {
-  const id = e.target.closest('.node')?.dataset.id;
-  if (id && !mode) startEdit(id);
+  const hit = document.elementFromPoint(e.clientX, e.clientY), id = hit?.closest('.node')?.dataset.id;
+  if (!id || mode) return;
+  if (!(hit.closest('.node__image') && !editing && openImageViewer(id))) startEdit(id);
 });
 vp.addEventListener('wheel', e => {
   e.preventDefault();
@@ -1569,6 +1589,8 @@ $('#deleteCancel').onclick = closeDelete;
 $('#deleteConfirm').onclick = confirmDelete;
 $('#deleteDialog').addEventListener('cancel', e => { e.preventDefault(); closeDelete(); });
 $('#deleteDialog').addEventListener('close', () => { if (!$('#deleteDialog').open) closeDelete(); });
+$('#imageDialog').addEventListener('close', () => { if (viewing) imageStore.release(viewing); viewing = null; });
+$('#imageDialog').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close(); };
 $('#redo').onclick = redo;
 $('#modeOk').onclick = confirmReparent;
 $('#modeCancel').onclick = endReparent;

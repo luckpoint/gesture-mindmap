@@ -24,7 +24,7 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
       remove() { this.isConnected = false; },
       handlers: {}, hidden: false, value: '', disabled: false,
       addEventListener(name, fn) { this.handlers[name] = fn; },
-      setPointerCapture() {}, focus() { context.document.activeElement = this; }, setAttribute(name, value) { this.attributes[name] = value; },
+      setPointerCapture() {}, focus() { context.document.activeElement = this; }, setAttribute(name, value) { this.attributes[name] = value; }, removeAttribute(name) { delete this.attributes[name]; },
       showModal() { this.open = true; }, close() { this.open = false; },
       click() { this.clicked = (this.clicked || 0) + 1; },
       querySelector(selector) { return selector === '.node__text' ? this.firstChild : element(selector); },
@@ -852,6 +852,20 @@ test('failed image storage never changes map, history or existing reference', as
   assert.equal(t.run(`JSON.stringify(map) === beforeImageSave && history.length === 0`),true);
 });
 
+test('double-clicking a node image opens it large; text and failed images still edit', async () => {
+  const t=setup();
+  t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'海',width:4,height:3};
+    const acquired=[], released=[]; imageStore.acquire=async id=>(acquired.push(id),'blob:big'); imageStore.release=id=>released.push(id); nodeEl('a');
+    const at=part=>(document.elementFromPoint=()=>({closest:s=>s==='.node'?{dataset:{id:'a'}}:s===part?{}:null}),{target:vp});`);
+  await t.run(`$('#viewport').handlers.dblclick(at('.node__image'))`);
+  assert.equal(t.run(`$('#imageDialog').open && $('#imageViewerImg').src==='blob:big' && $('#imageViewerImg').alt==='海' && !editing && acquired.length===1`),true);
+  t.run(`$('#imageDialog').close(); $('#imageDialog').handlers.close();`);
+  assert.equal(t.run(`released.length===1 && released[0]===acquired[0]`),true);
+  t.run(`$('#viewport').handlers.dblclick(at('.node__text'))`);
+  assert.equal(t.run(`editing?.id==='a' && !$('#imageDialog').open`),true);
+  t.run(`cancelEdit(); els.get('a').imageState={failed:true}; $('#viewport').handlers.dblclick(at('.node__image'))`);
+  assert.equal(t.run(`editing?.id==='a' && !$('#imageDialog').open`),true);
+});
 test('uploading as a child adds one named image node in a single undo and selects it', async () => {
   const t=setup();
   t.run(`const ref={assetId:'sha256:'+'c'.repeat(64),width:4,height:3};
