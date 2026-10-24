@@ -6,7 +6,7 @@ import { CodexClient } from './codex-client.mjs';
 import { InstructionService, ServiceError } from './instruction-service.mjs';
 
 const staticRoot = fileURLToPath(new URL('../ui-prototype/', import.meta.url));
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.wasm': 'application/wasm', '.task': 'application/octet-stream' };
+const types = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.wasm': 'application/wasm', '.task': 'application/octet-stream' };
 const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
 function body(req) {
   return new Promise((resolve, reject) => {

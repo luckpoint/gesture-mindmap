@@ -33,7 +33,7 @@ function memoryLibrary() {
     watchList() { return () => {}; },
   };
 }
-function setup({ renderUI = false, handUI = false, stored = {}, instructions = true, lang = 'ja' } = {}) {
+function setup({ renderUI = false, handUI = false, stored = {}, instructions = true, lang = 'ja', paletteUI = false } = {}) {
   const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
   let timerId = 0;
   const frames = new Map(), intervals = new Map();
@@ -42,6 +42,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
       dataset: {}, style: { setProperty(name, value) { this[name] = value; } }, classList: { add() {}, remove() {}, toggle() {} },
       firstChild: { textContent: '', dataset: {}, focus() { context.document.activeElement = this; },
         closest() { return this.contentEditable === 'plaintext-only' ? this : null; } }, attributes: {}, children: [], isConnected: false,
+      contains(el) { return el === this || this.children.includes(el); },
       offsetWidth: 120, offsetHeight: 50,
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
       append(...children) { for (const child of children) { this.children.push(child); child.isConnected = true; } },
@@ -59,7 +60,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   }
   const context = vm.createContext({
     MindmapFeatures: { instructions }, navigator: { languages: [lang] },
-    console, TextEncoder, AbortSignal, Blob, innerWidth: 1200, innerHeight: 800,
+    console, TextEncoder, AbortSignal, AbortController, Blob, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: true }),
     document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
     getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
@@ -84,6 +85,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   for (const file of ['library.js', 'locks.js', 'history.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
+  if (paletteUI) for (const file of ['catalog.js', 'palette.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/icons', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
   context.memoryLibrary = memoryLibrary;
   vm.runInContext(`library = memoryLibrary(); library.docs.set('m_first', { map: sample(), updatedAt: 1, cursor: 0, log: new Map() });
@@ -1265,4 +1267,99 @@ test('an English browser gets English samples, dialogs and notices', () => {
   t.run(`confirmDelete();`);
   assert.equal(t.run('notices.at(-1)'), 'Deleted');
   assert.deepEqual(JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 86400e3].map(d => ago(1e9 - d, 1e9)))`)), ['just now', '5 min ago', '2 hr ago', '1 day ago']);
+});
+
+
+test('palette initializes before the first render; actual apply uses one image history entry with Undo/Redo', async () => {
+  const { run, elements, context } = setup({ renderUI:true, paletteUI:true });
+  const el = key => elements.get(key);
+  assert.equal(el('#paletteToggle').hidden, false);
+  assert.equal(el('#paletteDockToggle').hidden, false);
+  run("$('#paletteDockToggle').onclick()");
+  assert.equal(el('#paletteDockToggle').attributes['aria-expanded'], 'true');
+  assert.equal(el('#iconPalette').attributes['aria-hidden'], 'false');
+  assert.equal(el('#paletteList').children.length, 72);
+  run("$('#palette-daily').onclick(); $('#paletteSearch').value = 'ご飯'; $('#paletteSearch').oninput()");
+  assert.equal(el('#paletteList').children.length, 1);
+  el('#paletteList').children[0].onclick();
+  assert.equal(el('#paletteChild').disabled, false);
+  context.fetch = async () => ({ok:true,blob:async()=>new Blob(['original PNG'])});
+  run("imageStore.put = async () => ({assetId:'sha256:'+'a'.repeat(64),width:128,height:112})");
+  const before = run('Object.keys(map.nodes).length');
+  run("$('#paletteChild').onclick()");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run('Object.keys(map.nodes).length'), before+1);
+  assert.equal(run('map.nodes[sel].text'), 'ご飯');
+  assert.equal(run('history.length'), 1);
+  run('undo()');assert.equal(run('Object.keys(map.nodes).length'),before);
+  run('redo(); select(map.root)');
+  const rootText=run('map.nodes[map.root].text');
+  run("$('#paletteApply').onclick()");await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(run('map.nodes[map.root].image.alt'),'ご飯');assert.equal(run('map.nodes[map.root].text'),rootText);
+  assert.equal(el('#paletteApply').textContent,'画像を置き換える');
+  run('undo()');assert.equal(run('!!map.nodes[map.root].image'),false);
+  run('redo()');assert.equal(run('!!map.nodes[map.root].image'),true);
+  run("$('#paletteClose').onclick()");assert.equal(el('#iconPalette').attributes['aria-hidden'],'true');
+  assert.equal(el('#paletteDockToggle').attributes['aria-expanded'],'false');
+});
+
+test('palette cancels a pending PNG on selection change or map switch, and clears icon selection on switching maps', async () => {
+  for (const action of ["select('b')", "mapSessionId = 'other'; render()", "mapClaim.editable=false; updateAccess()", "$('#paletteClose').onclick()", "$('#palette-daily').onclick()"] ) {
+    const {run,context,elements}=setup({renderUI:true,paletteUI:true});
+    run("$('#paletteToggle').onclick()");elements.get('#paletteList').children[0].onclick();
+    let finish;context.fetch=()=>new Promise(r=>{finish=r;});
+    run("$('#paletteChild').onclick()");run(action);
+    finish({ok:true,blob:async()=>new Blob(['png'])});await new Promise(r=>setImmediate(r));
+    assert.equal(run('history.length'),0,action);
+  }
+});
+
+test('palette drag applies to an unselected node, replaces its image, and supports Undo/Redo', async () => {
+  const {run,context,elements}=setup({renderUI:true,paletteUI:true});
+  run("$('#paletteToggle').onclick(); select('a')");
+  const data = new Map(), transfer = {types:[],setData(type,value){data.set(type,value);this.types.push(type);},getData:type=>data.get(type)};
+  context.document.elementFromPoint = () => ({closest:()=>({dataset:{id:'root'}})});
+  context.fetch = async () => ({ok:true,blob:async()=>new Blob(['png'])});
+  run("let imageNumber = 0; imageStore.put = async () => ({assetId:'sha256:'+(++imageNumber).toString().repeat(64),width:128,height:112})");
+  const event = {dataTransfer:transfer,clientX:100,clientY:100,preventDefault(){}};
+  const viewport = elements.get('#viewport');
+  const before = run('Object.keys(map.nodes).length');
+  for (const i of [0,1]) {
+    elements.get('#paletteList').children[i].ondragstart(event);
+    viewport.handlers.dragover(event);
+    assert.equal(transfer.dropEffect,'copy');
+    assert.equal(run('dropTarget'),'root');
+    await viewport.handlers.drop(event);
+    elements.get('#paletteList').children[i].ondragend();
+    assert.equal(run('dropTarget'),null);
+    assert.equal(run('sel'),'a');
+    assert.equal(run('Object.keys(map.nodes).length'),before);
+    assert.equal(run('history.length'),i+1);
+    assert.equal(run('map.nodes.root.image.assetId'),'sha256:'+String(i+1).repeat(64));
+  }
+  run('undo()');assert.equal(run('map.nodes.root.image.assetId'),'sha256:'+'1'.repeat(64));
+  run('undo()');assert.equal(run('!!map.nodes.root.image'),false);
+  run('redo(); redo()');assert.equal(run('map.nodes.root.image.assetId'),'sha256:'+'2'.repeat(64));
+});
+
+test('palette drag rejects stale, blocked, cancelled and forged drops without fetching', async () => {
+  for (const action of ["revision++", "mapSessionId='other'", "mapClaim.editable=false", "$('#paletteClose').onclick()", "mode='connect'", 'cancel', 'forge', 'outside']) {
+    const {run,context,elements}=setup({renderUI:true,paletteUI:true});
+    run("$('#paletteToggle').onclick()");
+    const data = new Map(), transfer = {types:[],setData(type,value){data.set(type,value);this.types.push(type);},getData:type=>data.get(type)};
+    const event = {dataTransfer:transfer,clientX:100,clientY:100,preventDefault(){}};
+    let fetched=0;
+    context.fetch=async()=>{fetched++;throw Error('unexpected fetch');};
+    context.document.elementFromPoint=()=>({closest:()=>action==='outside'?null:{dataset:{id:'root'}}});
+    const button=elements.get('#paletteList').children[0];
+    button.ondragstart(event);
+    if(action==='cancel') button.ondragend();
+    else if(action==='forge') data.set(run('IconPalette.DRAG_TYPE'),'people-02');
+    else if(action!=='outside') run(action);
+    await elements.get('#viewport').handlers.drop(event);
+    button.ondragend();
+    assert.equal(fetched,0,action);
+    assert.equal(run('history.length'),0,action);
+    assert.equal(run('dropTarget'),null,action);
+  }
 });
