@@ -97,6 +97,9 @@ button { font: inherit; color: inherit; }
 .node.is-grabbed { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
 .node.is-lost { opacity: 0.55; outline: var(--rule-2) dashed var(--color-ink-3); outline-offset: 4px; }
 .node.is-source { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
+.node__image { width: 192px; height: 144px; margin: 0 auto 12px; position: relative; display: grid; place-items: center; font: 14px/1.5 var(--font-ui); }
+.node__image img { width: 192px; height: 144px; object-fit: contain; border-radius: var(--radius-sm); }
+.node__image span { position: absolute; inset: 0; display: grid; place-items: center; }
 .node.is-invalid { opacity: 0.32; }
 .node.is-candidate { background: var(--color-accent-soft); outline: var(--rule-3) dashed var(--color-accent); outline-offset: 5px; }
 .node[data-tag]::before {
@@ -192,7 +195,7 @@ button { font: inherit; color: inherit; }
 
 .node-menu {
   position: fixed; left: 0; top: 0;
-  display: flex; gap: 2px; padding: 4px;
+  display: flex; flex-wrap: wrap; max-width: calc(100vw - 24px); gap: 2px; padding: 4px;
   border-radius: var(--radius-md); box-shadow: var(--shadow-2);
   z-index: 3;
 }
@@ -358,6 +361,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <div class="node-menu panel" id="nodeMenu" role="toolbar" aria-label="選んだことばの操作" hidden>
   <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label">子を追加</span></button>
   <button class="btn" data-act="edit" title="書きかえ（Enter）"><svg class="i"><use href="#i-edit"/></svg><span class="btn__label">書きかえ</span></button>
+  <button class="btn" data-act="remove-image" hidden>画像を取り外す</button>
   <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label">つなぎ替え</span></button>
   <button class="btn btn--danger btn--icon" data-act="delete" aria-label="消す"><svg class="i"><use href="#i-trash"/></svg></button>
 </div>
@@ -476,6 +480,8 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 
 <script src="gestures/controller.js?v=20261023-still-point-12"></script>
 <script src="gestures/camera.js?v=20261023-still-point-12"></script>
+<script src="images/format.js"></script>
+<script src="images/store.js"></script>
 <script src="instructions/operations.js"></script>
 <script src="instructions/client.js"></script>
 <script>
@@ -495,6 +501,7 @@ let history = [], future = [], forceSaveFail = false;
 let revision = 0, historyToken = 0, mapSessionId = InstructionTransport.id('map_');
 let instruction = null, instructionTimer, instructionUndoButton = null, draftVersion = 0;
 const instructionClient = new InstructionTransport.Client();
+const imageStore = new NodeImageStore.Store();
 let saveTimer, toastTimer, hintTimer;
 
 /* ---------- model ---------- */
@@ -506,11 +513,11 @@ function sample() {
     ['c', 'ホットケーキを作る', 'root', 20, 220], ['c1', 'バナナをのせる', 'c', 260, 330],
   ];
   const nodes = Object.fromEntries(list.map(([id, text, parent, x, y], order) => [id, { id, text, parent, x, y, order }]));
-  return { version: 1, title: '週末のマップ', root: 'root', seq: list.length, nodes };
+  return { version: 2, title: '週末のマップ', root: 'root', seq: list.length, nodes };
 }
 function valid(m) { return InstructionOperations.valid(m); }
 function serializeMap() { return InstructionOperations.serialize(map); }
-function load() { try { const m = JSON.parse(localStorage.getItem(KEY)); return valid(m) ? m : null; } catch { return null; } }
+function load() { try { const m = JSON.parse(localStorage.getItem(KEY)); return valid(m) ? NodeImageFormat.migrate(m) : null; } catch { return null; } }
 let treeCache = null;
 function invalidateTree() { treeCache = null; }
 function treeInfo() {
@@ -546,7 +553,7 @@ function branchColor(id) { return treeInfo().colors.get(id); }
 function depth(id) { return treeInfo().depths.get(id); }
 function size(n) {
   const el = els.get(n.id);
-  return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: Math.min(260, n.text.length * 18 + 40), h: 52 };
+  return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: Math.max(n.image ? 232 : 0, Math.min(260, n.text.length * 18 + 40)), h: n.image ? 208 : 52 };
 }
 function place(pid, w = 160) { return InstructionOperations.place(map, pid, w, size); }
 function addNode(pid, text, pos) {
@@ -672,6 +679,7 @@ function nodeEl(id) {
   let el = els.get(id);
   if (!el) {
     el = Object.assign(document.createElement('div'), { className: 'node', innerHTML: '<span class="node__text"></span>' });
+    el.nodeText = el.querySelector('.node__text');
     el.dataset.id = id;
     nodesEl.append(el);
     els.set(id, el);
@@ -700,8 +708,45 @@ function scheduleDragRender(g) {
     positionMenu();
   });
 }
+function clearNodeImage(el) {
+  if (!el.imageState) return;
+  imageStore.release(el.imageState.id);
+  el.imageState.frame.remove(); el.imageState = null;
+}
+function renderNodeImage(el, ref) {
+  if (el.imageState?.id !== ref?.assetId) clearNodeImage(el);
+  if (!ref) return;
+  if (el.imageState) { el.imageState.img.alt = ref.alt; return; }
+  const frame = document.createElement('div'); frame.className = 'node__image';
+  const img = document.createElement('img'); img.alt = ref.alt; img.draggable = false;
+  img.width = 192; img.height = 144;
+  const message = document.createElement('span'); message.textContent = '画像を読み込み中…';
+  frame.append(img, message); el.prepend(frame);
+  const state = el.imageState = { id: ref.assetId, frame, img };
+  img.onload = () => { if (el.imageState === state) { message.hidden = true; renderEdges(); positionMenu(); } };
+  const failed = () => { if (el.imageState === state) { state.failed = true; img.hidden = true; message.hidden = false; message.textContent = '画像を読み込めません'; } };
+  img.onerror = failed;
+  imageStore.acquire(ref.assetId).then(url => { if (el.imageState === state) img.src = url; }, failed);
+}
+async function attachNodeImage(blob, target, alt) {
+  // The caller captures the target when opening the future generation dialog.
+  const { nodeId, mapSessionId: session, revision: baseRevision } = target;
+  const conflict = () => session !== mapSessionId || baseRevision !== revision || !Object.hasOwn(map.nodes, nodeId) || editing || gesture || mode || deletion || hand?.grab;
+  if (conflict()) throw new Error('マップが変わったか操作中のため、画像を追加できません');
+  if (typeof alt !== 'string' || alt.length > 4000) throw new Error('画像の説明は4000文字までです');
+  const asset = await imageStore.put(blob);
+  if (conflict()) throw new Error('保存中にマップが変わったか操作中のため、画像を追加しませんでした');
+  commit(() => { map.nodes[nodeId].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height }; });
+  toast('画像を追加しました');
+}
+function removeNodeImage(id) {
+  if (!map.nodes[id]?.image || editing || gesture || mode || deletion || hand?.grab) return;
+  commit(() => { delete map.nodes[id].image; });
+  toast('画像を取り外しました');
+}
 function renderNode(n, blocked) {
-  const el = nodeEl(n.id), t = el.firstChild;
+  const el = nodeEl(n.id), t = el.nodeText;
+  renderNodeImage(el, n.image);
   if (editing?.id !== n.id && t.textContent !== n.text) t.textContent = n.text;
   el.style.setProperty('--x', n.x + 'px');
   el.style.setProperty('--y', n.y + 'px');
@@ -724,7 +769,7 @@ function renderNode(n, blocked) {
 }
 function render() {
   cancelDragRender();
-  for (const [id, el] of els) if (!map.nodes[id]) { el.remove(); els.delete(id); }
+  for (const [id, el] of els) if (!map.nodes[id]) { clearNodeImage(el); el.remove(); els.delete(id); }
   const blocked = mode?.blocked || null;
   for (const n of Object.values(map.nodes)) renderNode(n, blocked);
   renderEdges();
@@ -771,6 +816,7 @@ function positionMenu() {
   const menu = $('#nodeMenu'), n = sel && map.nodes[sel];
   if (!n || editing || mode || deletion || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
   menu.hidden = false;
+  menu.querySelector('[data-act=remove-image]').hidden = !n.image;
   for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
   const el = els.get(sel), half = el.offsetHeight / 2;
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -787,7 +833,7 @@ function startEdit(id, isNew = false) {
   editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
   sel = id;
   render();
-  const t = els.get(id).firstChild;
+  const t = els.get(id).nodeText;
   t.dataset.placeholder = 'ことばを入れる';
   t.contentEditable = 'plaintext-only';
   t.focus();
@@ -800,7 +846,7 @@ function finishEdit() {
   if (!editing) return;
   const { id, isNew, orig, pid } = editing;
   editing = null;
-  const t = els.get(id)?.firstChild;
+  const t = els.get(id)?.nodeText;
   const text = (t?.textContent || '').trim();
   if (t) t.contentEditable = 'false';
   if (isNew) {
@@ -816,7 +862,7 @@ function finishEdit() {
 }
 function cancelEdit() {
   if (!editing) return;
-  els.get(editing.id).firstChild.textContent = editing.isNew ? '' : editing.orig;
+  els.get(editing.id).nodeText.textContent = editing.isNew ? '' : editing.orig;
   finishEdit();
 }
 function addChildAndEdit(pid) {
@@ -1430,18 +1476,23 @@ function toggleFileMenu(open) {
   $('#fileMenu').hidden = !open;
   $('#fileBtn').setAttribute('aria-expanded', open);
 }
-function exportJson() {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(serializeMap(), null, 2)], { type: 'application/json' }));
-  a.download = `${map.title || 'map'}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+async function exportJson() {
   toggleFileMenu(false);
+  try {
+    const snapshot = serializeMap();
+    const bundle = await NodeImageFormat.exportBundle(snapshot, imageStore);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
+    a.download = `${snapshot.title || 'map'}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('書き出しました。ブラウザのデータを消すと画像も失われるため、JSONを保管してください');
+  } catch (error) { toast(error.message || '書き出せませんでした'); }
 }
 $('#nodeMenu').addEventListener('click', e => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act || !sel) return;
-  ({ child: () => addChildAndEdit(sel), edit: () => startEdit(sel), reparent: () => startReparent(sel), delete: () => removeNode(sel) })[act]();
+  ({ child: () => addChildAndEdit(sel), edit: () => startEdit(sel), 'remove-image': () => removeNodeImage(sel), reparent: () => startReparent(sel), delete: () => removeNode(sel) })[act]();
 });
 $('#addChild').onclick = () => addChildAndEdit(sel || map.root);
 $('#promptForm').onsubmit = e => { e.preventDefault(); void sendInstruction(); };
@@ -1479,7 +1530,7 @@ $('#exportBtn').onclick = exportJson;
 $('#saveExport').onclick = exportJson;
 $('#importBtn').onclick = () => { toggleFileMenu(false); $('#fileInput').click(); };
 function importMap(m) {
-  if (!valid(m)) throw new Error('マップの形式が正しくありません');
+  if (!valid(m) || m.version !== 2) throw new Error('マップの形式が正しくありません');
   if (editing || gesture || mode || deletion) throw new Error('操作を終えてから読み込んでください');
   const previous = { map, sel, history, future, view: { ...view }, stored: localStorage.getItem(KEY) };
   // Save before publishing. A failed write must not replace the working map.
@@ -1492,6 +1543,9 @@ function importMap(m) {
     history = [];
     future = [];
     $('#title').value = map.title;
+    // A bundle may have restored a missing asset with the same ID. Release the
+    // failed URL entry so the next render reads the newly persisted bytes.
+    for (const el of els.values()) if (el.imageState?.failed) clearNodeImage(el);
     render();
     fitAll();
     $('#undo').disabled = true;
@@ -1532,11 +1586,16 @@ $('#fileInput').onchange = async e => {
   if (!f) return;
   const request = ++importRequest;
   try {
-    const m = JSON.parse(await f.text());
+    if (f.size > NodeImageFormat.MAX_FILE) throw new Error('読み込めるJSONは75MiBまでです');
+    const baseSession = mapSessionId, baseRevision = revision;
+    const value = JSON.parse(await f.text());
+    if (request !== importRequest) return;
+    const m = await NodeImageFormat.importBundle(value, imageStore);
+    if (baseSession !== mapSessionId || baseRevision !== revision) throw new Error('読み込み中にマップが変わりました。もう一度読み込んでください');
     if (request !== importRequest) return;
     importMap(m);
     toast('読み込みました');
-  } catch { if (request === importRequest) toast('読み込めませんでした。作業中のマップを維持しています'); }
+  } catch (error) { if (request === importRequest) toast((error.message || '読み込めませんでした') + '。作業中のマップを維持しています'); }
 };
 $('#title').oninput = e => { if (map.title !== e.target.value) commit(() => { map.title = e.target.value; }); };
 $('#title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) vp.focus(); };
@@ -1564,7 +1623,8 @@ document.addEventListener('pointerdown', e => {
 });
 addEventListener('resize', () => { interruptHand(); clampView(view, false); applyView(); });
 addEventListener('blur', () => { if (gesture?.type === 'node') revertGesture(); pts.clear(); stopHand(); });
-addEventListener('pagehide', stopHand);
+addEventListener('pagehide', () => { stopHand(); for (const el of els.values()) clearNodeImage(el); });
+addEventListener('pageshow', () => render());
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopHand(); });
 
 $('#title').value = map.title;

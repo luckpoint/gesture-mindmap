@@ -1,31 +1,16 @@
 /* Shared by the browser and the relay. No state, DOM, or model output is trusted. */
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === 'object' && module.exports ? require('../images/format.js') : root.NodeImageFormat);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.InstructionOperations = api;
-})(globalThis, () => {
+})(globalThis, ImageFormat => {
   'use strict';
   const own = (o, k) => Object.hasOwn(o, k);
   const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
   const clone = v => JSON.parse(JSON.stringify(v));
   const identifier = v => typeof v === 'string' && v.length > 0 && v.length <= 160 && !['__proto__', 'prototype', 'constructor'].includes(v) && !/[\s\x00-\x1f]/.test(v);
   const fail = message => { throw new Error(message); };
-  function valid(m) {
-    if (!record(m) || m.version !== 1 || typeof m.title !== 'string' || typeof m.root !== 'string' || !m.root || !record(m.nodes) ||
-        !Number.isSafeInteger(m.seq) || m.seq < 0 || m.seq >= Number.MAX_SAFE_INTEGER || !own(m.nodes, m.root)) return false;
-    for (const [id, n] of Object.entries(m.nodes)) {
-      if (!id || !record(n) || n.id !== id || typeof n.text !== 'string' || !Number.isFinite(n.x) || !Number.isFinite(n.y) ||
-          !Number.isSafeInteger(n.order) || n.order < 0 || n.order > m.seq) return false;
-      if (id === m.root ? n.parent !== null : typeof n.parent !== 'string' || !own(m.nodes, n.parent)) return false;
-    }
-    const reached = new Set([m.root]);
-    for (const id of Object.keys(m.nodes)) {
-      const path = new Set(); let cur = id;
-      while (!reached.has(cur)) { if (path.has(cur)) return false; path.add(cur); cur = m.nodes[cur].parent; }
-      for (const key of path) reached.add(key);
-    }
-    return true;
-  }
+  const valid = ImageFormat.validMap;
   function serialize(map) { if (!valid(map)) fail('マップの形式が正しくありません'); return clone(map); }
   function children(m, id) { return Object.values(m.nodes).filter(n => n.parent === id).sort((a, b) => a.order - b.order); }
   function subtree(m, id) {
@@ -33,7 +18,7 @@
     for (let i = 0; i < queue.length; i++) for (const n of children(m, queue[i])) { out.add(n.id); queue.push(n.id); }
     return out;
   }
-  const estimate = n => ({ w: Math.min(260, n.text.length * 18 + 40), h: 52 });
+  const estimate = n => ({ w: Math.max(n.image ? 232 : 0, Math.min(260, n.text.length * 18 + 40)), h: n.image ? 208 : 52 });
   function place(m, pid, w = 160, size = estimate) {
     const p = m.nodes[pid]; let base = 0;
     if (p.parent !== null) { const g = m.nodes[p.parent]; base = Math.atan2(p.y - g.y, p.x - g.x); }

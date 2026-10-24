@@ -21,3 +21,7 @@ npm test
 現段階の中継はMacのloopbackに限定しています。HTTPS・アクセス認証・Origin検証と、iPad接続・カメラの受入確認は後続対応です。サーバーをインターネットへ公開する構成にはしていません。
 
 設計・実装状況・未確認項目は [Codex指示入力の設計](docs/codex-prompt-design.md) を参照してください。
+
+画像対応の仕様と進捗は [ノードへの画像追加の設計](docs/node-images-design.md) にあります。画像参照の保存、画像付きJSONの読み込み・書き出し、表示、取り外し、Undo/Redoの基盤を実装しています。画像本体はIndexedDBに保存し、ブラウザのデータを消すと失われるため、画像込みJSONを保管してください。
+
+Codex接続は通常・画像用とも `config/read` の内部エラー（`-32603`）で停止しており、新規画像の生成・追加・置き換えUIは未接続です。`node scripts/probe-image-startup.mjs` で秘密情報を表示せず起動を再確認できます。実ブラウザの受入確認用に `node scripts/verify-node-images.cjs`（別途PlaywrightとChromiumが必要。`--chrome` でGoogle Chromeを使用）を用意していますが、今回の環境ではブラウザの起動権限制限により実行完了していません。

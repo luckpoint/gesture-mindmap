@@ -154,3 +154,16 @@ test('HTTP relay serves only the UI and validates bodies and client ownership', 
   assert.equal((await fetch(base+'/api/instructions/req_1/cancel?clientSessionId=wrong',{method:'POST'})).status,404);
   assert.equal((await fetch(base+'/api/instructions/req_1/cancel?clientSessionId=tab_1',{method:'POST'})).status,200);
 });
+
+test('image profile enables only image generation and RPC diagnostics never retain upstream secret text', async t => {
+  const {CodexClient,restrictedConfig}=await import('../server/codex-client.mjs');
+  assert.equal(restrictedConfig['features.image_generation'],false);
+  const c=new CodexClient({profile:'images',checkVersion:false});t.after(()=>c.close());
+  const { 'features.image_generation': flag, ...rest }=c.config;
+  assert.equal(flag,true);const { 'features.image_generation': unused, ...original }=restrictedConfig;assert.deepEqual(rest,original);
+  c.proc={stdin:{write(){}},kill(){}};
+  const pending=c.rpc('config/read',{});
+  c.receive({id:1,error:{code:-32603,message:'secret-value',data:{token:'secret-value'}}});
+  await assert.rejects(pending,error=>error.message==='RPC_ERROR'&&error.method==='config/read'&&error.rpcCode===-32603&&!JSON.stringify(error).includes('secret'));
+  assert.throws(()=>new CodexClient({profile:'unrestricted'}),/INVALID_PROFILE/);
+});

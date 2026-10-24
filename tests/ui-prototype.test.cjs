@@ -19,18 +19,19 @@ function setup({ renderUI = false, handUI = false } = {}) {
         closest() { return this.contentEditable === 'plaintext-only' ? this : null; } }, attributes: {}, children: [], isConnected: false,
       offsetWidth: 120, offsetHeight: 50,
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
-      append(child) { this.children.push(child); child.isConnected = true; },
+      append(...children) { for (const child of children) { this.children.push(child); child.isConnected = true; } },
+      prepend(child) { this.children.unshift(child); this.firstChild = child; child.isConnected = true; },
       remove() { this.isConnected = false; },
       handlers: {}, hidden: false, value: '', disabled: false,
       addEventListener(name, fn) { this.handlers[name] = fn; },
       setPointerCapture() {}, focus() { context.document.activeElement = this; }, setAttribute(name, value) { this.attributes[name] = value; },
       showModal() { this.open = true; }, close() { this.open = false; },
-      querySelector: element,
+      querySelector(selector) { return selector === '.node__text' ? this.firstChild : element(selector); },
     });
     return elements.get(key);
   }
   const context = vm.createContext({
-    console, TextEncoder, AbortSignal, innerWidth: 1200, innerHeight: 800,
+    console, TextEncoder, AbortSignal, Blob, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: true }),
     document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
     getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
@@ -51,6 +52,7 @@ function setup({ renderUI = false, handUI = false } = {}) {
   context.document.body = element('body');
   // Skip only the initial screen draw; all production handlers are registered.
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
+  for (const file of ['format.js', 'store.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
   vm.runInContext(`
@@ -67,7 +69,7 @@ test('validation accepts an exported map and rejects malformed data', () => {
   const { run } = setup();
   assert.equal(run('valid(JSON.parse(JSON.stringify(sample())))'), true);
   for (const mutation of [
-    'm = null', 'm = []', 'm.version = 2', 'delete m.title', 'm.nodes = []',
+    'm = null', 'm = []', 'm.version = 3', 'delete m.title', 'm.nodes = []',
     'm.root = "absent"', 'm.nodes.a = null', 'm.nodes.a.id = "absent"',
     'm.nodes.a.id = "root"', 'm.nodes.a.x = null', 'm.nodes.a.x = "12"',
     'm.nodes.a.y = Infinity', 'm.nodes.a.y = NaN', 'm.nodes.a.text = 1',
@@ -670,7 +672,7 @@ test('peace adds and edits one child per hold; empty edit cancels and committed 
     const newId = editing.id;
   `);
   assert.equal(t.run(`editing.isNew && map.nodes[newId].parent === 'root' && Object.keys(map.nodes).length === 8`), true);
-  t.run(`for (let i = 0; i < 20; i++) commandSample('peace'); els.get(newId).firstChild.textContent = '新しい考え'; finishEdit();
+  t.run(`for (let i = 0; i < 20; i++) commandSample('peace'); els.get(newId).nodeText.textContent = '新しい考え'; finishEdit();
     for (let i = 0; i < 14; i++) commandSample('peace');`);
   assert.equal(t.run(`!editing && history.length === 1 && map.nodes[newId].text === '新しい考え'`), true);
   t.run(`undo();`); assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
@@ -792,4 +794,89 @@ test('answer POST failures keep the question and typed answer available',async()
   await t.run('sendInstruction()');
   assert.equal(t.run(`instruction.state === 'awaiting_input' && !$('#promptSend').disabled && !$('#promptQuestion').hidden && $('#promptInput').value === '図書館'`),true);
   t.run(`cancelInstruction(); resolveConversation({status:'no_change',message:'',operations:[]});`); await pending;
+});
+
+test('image adoption fixes the original target and commits once; removal and node deletion undo references', async () => {
+  const t=setup();
+  t.run(`const imageRef = {assetId:'sha256:'+'a'.repeat(64),alt:'説明',width:1,height:1};
+    imageStore.put = async () => imageRef;
+    const imageTarget = {nodeId:'a',mapSessionId,revision}; sel='b';`);
+  await t.run(`attachNodeImage(new Blob(['test']), imageTarget, '説明')`);
+  assert.equal(t.run(`!!map.nodes.a.image && !map.nodes.b.image && history.length === 1`),true);
+  t.run(`removeNodeImage('a'); undo();`);assert.equal(t.run(`map.nodes.a.image.assetId === imageRef.assetId && history.length === 1`),true);
+  t.run(`redo();`);assert.equal(t.run(`!map.nodes.a.image`),true);
+  t.run(`undo(); removeNode('a'); chooseDeleteScope('branch'); confirmDelete(); undo();`);
+  assert.equal(t.run(`map.nodes.a.image.assetId === imageRef.assetId`),true);
+});
+test('adoption after a storage await rejects edits, undo, import, deletion and active gestures without adding history', async () => {
+  for(const change of ["commit(()=>map.nodes.a.text='変更')",'undo()', 'importMap(sample())', "commit(()=>delete map.nodes.a1)", 'gesture={type:"node"}', 'hand={grab:"a1"}']) {
+    const t=setup();
+    t.run(`commit(()=>map.nodes.b.text='編集'); let saved;
+      imageStore.put = () => new Promise(resolve=>saved=resolve);
+      const target={nodeId:'a1',mapSessionId,revision};`);
+    const pending=t.run(`attachNodeImage(new Blob(['test']),target,'説明')`);
+    t.run(`${change}; const historyAfterChange=history.length; saved({assetId:'sha256:'+'a'.repeat(64),width:1,height:1});`);
+    await assert.rejects(pending,/保存中/);
+    assert.equal(t.run(`!map.nodes.a1?.image && history.length === historyAfterChange`),true);
+  }
+});
+test('image adoption captures its target before storage and replacement is one undoable change', async () => {
+  const t=setup();
+  t.run(`const oldImage={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
+    const newImage={assetId:'sha256:'+'b'.repeat(64),width:2,height:3};
+    map.nodes.a.image=oldImage; let saved;
+    imageStore.put=()=>new Promise(resolve=>saved=resolve);
+    const target={nodeId:'a',mapSessionId,revision};`);
+  const pending=t.run(`attachNodeImage(new Blob(['test']),target,'新画像')`);
+  assert.equal(t.run(`map.nodes.a.image === oldImage && history.length === 0`),true);
+  t.run(`target.nodeId='b'; target.revision=-1; target.mapSessionId='other'; saved(newImage);`);
+  await pending;
+  assert.equal(t.run(`map.nodes.a.image.assetId === newImage.assetId && !map.nodes.b.image && history.length === 1`),true);
+  t.run('undo()');assert.equal(t.run(`map.nodes.a.image.assetId === oldImage.assetId && map.nodes.a.image.alt === '旧画像'`),true);
+  t.run('redo()');assert.equal(t.run(`map.nodes.a.image.assetId === newImage.assetId && map.nodes.a.image.alt === '新画像'`),true);
+});
+test('an active hand grab blocks image adoption and removal before changing storage or history', async () => {
+  const t=setup();
+  t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
+    const beforeGrab=JSON.stringify(map); let imageWrites=0;
+    imageStore.put=async()=>{imageWrites++;}; hand={grab:'a'};`);
+  await assert.rejects(t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`),/操作中/);
+  t.run(`removeNodeImage('a')`);
+  assert.equal(t.run(`JSON.stringify(map) === beforeGrab && imageWrites === 0 && history.length === 0`),true);
+});
+test('failed image storage never changes map, history or existing reference', async () => {
+  const t=setup();t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
+    const beforeImageSave=JSON.stringify(map); imageStore.put=async()=>{throw Error('quota');};`);
+  await assert.rejects(t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`),/quota/);
+  assert.equal(t.run(`JSON.stringify(map) === beforeImageSave && history.length === 0`),true);
+});
+
+test('bundle import retries a missing image even when node and asset IDs are unchanged', async () => {
+  const t=setup({renderUI:true});
+  t.run(`const restoredImage={assetId:'sha256:'+'a'.repeat(64),alt:'復元する画像',width:1,height:1};
+    const releasedImages=[]; imageStore.release=id=>releasedImages.push(id);
+    let imageReads=0; imageStore.acquire=async()=>{imageReads++;throw Error('missing');};
+    map.nodes.a.image=restoredImage; render();`);
+  await Promise.resolve();
+  assert.equal(t.run(`els.get('a').imageState.failed`),true);
+  t.run(`const brokenImageState=els.get('a').imageState;
+    imageStore.acquire=async()=>{imageReads++;return 'blob:restored';};
+    importMap(serializeMap());`);
+  await Promise.resolve();
+  assert.equal(t.run(`els.get('a').imageState !== brokenImageState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:restored' && releasedImages[0] === restoredImage.assetId && imageReads === 2`),true);
+});
+
+test('image-first DOM keeps editing the text; cached URLs release on removal, replacement and pagehide', async () => {
+  const t=setup({renderUI:true});
+  t.run(`const released=[];imageStore.release=id=>released.push(id); imageStore.acquire=async id=>'blob:'+id;
+    const firstImage={assetId:'sha256:'+'a'.repeat(64),alt:'最初の絵',width:1,height:1};
+    map.nodes.a.image=firstImage;render();startEdit('a');
+    const frame=els.get('a').firstChild;
+    els.get('a').nodeText.textContent='画像の下の文字';finishEdit();`);
+  assert.equal(t.run(`map.nodes.a.text === '画像の下の文字' && els.get('a').firstChild === frame && !!map.nodes.a.image`),true);
+  t.run(`map.nodes.a.image={...firstImage,assetId:'sha256:'+'b'.repeat(64)};render();`);
+  assert.equal(t.run(`released.length === 1 && released[0] === firstImage.assetId`),true);
+  t.run(`removeNodeImage('a');`);assert.equal(t.run('released.length'),2);
+  t.run(`undo();`);t.windowHandlers.get('pagehide')();assert.equal(t.run('released.length'),3);
+  t.windowHandlers.get('pageshow')();assert.equal(t.run(`!!els.get('a').imageState`),true);
 });

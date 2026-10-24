@@ -20,8 +20,11 @@ export const restrictedConfig = {
 };
 
 export class CodexClient extends EventEmitter {
-  constructor({ command = 'codex', rpcTimeout = 15000, spawnProcess = spawn, checkVersion = true } = {}) {
-    super(); Object.assign(this, { command, rpcTimeout, spawnProcess, checkVersion });
+  constructor({ command = 'codex', rpcTimeout = 15000, spawnProcess = spawn, checkVersion = true, profile = 'instructions' } = {}) {
+    super();
+    if (!['instructions', 'images'].includes(profile)) throw new Error('INVALID_PROFILE');
+    Object.assign(this, { command, rpcTimeout, spawnProcess, checkVersion, profile });
+    this.config = { ...restrictedConfig, 'features.image_generation': profile === 'images' };
     this.pending = new Map(); this.seq = 0; this.available = false;
   }
   async start() {
@@ -31,7 +34,7 @@ export class CodexClient extends EventEmitter {
     }
     this.cwd = await mkdtemp(join(tmpdir(), 'mindmap-codex-'));
     const args = ['app-server', '--listen', 'stdio://'];
-    for (const [key, value] of Object.entries(restrictedConfig)) args.push('-c', `${key}=${JSON.stringify(value)}`);
+    for (const [key, value] of Object.entries(this.config)) args.push('-c', `${key}=${JSON.stringify(value)}`);
     this.proc = this.spawnProcess(this.command, args, { cwd: this.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     // Do not forward stderr: upstream diagnostics may contain map text or credentials.
     this.proc.stderr.resume();
@@ -45,7 +48,7 @@ export class CodexClient extends EventEmitter {
     await this.rpc('initialize', { clientInfo: { name: 'mindmap_prompt', title: 'Mindmap', version: '0.1.0' } });
     this.send({ method: 'initialized', params: {} });
     const { config } = await this.rpc('config/read', { includeLayers: false });
-    this.threadConfig = { ...restrictedConfig };
+    this.threadConfig = { ...this.config };
     // Table overrides merge, so disable each inherited MCP entry explicitly.
     for (const name of Object.keys(config?.mcp_servers || {})) this.threadConfig[`mcp_servers.${name}.enabled`] = false;
     const skills = await this.rpc('skills/list', { cwds: [this.cwd] });
@@ -63,7 +66,7 @@ export class CodexClient extends EventEmitter {
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('RPC_TIMEOUT')); this.fail(new Error('RPC_TIMEOUT')); this.proc?.kill(); }, this.rpcTimeout);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, method });
       try { this.send({ id, method, params }); } catch (e) { clearTimeout(timer); this.pending.delete(id); reject(e); }
     });
   }
@@ -75,7 +78,12 @@ export class CodexClient extends EventEmitter {
     if (message.id !== undefined) {
       const pending = this.pending.get(message.id); if (!pending) return;
       this.pending.delete(message.id); clearTimeout(pending.timer);
-      message.error ? pending.reject(new Error('RPC_ERROR')) : pending.resolve(message.result);
+      if (message.error) {
+        // Preserve only protocol metadata. Upstream messages/data may contain secrets.
+        const error = new Error('RPC_ERROR'); error.method = pending.method;
+        error.rpcCode = Number.isInteger(message.error.code) ? message.error.code : null;
+        pending.reject(error);
+      } else pending.resolve(message.result);
     } else if (message.method) this.emit('notification', message.method, message.params);
   }
   fail(error) {
