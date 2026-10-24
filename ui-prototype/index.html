@@ -100,7 +100,6 @@ button { font: inherit; color: inherit; }
 .speech p { margin: 6px 0 0; font-size: var(--text-xs); }
 #speechInterim { opacity: .7; overflow-wrap: anywhere; max-height: 90px; overflow: auto; }
 body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-inset-bottom)); }
-#handSpeechNote { font-size: var(--text-xs); }
 .node.is-editing { outline: var(--rule-3) solid var(--color-focus); outline-offset: 4px; cursor: text; }
 .node.is-dragging, .node.is-grabbed { --lift: 1.04; box-shadow: var(--shadow-2); cursor: grabbing; }
 .node.is-grabbable { outline: var(--rule-2) dashed var(--color-accent); outline-offset: 5px; }
@@ -579,8 +578,6 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <ul class="cam__tips" id="handTips"></ul>
   <ul class="cam__tips cam__guide" id="handGuide" hidden></ul>
   <select id="camSelect" data-i18n-aria-label="cam.select" hidden style="width:100%;margin-top:4px;font-size:var(--text-xs)"></select>
-  <label><input id="handSpeech" type="checkbox" aria-describedby="handSpeechNote"><span data-i18n="speech.hand"></span></label>
-  <p id="handSpeechNote" data-i18n="speech.handNote"></p>
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
@@ -641,11 +638,11 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <p id="paletteStatus" role="status"></p>
   </div>
 </aside>
-<script src="i18n.js?v=20261024-cam-panel-1"></script>
+<script src="i18n.js?v=20261024-hand-voice-1"></script>
 <script src="icons/catalog.js"></script>
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
-<script src="speech/controller.js?v=20261024-1"></script>
+<script src="speech/controller.js?v=20261024-3"></script>
 <script src="gestures/controller.js?v=20261024-cam-panel-1"></script>
 <script src="gestures/debug.js?v=20261024-cam-panel-1"></script>
 <script src="gestures/camera.js?v=20261024-cam-panel-1"></script>
@@ -1310,40 +1307,52 @@ function positionMenu() {
 const speech = new SpeechInput.Controller({ change: updateSpeech });
 let speechMessage = '';
 function updateSpeech() {
-  const active = speech.active;
+  const active = speech.active, fromHand = !!editing?.handInput;
   $('#nodeSpeech').hidden = !editing;
+  $('#nodeSpeechToggle').hidden = fromHand && active;
   $('#nodeSpeechToggle').disabled = !speech.supported || speech.state === 'stopping';
   $('#nodeSpeechToggle').textContent = tr(active ? 'speech.stop' : 'speech.start');
-  $('#nodeSpeechDone').disabled = active;
-  $('#handSpeech').disabled = !speech.supported;
+  $('#nodeSpeechDone').disabled = (active && !fromHand) || !!editing?.pendingDone;
+  $('#nodeSpeechDone').textContent = tr(fromHand ? 'speech.handDone' : 'speech.done');
+  $('#nodeSpeechCancel').textContent = tr(fromHand ? 'speech.handCancel' : 'common.cancel');
+  $('#speechNote').textContent = tr(fromHand ? 'speech.handNote' : 'speech.note');
   $('#speechStatus').textContent = !speech.supported ? tr('speech.unsupported') : active ? tr('speech.' + speech.state) : speechMessage;
   if (!active) $('#speechInterim').textContent = '';
   const t = editing && els.get(editing.id)?.nodeText;
   if (t) t.contentEditable = active ? 'false' : 'plaintext-only';
 }
-function startNodeSpeech(autoCommit = false) {
+function startNodeSpeech() {
   if (!editing || readOnly()) return;
   const edit = editing, session = mapSessionId, t = els.get(edit.id).nodeText;
+  edit.pendingDone = false;
   speechMessage = '';
   speech.start({
     valid: () => editing === edit && session === mapSessionId && !readOnly() && !!map.nodes[edit.id],
     read: () => t.textContent,
     write: (text, interim) => { t.textContent = text; $('#speechInterim').textContent = interim; },
     end: error => {
+      const confirm = edit.pendingDone;
+      edit.pendingDone = false;
       speechMessage = error ? tr('speech.error.' + (['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported', 'no-speech', 'timeout'].includes(error) ? error : 'unknown')) : tr('speech.ready');
       updateSpeech();
-      if (!error && autoCommit && t.textContent.trim()) { finishEdit(); vp.focus(); }
+      if (!error && confirm && t.textContent.trim()) { finishEdit(); vp.focus(); }
     },
   });
 }
-$('#nodeSpeechToggle').onclick = () => speech.active ? speech.stop() : startNodeSpeech(!!editing?.voiceCommit);
-$('#nodeSpeechDone').onclick = () => { finishEdit(); vp.focus(); };
+function confirmNodeSpeech() {
+  if (!editing || editing.pendingDone) return;
+  if (speech.active) {
+    if (!editing.handInput) return;
+    editing.pendingDone = true; speech.stop(); updateSpeech();
+  } else { finishEdit(); vp.focus(); }
+}
+$('#nodeSpeechToggle').onclick = () => speech.active ? speech.stop() : startNodeSpeech();
+$('#nodeSpeechDone').onclick = confirmNodeSpeech;
 $('#nodeSpeechCancel').onclick = () => { cancelEdit(); vp.focus(); };
 $('#nodeSpeech').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); vp.focus(); } });
 $('#nodeSpeech').addEventListener('focusout', e => {
-  if (editing && e.relatedTarget && !$('#nodeSpeech').contains(e.relatedTarget) && e.relatedTarget !== els.get(editing.id)?.nodeText) finishEdit();
+  if (editing && !editing.handInput && e.relatedTarget && !$('#nodeSpeech').contains(e.relatedTarget) && e.relatedTarget !== els.get(editing.id)?.nodeText) finishEdit();
 });
-$('#handSpeech').onchange = () => { if (!$('#handSpeech').checked) speech.abort(); updateSpeech(); };
 updateSpeech();
 
 function select(id) { if (sel !== id) palette?.selectionChanged(); sel = id; render(); }
@@ -1394,7 +1403,7 @@ function cancelEdit() {
   els.get(editing.id).nodeText.textContent = editing.isNew ? '' : editing.orig;
   finishEdit();
 }
-function addChildAndEdit(pid, voiceCommit = false) {
+function addChildAndEdit(pid, handInput = false) {
   if (refuseReadOnly()) return;
   if (editing) finishEdit();
   if (!map.nodes[pid]) pid = map.root;
@@ -1402,7 +1411,10 @@ function addChildAndEdit(pid, voiceCommit = false) {
   commit(() => { id = addNode(pid, ''); });
   ensureVisible(map.nodes[id]);
   startEdit(id, true);
-  if (voiceCommit && speech.supported) { editing.voiceCommit = true; startNodeSpeech(true); }
+  if (handInput) {
+    editing.handInput = true; updateSpeech();
+    if (speech.supported) startNodeSpeech();
+  }
 }
 function addSiblingAndEdit() {
   const n = map.nodes[sel];
@@ -1772,14 +1784,19 @@ function toggleHand(inputMode = 'worker') {
   if (cameraSession) { stopHand(); return; }
   handMode = inputMode;
   handController = new HandGestures.HandController({
-    blocked: () => speech.active || palette?.focused() || readOnly() || instruction?.state === 'awaiting_confirmation' || !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
-    dialog: () => !!deletion,
-    dialogNavigate: navigateDelete,
-    dialogSelect: selectDelete,
-    dialogChoose: side => side === 'left' ? closeDelete() : confirmDelete(),
+    blocked: () => (speech.active && !editing?.handInput) || palette?.focused() || readOnly() || instruction?.state === 'awaiting_confirmation' || (!!editing && !editing.handInput) || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !editing?.handInput && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
+    dialog: () => !!deletion || !!editing?.handInput,
+    dialogNavigate: step => { if (deletion) navigateDelete(step); },
+    dialogSelect: () => { if (deletion) selectDelete(); },
+    dialogChoose: side => {
+      if (editing?.handInput) {
+        if (side === 'left') confirmNodeSpeech();
+        else { cancelEdit(); vp.focus(); }
+      } else if (deletion) { side === 'left' ? closeDelete() : confirmDelete(); }
+    },
     command: action => {
       if (deletion || editing || mode) return;
-      if (action === 'add') addChildAndEdit(map.nodes[sel] ? sel : map.root, $('#handSpeech').checked);
+      if (action === 'add') addChildAndEdit(map.nodes[sel] ? sel : map.root, true);
       else if (action === 'delete') removeNode(sel || map.root);
     },
     activate: () => {
@@ -1843,7 +1860,7 @@ function updateHand() {
   if (!hand) return;
   $('#handCursor').hidden = true;
   const message = tr('hand.' + hand.state), unseen = !!camStatus || hand.state === 'nohand' || hand.state === 'lost';
-  const tips = unseen ? [] : HAND_TIPS[hand.state] || [];
+  const tips = unseen ? [] : editing?.handInput ? ['voiceDone', 'voiceCancel'] : HAND_TIPS[hand.state] || [];
   $('#cam').dataset.state = camStatus ? 'starting' : hand.state;
   $('#camMsg').hidden = !unseen;
   $('#camMsg').textContent = unseen ? camStatus || message : '';
@@ -1998,7 +2015,7 @@ nodesEl.addEventListener('keydown', e => {
   else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); vp.focus(); }
 });
 nodesEl.addEventListener('focusout', e => {
-  if (editing && e.target === els.get(editing.id)?.nodeText && !$('#nodeSpeech').contains(e.relatedTarget) && (!speech.active || e.relatedTarget)) finishEdit();
+  if (editing && !editing.handInput && e.target === els.get(editing.id)?.nodeText && !$('#nodeSpeech').contains(e.relatedTarget) && (!speech.active || e.relatedTarget)) finishEdit();
 });
 addEventListener('keydown', e => {
   if (editing && e.key === 'Escape' && !e.isComposing) { e.preventDefault(); cancelEdit(); vp.focus(); return; }
@@ -2232,7 +2249,7 @@ document.addEventListener('pointerdown', e => {
 addEventListener('resize', () => { interruptHand(); clampView(view, false); applyView(); });
 addEventListener('blur', () => { if (speech.active) return; if (gesture?.type === 'node') revertGesture(); pts.clear(); stopHand(); });
 addEventListener('pagehide', () => {
-  speech.abort(); updateSpeech();
+  speech.abort(); if (editing) editing.pendingDone = false; updateSpeech();
   stopHand(); for (const el of els.values()) clearNodeImage(el);
   storeView(); if (!readOnly()) flushSave().catch(() => {});
   mapClaim.release();
@@ -2241,7 +2258,7 @@ addEventListener('pageshow', e => {
   render();
   if (e?.persisted && library && mapId) void openMap(mapId).catch(failOpen);
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { speech.abort(); updateSpeech(); stopHand(); } });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { speech.abort(); if (editing) editing.pendingDone = false; updateSpeech(); stopHand(); } });
 
 palette = globalThis.IconPalette?.create({
   state: () => ({ session: mapSessionId, revision, selection: map.nodes[sel] ? sel : null, root: map.root,

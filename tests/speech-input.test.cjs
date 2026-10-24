@@ -1,6 +1,55 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const vm = require('node:vm');
 const { Controller } = require('../ui-prototype/speech/controller.js');
+test('default browser timers keep their global receiver through recognition and cleanup', () => {
+  const context = vm.createContext({ assert });
+  vm.runInContext(`
+    const timers = new Map(); let next = 0;
+    function setTimeout(fn, ms) {
+      assert.equal(this, globalThis, 'setTimeout receiver');
+      timers.set(++next, { fn, ms }); return next;
+    }
+    function clearTimeout(id) {
+      assert.equal(this, globalThis, 'clearTimeout receiver');
+      timers.delete(id);
+    }
+    let recognition;
+    globalThis.webkitSpeechRecognition = class {
+      constructor() { recognition = this; }
+      start() { this.started = true; }
+      stop() { this.stopped = true; }
+      abort() { this.aborted = true; }
+    }
+  `, context);
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/speech/controller.js'), 'utf8'), context);
+  vm.runInContext(`
+    const controller = new SpeechInput.Controller();
+    const ended = [];
+    const target = { valid: () => true, read: () => '', end: error => ended.push(error) };
+    controller.start(target);
+    assert.equal(recognition.started, true);
+    assert.equal([...timers.values()][0].ms, 15000);
+    recognition.onstart();
+    assert.equal(controller.state, 'listening');
+    assert.equal([...timers.values()][0].ms, 60000);
+    controller.stop();
+    assert.equal(recognition.stopped, true);
+    assert.equal([...timers.values()][0].ms, 5000);
+    recognition.onend();
+    assert.equal(controller.state, 'idle');
+    assert.equal(timers.size, 0);
+    controller.start(target); controller.abort();
+    assert.equal(recognition.aborted, true);
+    assert.equal(timers.size, 0);
+    controller.start(target); [...timers.values()][0].fn();
+    assert.equal(controller.active, false);
+    assert.equal(ended.at(-1), 'timeout');
+    assert.equal(timers.size, 0);
+  `, context);
+});
 function setup() {
   const instances = [], timers = new Map(); let next = 0;
   class Recognition {

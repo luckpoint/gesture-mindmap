@@ -7,7 +7,9 @@
   'use strict';
   class Controller {
     constructor({ Recognition = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition,
-      change = () => {}, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+      // Browser timers require the global receiver, not this Controller.
+      change = () => {}, setTimer = (fn, ms) => globalThis.setTimeout(fn, ms),
+      clearTimer = id => globalThis.clearTimeout(id) } = {}) {
       Object.assign(this, { Recognition, change, setTimer, clearTimer });
       this.state = 'idle'; this.session = null;
     }

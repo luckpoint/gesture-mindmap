@@ -1478,19 +1478,60 @@ function mockSpeech(app) {
     abort() { this.aborted = true; this.onend?.(); }
   };`);
 }
-test('hand add with voice commits speech once and supports Undo/Redo with instructions disabled', () => {
+test('hand add starts voice by default and left thumb confirms after speech with one Undo/Redo', () => {
   const app = setup({ renderUI: true, instructions: false }); mockSpeech(app);
-  app.run(`toggleHand(); $('#handSpeech').checked = true; handController.io.command('add');
+  app.run(`toggleHand(); handController.io.command('add');
     globalThis.voiceNode = editing.id;
     recognizer.onresult({ resultIndex: 0, results: [Object.assign([{transcript: 'Voice child'}], {isFinal: true})] });`);
   assert.equal(app.run('map.nodes[voiceNode].text'), '');
-  assert.equal(app.run('speech.active && handController.io.blocked()'), true);
+  assert.equal(app.run('speech.active && !handController.io.blocked() && handController.io.dialog()'), true);
+  assert.equal(app.elements.get('#nodeSpeechToggle').hidden, true);
+  assert.equal(app.elements.get('#nodeSpeechDone').disabled, false);
   app.run('recognizer.onend();');
+  assert.equal(app.run('!!editing'), true);
+  app.run(`let voiceTime = 0;
+    const voiceFrame = pose => { cameraSession.io.frame({pointer:{x:.5,y:.5}, wrist:{x:.5,y:.7}, ratio:.8, pose}, voiceTime); voiceTime += 50; };
+    for (let i = 0; i < 14; i++) voiceFrame('thumbLeft');`);
   assert.equal(app.run('editing'), null);
   assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
   assert.equal(app.run('history.length'), 1);
   app.run('undo();'); assert.equal(app.run('!!map.nodes[voiceNode]'), false);
   app.run('redo();'); assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
+});
+test('hand left confirmation stops recognition and waits for final text before committing', () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
+    for (let i = 0; i < 14; i++) cameraSession.io.frame({pointer:{x:.5,y:.5}, wrist:{x:.5,y:.7}, ratio:.8, pose:'thumbLeft'}, i * 50);`);
+  assert.equal(app.run('recognizer.stopped && editing.pendingDone && speech.state === "stopping"'), true);
+  app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'Final words'}], {isFinal:true})]}); recognizer.onend();`);
+  assert.equal(app.run('editing'), null);
+  assert.equal(app.run('map.nodes[voiceNode].text'), 'Final words');
+  assert.equal(app.run('history.length'), 1);
+});
+for (const ended of [false, true]) test(`hand right thumb cancels ${ended ? 'after speech' : 'while listening'} and ignores late results`, () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
+    recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'Discard'}], {isFinal:true})]});`);
+  if (ended) app.run('recognizer.onend();');
+  app.run(`for (let i = 0; i < 14; i++) cameraSession.io.frame({pointer:{x:.5,y:.5}, wrist:{x:.5,y:.7}, ratio:.8, pose:'thumbRight'}, i * 50);
+    recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'late'}], {isFinal:true})]}); recognizer.onend();`);
+  assert.equal(app.run('editing'), null);
+  assert.equal(app.run('speech.active || !!map.nodes[voiceNode]'), false);
+  assert.equal(app.run('history.length'), 0);
+});
+test('hand voice editing suppresses navigation and focusout; failed confirmation stays recoverable', () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
+    const voiceX = map.nodes[voiceNode].x, voiceY = map.nodes[voiceNode].y;
+    for (let i = 0; i < 20; i++) cameraSession.io.frame({pointer:{x:.5 - i * .01,y:.5}, wrist:{x:.5,y:.7}, ratio:.8}, i * 50);`);
+  assert.equal(app.run('sel === voiceNode && map.nodes[voiceNode].x === voiceX && map.nodes[voiceNode].y === voiceY'), true);
+  app.elements.get('#nodes').handlers.focusout({ target: app.run('els.get(editing.id).nodeText'), relatedTarget: app.elements.get('#title') });
+  assert.equal(app.run('!!editing'), true);
+  app.run(`confirmNodeSpeech(); recognizer.onerror({error:'network'});`);
+  assert.equal(app.run('!!editing && !editing.pendingDone && !speech.active'), true);
+  assert.equal(app.elements.get('#nodeSpeechToggle').hidden, false);
+  app.run('startNodeSpeech(); recognizer.onend();');
+  assert.equal(app.run('!!editing'), true);
 });
 test('voice failures retain editable nodes; cancel discards new nodes and ignores late results', () => {
   const app = setup({ renderUI: true }); mockSpeech(app);
@@ -1517,9 +1558,11 @@ test('node speech controls keep editing on Tab and focusout; outside focus commi
 });
 test('tab hiding aborts voice, restores typing and rejects delayed results', () => {
   const app = setup({ renderUI: true }); mockSpeech(app);
-  app.run('addChildAndEdit(map.root, true); document.hidden = true;');
+  app.run('addChildAndEdit(map.root, true); confirmNodeSpeech(); document.hidden = true;');
   app.documentHandlers.get('visibilitychange')();
   assert.equal(app.run('speech.active'), false);
+  assert.equal(app.run('editing.pendingDone'), false);
+  assert.equal(app.elements.get('#nodeSpeechDone').disabled, false);
   assert.equal(app.run('els.get(editing.id).nodeText.contentEditable'), 'plaintext-only');
   app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'late'}], {isFinal:true})]}); recognizer.onend();`);
   assert.equal(app.run('els.get(editing.id).nodeText.textContent'), '');
