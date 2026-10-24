@@ -45,6 +45,7 @@
         this.togglePoint = null; this.toggleWrist = null; this.toggleIdentity = null;
       }
       this.commandPose = null; this.commandAt = null; this.commandPoint = null;
+      this.choice = null; this.choiceAt = null; this.choicePoint = null;
       this.state.progress = 0;
       this.state.state = this.paused ? 'paused' : 'nohand'; this.io.paint(this.state);
     }
@@ -87,7 +88,7 @@
           if (this.toggleReleaseAt === null) this.toggleReleaseAt = now;
           if (now - this.toggleReleaseAt >= c.stable) this.toggleHeld = false;
         }
-        if (this.paused || frame.pose === 'fist') {
+        if (this.paused || frame.pose === 'fist' || (!dialog && /^thumb(Left|Right)$/.test(frame.pose))) {
           this.cancel(true);
           s.state = this.paused ? 'paused' : 'neutral';
           this.io.paint(s); return;
@@ -228,6 +229,18 @@
     }
     updateDialog(frame, point, now) {
       const s = this.state, c = this.config;
+      const side = frame.pose === 'thumbLeft' ? 'left' : frame.pose === 'thumbRight' ? 'right' : null;
+      if (side !== this.choice || (this.choiceAt !== null &&
+          Math.hypot(point.x - this.choicePoint.x, point.y - this.choicePoint.y) > c.commandDrift)) {
+        this.choice = side; this.choiceAt = side ? now : null; this.choicePoint = side ? { ...point } : null;
+      }
+      if (side) {
+        // A held tilt presses the button on that side once; changing pose rearms it.
+        this.anchor = null; this.pendingAt = null; this.pinchAt = null;
+        s.progress = this.choiceAt === null ? 0 : Math.min(1, (now - this.choiceAt) / c.commandStable);
+        if (s.progress >= 1) { this.choiceAt = null; s.progress = 0; this.io.dialogChoose?.(side); }
+        s.state = 'dialog'; this.io.paint(s); return;
+      }
       // Opening the dialog or recovering tracking requires a fresh open hand.
       if (frame.pose) {
         this.anchor = null; this.pendingAt = null; this.pinchAt = null;
@@ -410,19 +423,25 @@
     const ipBend = bendAngle(geometry[2], geometry[3], geometry[4]);
     const thumbExtended = mcpBend !== null && ipBend !== null && mcpBend <= 40 && ipBend <= 40 &&
       length3(geometry[1], geometry[4]) > geometrySize * .5;
-    const thumbPointsDown = (p[4].y - p[2].y) * height > size * .45 &&
-      Math.abs((p[4].x - p[2].x) * width) < (p[4].y - p[2].y) * height * .7 &&
-      (p[4].y - p[3].y) * height > size * .15 && distance(p[4], p[5]) > size * .55;
-    const thumbDown = fingers.every(f => f.folded) && thumbPointsDown &&
-      (options.thumbExtension === false || thumbExtended);
-    const pose = thumbDown ? 'thumbDown'
+    const thumbX = (p[4].x - p[2].x) * width, thumbY = (p[4].y - p[2].y) * height;
+    const thumbAway = distance(p[4], p[5]) > size * .55;
+    const thumbPointsDown = thumbY > size * .45 && Math.abs(thumbX) < thumbY * .7 &&
+      (p[4].y - p[3].y) * height > size * .15 && thumbAway;
+    // Image x is unmirrored: the user's left is +x.
+    const tipX = (p[4].x - p[3].x) * width;
+    const thumbSide = Math.abs(thumbX) > size * .45 && Math.abs(thumbY) < Math.abs(thumbX) &&
+      tipX * thumbX > 0 && Math.abs(tipX) > size * .15 && thumbAway ? (thumbX > 0 ? 'left' : 'right') : null;
+    const thumbPose = fingers.every(f => f.folded) && (options.thumbExtension === false || thumbExtended);
+    const pose = thumbPose && thumbPointsDown ? 'thumbDown'
+      : thumbPose && thumbSide === 'left' ? 'thumbLeft'
+      : thumbPose && thumbSide === 'right' ? 'thumbRight'
       : fingers[0].extended && fingers[1].extended && fingers.slice(2).every(f => f.folded) ? 'peace'
       : fingers[0].extended && fingers.slice(1).every(f => f.folded) ? 'point'
       : fingers.every(f => f.folded) ? 'fist' : null;
     return { pointer, tip: p[8], wrist: p[0], handSize: size / width, ratio,
       measurements: { ratio2D, ratio3D, palmSize: size,
         space: worldSize > 1e-6 ? 'world' : hasDepth ? 'image3D' : 'image2D', fingers,
-        thumb: { mcpBend, ipBend, extended: thumbExtended, pointsDown: thumbPointsDown } },
+        thumb: { mcpBend, ipBend, extended: thumbExtended, pointsDown: thumbPointsDown, side: thumbSide } },
       pose, identity: category?.score >= .8 ? category.categoryName : null };
   }
   function handFrame(result, width, height, options = {}) {

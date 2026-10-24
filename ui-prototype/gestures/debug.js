@@ -57,7 +57,7 @@
         values.push(`${index + 1} ${frame.identity || '?'} · pose: ${frame.pose || 'neutral'}\n` +
           `pinch: ${frame.ratio.toFixed(3)} (XY ${m.ratio2D.toFixed(3)} / 3D ${m.ratio3D.toFixed(3)})\n` +
           `${m.space} · palm: ${m.palmSize.toFixed(1)}px\n` +
-          `thumb: MCP ${angle(thumb.mcpBend)} / IP ${angle(thumb.ipBend)} · extended: ${thumb.extended} · down: ${thumb.pointsDown}`);
+          `thumb: MCP ${angle(thumb.mcpBend)} / IP ${angle(thumb.ipBend)} · extended: ${thumb.extended} · down: ${thumb.pointsDown} · side: ${thumb.side || '-'}`);
       });
       this.output.textContent = values.join('\n\n');
     }

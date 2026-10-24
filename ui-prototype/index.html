@@ -599,13 +599,13 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <p id="paletteStatus" role="status"></p>
   </div>
 </aside>
-<script src="i18n.js?v=20261024-hand-debug-2"></script>
+<script src="i18n.js?v=20261024-thumb-tilt-1"></script>
 <script src="icons/catalog.js"></script>
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
-<script src="gestures/controller.js?v=20261024-hand-debug-2"></script>
-<script src="gestures/debug.js?v=20261024-hand-debug-2"></script>
-<script src="gestures/camera.js?v=20261024-hand-debug-2"></script>
+<script src="gestures/controller.js?v=20261024-thumb-tilt-1"></script>
+<script src="gestures/debug.js?v=20261024-thumb-tilt-1"></script>
+<script src="gestures/camera.js?v=20261024-thumb-tilt-1"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -1687,6 +1687,7 @@ function toggleHand(inputMode = 'worker') {
     dialog: () => !!deletion,
     dialogNavigate: navigateDelete,
     dialogSelect: selectDelete,
+    dialogChoose: side => side === 'left' ? closeDelete() : confirmDelete(),
     command: action => {
       if (deletion || editing || mode) return;
       if (action === 'add') addChildAndEdit(map.nodes[sel] ? sel : map.root);

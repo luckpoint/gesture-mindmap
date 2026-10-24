@@ -10,7 +10,7 @@ function setup(options = {}) {
     zoom: factor => zooms.push(factor),
     pan: (x, y) => pans.push({ x, y }),
     command: action => commands.push(action), dialog: () => dialog,
-    dialogNavigate: step => dialogEvents.push(step), dialogSelect: () => dialogEvents.push('select'),
+    dialogNavigate: step => dialogEvents.push(step), dialogSelect: () => dialogEvents.push('select'), dialogChoose: side => dialogEvents.push(side),
     bounds: () => ({ left: 0, top: 0, right: 1000, bottom: 800 }),
     begin: (x, y) => { dragEvents.push(['begin', x, y]); return 'a'; },
     move: (x, y) => dragEvents.push(['move', x, y]),
@@ -777,5 +777,27 @@ test('thumb extension uses world geometry and screen direction stays separate', 
   const side = handFrame(geometryResult(sideways), 640, 480);
   assert.equal(side.measurements.thumb.extended, true);
   assert.equal(side.measurements.thumb.pointsDown, false);
-  assert.equal(side.pose, 'fist');
+  assert.equal(side.pose, 'thumbLeft');
+});
+
+test('a thumbs-up tilted left or right is recognized by its side, also when mirrored', () => {
+  for (const [sign, pose] of [[1, 'thumbLeft'], [-1, 'thumbRight']]) for (const scale of [.5, 1.5]) {
+    const points = downwardThumb().map(p => ({ x: 320 + (p.y - 288) * sign * scale, y: 288 - (p.x - 320) * scale, z: p.z * scale }));
+    assert.equal(handFrame(geometryResult(points), 640, 480).pose, pose);
+  }
+  const upright = downwardThumb().map(p => ({ x: p.x, y: 576 - p.y, z: p.z }));
+  assert.equal(handFrame(geometryResult(upright), 640, 480).pose, 'fist');
+});
+
+test('dialog presses the tilted side once after a stable hold, and rearms through another pose', () => {
+  const t = setup(); t.stable(); t.dialog(true);
+  t.stable(.5, .5, { pose: 'thumbLeft' });
+  assert.deepEqual(t.dialogEvents, []); assert.ok(t.controller.state.progress > 0);
+  holdPose(t, 'thumbLeft'); holdPose(t, 'thumbLeft');
+  assert.deepEqual(t.dialogEvents, ['left']);
+  holdPose(t, 'thumbRight'); assert.deepEqual(t.dialogEvents, ['left', 'right']);
+  for (let i = 0; i < 14; i++) t.feed(.5 + (i % 2) * .1, .5, { pose: 'thumbRight' });
+  assert.deepEqual(t.dialogEvents, ['left', 'right']);
+  t.dialog(false); holdPose(t, 'thumbLeft');
+  assert.deepEqual(t.dialogEvents, ['left', 'right']); assert.deepEqual(t.moves(), []); assert.deepEqual(t.commands, []);
 });

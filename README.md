@@ -1,5 +1,7 @@
 # マインドマップ試作
 
+音声入力へのWeb Speech API導入を検討しています。操作案・既存実装への接続・対応環境の確認計画は [Web Speech APIによる音声入力の検討](docs/web-speech-input-design.md) を参照してください（設計案、未実装）。
+
 Node.js 22以上を使います。指示欄は機能フラグで切り替え、既定ではOFFです。指示欄をONにする場合のみ **Codex CLI 0.163.0** とログインが必要です。マップの保存にRxDBを使うため、最初に `npm install && npm run setup` で `ui-prototype/vendor/rxdb.js` を生成します（静的配信のときも同梱してください）。
 
 ```sh

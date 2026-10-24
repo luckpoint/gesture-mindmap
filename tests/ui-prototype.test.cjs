@@ -905,6 +905,18 @@ test('thumb-down opens confirmation once, permits hand choice and fresh pinch co
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
 
+test('thumb tilted left cancels the delete confirmation and tilted right confirms it', () => {
+  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  t.run(`sel = 'b1';
+    const dialogSample = pose => { cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
+    for (let i = 0; i < 14; i++) dialogSample('thumbDown');
+    for (let i = 0; i < 14; i++) dialogSample('thumbLeft');`);
+  assert.equal(t.run(`!deletion && !!map.nodes.b1 && history.length === 0`), true);
+  t.run(`for (let i = 0; i < 4; i++) dialogSample('fist'); for (let i = 0; i < 14; i++) dialogSample('thumbDown');
+    for (let i = 0; i < 14; i++) dialogSample('thumbRight');`);
+  assert.equal(t.run(`!deletion && !map.nodes.b1 && history.length === 1`), true);
+});
+
 test('Space edits with all selected, Shift+Space and F2 edit at the end, Enter adds a sibling', () => {
   const t = setup({ renderUI: true }); t.run(`sel = 'a';`);
   const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
