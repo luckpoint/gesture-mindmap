@@ -10,6 +10,7 @@ self.onmessage = async ({ data }) => {
       const vision = self.module.exports;
       const files = await vision.FilesetResolver.forVisionTasks(new URL('../mediapipe/wasm', self.location.href).href);
       detector = await vision.HandLandmarker.createFromOptions(files, {
+        canvas: new OffscreenCanvas(1, 1),
         baseOptions: { modelAssetPath: new URL('../mediapipe/hand_landmarker.task', self.location.href).href, delegate: 'CPU' },
         runningMode: 'VIDEO', numHands: 2,
         minHandDetectionConfidence: .6, minHandPresenceConfidence: .6, minTrackingConfidence: .6,

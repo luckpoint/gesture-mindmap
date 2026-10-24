@@ -139,15 +139,16 @@ test('stale frames suspend tracking even if worker never responds', async () => 
 });
 
 for (const throws of [false, true]) test(`worker closes the transferred image when inference ${throws ? 'fails' : 'succeeds'}`, async () => {
-  const messages = []; let closed = false, detectorClosed = false;
+  const messages = []; let closed = false, detectorClosed = false, options;
+  class OffscreenCanvas { constructor(w, h) { this.width = w; this.height = h; } }
   const context = vm.createContext({
-    URL, performance: { now: () => 123 },
+    URL, OffscreenCanvas, performance: { now: () => 123 },
     location: { href: 'http://localhost/gestures/hand-worker.js' },
     postMessage: m => messages.push(m), close() {},
     importScripts: () => {
       context.module.exports = {
         FilesetResolver: { forVisionTasks: async () => ({}) },
-        HandLandmarker: { createFromOptions: async () => ({ detectForVideo() { if (throws) throw new Error('inference failed'); return { landmarks: [] }; }, close() { detectorClosed = true; } }) },
+        HandLandmarker: { createFromOptions: async (_, o) => (options = o, { detectForVideo() { if (throws) throw new Error('inference failed'); return { landmarks: [] }; }, close() { detectorClosed = true; } }) },
       };
     },
   });
@@ -155,6 +156,7 @@ for (const throws of [false, true]) test(`worker closes the transferred image wh
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/hand-worker.js'), 'utf8'), context);
   await context.onmessage({ data: { type: 'init' } });
   assert.equal(messages[0].type, 'ready');
+  assert.ok(options.canvas instanceof OffscreenCanvas);
   await context.onmessage({ data: { type: 'frame', bitmap: { close() { closed = true; } }, timestamp: 1 } });
   assert.equal(closed, true);
   assert.equal(messages[1].type, throws ? 'error' : 'result');
