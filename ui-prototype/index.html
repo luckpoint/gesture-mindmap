@@ -198,6 +198,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   display: grid; padding: 6px; min-width: 200px;
 }
 .menu__list .btn { justify-content: flex-start; }
+.menu__dev { display: none; }
 .maps { left: 0; right: auto; width: min(340px, calc(100vw - 24px)); max-height: 60dvh; overflow: auto; }
 .maps__list { list-style: none; margin: 4px 0 0; padding: 6px 0 0; border-top: 1px solid var(--color-rule); display: grid; gap: 2px; }
 .maps__row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: var(--radius-sm); }
@@ -225,6 +226,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 .dock__btn { flex-direction: column; gap: 2px; min-height: 60px; min-width: 84px; padding: 6px 12px; font-size: var(--text-xs); border-radius: var(--radius-md); }
 .dock__btn .i { width: 24px; height: 24px; }
 .dock__btn.btn--primary { min-width: 104px; }
+.dock__btn, .node-menu .btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
 .zoom { position: fixed; right: calc(var(--space-md) + var(--side)); bottom: max(var(--space-md), env(safe-area-inset-bottom)); display: flex; align-items: center; padding: 4px; gap: 2px; }
 .zoom__label { min-width: 64px; font-variant-numeric: tabular-nums; }
@@ -336,7 +338,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 body.keyboard-open .dock { display: none; }
 body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-inset-bottom)); }
 @media (max-width: 900px) { .cam { --cam-floor: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); --cam-w: 176px; } .zoom { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); } }
-@media (max-width: 560px) { .topbar { flex-wrap: wrap; } .topbar .cluster:first-child { flex: 1; } .prompt { width: calc(100vw - 24px); } }
+@media (max-width: 560px) { .prompt { width: calc(100vw - 24px); } }
 
 /* ---------- dev panel ---------- */
 .dev { position: fixed; right: calc(var(--space-sm) + var(--side)); top: 72px; width: 272px; padding: var(--space-md); z-index: 3; max-height: calc(100vh - 180px); overflow: auto; }
@@ -365,10 +367,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   .zoom__label { min-width: 52px; }
   .dev { left: var(--space-sm); right: var(--space-sm); width: auto; }
 }
-@media (max-width: 380px) {
-  .cluster--tools .btn--icon:nth-of-type(2) { display: none; }
-  .title { width: 7em; }
-}
+@media (pointer: coarse) { .zoom { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
 }
@@ -456,6 +455,8 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
         <button class="btn" id="exportBtn"><svg class="i"><use href="#i-down"/></svg><span data-i18n="file.exportJson"></span></button>
         <button class="btn" id="importBtn"><svg class="i"><use href="#i-up"/></svg><span data-i18n="file.import"></span></button>
         <button class="btn" id="printBtn"><svg class="i"><use href="#i-print"/></svg><span data-i18n="file.print"></span></button>
+        <hr class="menu__separator menu__dev">
+        <button class="btn menu__dev" id="devMenuBtn" aria-controls="dev"><svg class="i"><use href="#i-flask"/></svg><span data-i18n="dev.button"></span></button>
       </div>
     </div>
     <button class="btn btn--quiet" id="devBtn" aria-expanded="false" aria-controls="dev"><svg class="i"><use href="#i-flask"/></svg><span class="btn__label--wide" data-i18n="dev.button"></span></button>
@@ -672,6 +673,7 @@ const instructionsEnabled = globalThis.MindmapFeatures?.instructions === true;
 const tr = I18n.t;
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const compact = matchMedia('(max-width: 560px)');
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
 const els = new Map();
 const W = () => vp.clientWidth || innerWidth;
@@ -859,7 +861,7 @@ function showMap(id, m, claim, log = { cursor: 0, entries: [] }) {
   speech.abort();
   stopWatch?.(); stopWatch = null;
   clearTimeout(saveTimer); saveDirty = false;
-  map = m; mapId = id; mapClaim = claim; sel = map.root; useLog(m, log); invalidateTree();
+  map = m; mapId = id; mapClaim = claim; sel = compact.matches ? null : map.root; useLog(m, log); invalidateTree();
   mapSessionId = InstructionTransport.id('map_'); revision++; historyToken++;
   endStaleInstruction();
   try { localStorage.setItem(LAST_KEY, id); } catch {}
@@ -870,7 +872,7 @@ function showMap(id, m, claim, log = { cursor: 0, entries: [] }) {
   for (const el of els.values()) clearNodeImage(el);
   render();
   const stored = storedView(id);
-  if (stored) { animId++; view = stored; applyView(); } else fitAll();
+  if (stored && !compact.matches) { animId++; view = stored; applyView(); } else fitAll();
   setSave('saved'); updateAccess(); renderMapList();
 }
 function showRemote(m) {
@@ -2166,7 +2168,10 @@ $('#camSelect').onchange = e => {
   stopHand(); toggleHand(handMode);
 };
 $('#handFallback').onclick = () => { stopHand(); toggleHand('main'); };
-$('#fitBtn').onclick = fitAll;
+let fitTimer, fitHeld = false;
+$('#fitBtn').onpointerdown = () => { fitHeld = false; fitTimer = setTimeout(() => { fitHeld = true; zoomAt(W() / 2, innerHeight / 2, 1); }, 500); };
+$('#fitBtn').onpointerup = $('#fitBtn').onpointerleave = $('#fitBtn').onpointercancel = () => clearTimeout(fitTimer);
+$('#fitBtn').onclick = () => { if (!fitHeld) fitAll(); fitHeld = false; };
 $('#zoomIn').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
 $('#zoomOut').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s / 1.25);
 $('#zoomLabel').onclick = () => zoomAt(W() / 2, innerHeight / 2, 1);
@@ -2234,7 +2239,9 @@ $('#devBtn').onclick = () => {
   const open = $('#dev').hidden;
   $('#dev').hidden = !open;
   $('#devBtn').setAttribute('aria-expanded', open);
+  $('#devMenuBtn').setAttribute('aria-expanded', open);
 };
+$('#devMenuBtn').onclick = () => { toggleFileMenu(false); $('#devBtn').onclick(); };
 $('#promptToggle').onclick = () => {
   setPromptHidden(!$('#prompt').hidden);
   if (!$('#prompt').hidden) $('#promptInput').focus();

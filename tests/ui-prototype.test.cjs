@@ -33,7 +33,7 @@ function memoryLibrary() {
     watchList() { return () => {}; },
   };
 }
-function setup({ renderUI = false, handUI = false, stored = {}, instructions = true, lang = 'ja', paletteUI = false } = {}) {
+function setup({ renderUI = false, handUI = false, stored = {}, instructions = true, lang = 'ja', paletteUI = false, compact = false } = {}) {
   const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
   let timerId = 0;
   const frames = new Map(), intervals = new Map();
@@ -62,7 +62,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   const context = vm.createContext({
     MindmapFeatures: { instructions }, navigator: { languages: [lang] },
     console, TextEncoder, AbortSignal, AbortController, Blob, innerWidth: 1200, innerHeight: 800,
-    matchMedia: () => ({ matches: true }),
+    matchMedia: query => ({ matches: !query.includes('max-width') || compact }),
     document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
     getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
     CameraSession: class { constructor(io) { this.io = io; } start() {} stop() { this.stopped = true; } },
@@ -178,6 +178,24 @@ test('switching saves first, restores each view, clears history and ends a waiti
   assert.equal(t.run(`mapId === 'm_first' && view.x === 11 && view.y === 22 && view.s === 1.5 && map.nodes.a.text === '切替前'`), true);
 });
 
+test('compact screens open with no selection and refit instead of restoring a saved view', async () => {
+  const t = setup({ compact: true });
+  t.run(`view = { x: 11, y: 22, s: 1.5 }; var fits = 0; fitAll = () => { fits++; };`);
+  const second = await t.run('library.create(blankMap())');
+  await t.run(`switchMap('${second}')`);
+  await t.run(`switchMap('m_first')`);
+  assert.equal(t.run(`sel === null && fits === 2 && view.s === 1.5`), true);
+  assert.equal(JSON.parse(t.storage.get('mindmap:view:m_first')).s, 1.5);
+});
+test('holding fit resets to 100% without fitting; a tap fits', () => {
+  const t = setup();
+  t.run(`var fits = 0; fitAll = () => { fits++; }; view = { x: 0, y: 0, s: .5 };`);
+  const fit = t.elements.get('#fitBtn');
+  fit.onpointerdown(); fit.onclick();
+  assert.equal(t.run('fits'), 1);
+  fit.onpointerdown(); [...t.timers.values()].at(-1)(); fit.onpointerup(); fit.onclick();
+  assert.equal(t.run('fits === 1 && view.s === 1'), true);
+});
 test('deleting the open map opens the newest remaining one; the last map becomes the sample', async () => {
   const t = setup();
   const other = await t.run(`library.create(blankMap())`);

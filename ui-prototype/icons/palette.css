@@ -41,9 +41,23 @@ body { --canvas-width: calc(100vw - var(--side)); }
 body.canvas-compact .btn__label--wide, body.canvas-compact .node-menu .btn__label { display: none; }
 body.canvas-compact .cam { width: 144px; bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); }
 body.canvas-compact .zoom { bottom: calc(var(--kb, 0px) + var(--prompt-height, 130px) + 112px); }
-body.canvas-narrow .topbar { flex-wrap: wrap; }
-body.canvas-narrow .topbar .cluster:first-child { flex: 1; min-width: 0; }
-body.canvas-narrow .title { width: 9em; max-width: 40vw; font-size: var(--text-md); }
+body.canvas-narrow .topbar { right: calc(var(--space-sm) + var(--side)); gap: 0; }
+body.canvas-narrow .topbar .cluster:first-child { flex: 1; min-width: 0; border-right: 0; border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
+body.canvas-narrow .cluster--tools { border-left: 0; border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+body.canvas-narrow .title { flex: 1; width: auto; max-width: none; font-size: var(--text-md); }
+body.canvas-narrow #devBtn { display: none; }
+body.canvas-narrow hr.menu__dev { display: block; }
+body.canvas-narrow .btn.menu__dev { display: inline-flex; }
+body.canvas-narrow .node-menu {
+  top: auto; left: max(var(--space-sm), env(safe-area-inset-left)); right: calc(var(--space-sm) + var(--side));
+  bottom: calc(var(--kb, 0px) + max(var(--space-md), env(safe-area-inset-bottom)));
+  transform: none !important; max-width: none; flex-wrap: nowrap; padding: 6px;
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-1); z-index: 5;
+}
+body.canvas-narrow .node-menu .btn { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; min-height: 60px; padding: 6px 2px; font-size: var(--text-xs); line-height: 1.2; white-space: normal; text-align: center; border-radius: var(--radius-md); }
+body.canvas-narrow .node-menu .btn .i { width: 24px; height: 24px; }
+body.canvas-narrow .node-menu .btn__label { display: block; max-width: 100%; overflow-wrap: anywhere; }
+body.canvas-narrow .node-menu:not([hidden]) ~ .dock { display: none; }
 body.canvas-narrow .save__text { display: none; }
 body.canvas-narrow .dock { left: max(var(--space-sm), env(safe-area-inset-left)); right: calc(var(--space-sm) + var(--side)); transform: none; justify-content: space-between; }
 body.canvas-narrow .dock__btn, body.canvas-narrow .dock__btn.btn--primary { min-width: 0; flex: 1 1 0; padding: 6px 4px; }
