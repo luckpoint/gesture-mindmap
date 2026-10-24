@@ -548,43 +548,102 @@ function radialBranch() {
   return { t, press };
 }
 
-test('arrows walk a radial branch by tree role: inward to the parent, outward to a child, across siblings by angle', () => {
-  const { press } = radialBranch();
-  assert.equal(press('ArrowRight', 'a'), 'japanese');
-  assert.equal(press('ArrowLeft', 'japanese'), 'a');
-  assert.equal(press('ArrowLeft', 'science'), 'a');
-  assert.deepEqual([press('ArrowUp', 'japanese'), press('ArrowUp'), press('ArrowUp'), press('ArrowUp')], ['social', 'study', 'math', 'math']);
-  assert.deepEqual(['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown'].map(k => press(k)), ['study', 'social', 'japanese', 'science']);
+test('Shift Left returns from every right-branch sibling to its actual parent without editing the map', () => {
+  const { t, press } = radialBranch();
+  t.run('const beforeParentNavigation = JSON.stringify(map);');
+  for (const id of ['math', 'study', 'social', 'japanese', 'science', 'a']) {
+    t.run(`select('${id}')`);
+    t.windowHandlers.get('keydown')({ key: 'ArrowLeft', shiftKey: true,
+      target: t.elements.get('#viewport'), preventDefault() {} });
+    assert.equal(t.run('sel'), id === 'a' ? 'root' : 'a');
+  }
+  assert.equal(t.run('JSON.stringify(map) === beforeParentNavigation && history.length === 0 && !saveDirty'), true);
+  assert.equal(press('ArrowLeft', 'math'), 'math');
+  assert.equal(press('ArrowRight', 'science'), 'science');
+  assert.equal(press('ArrowUp', 'a'), 'math');
+  assert.equal(press('ArrowDown', 'a'), 'science');
 });
 
-test('cross keys on a top-level branch stay inside it instead of jumping past the root', () => {
+test('Alt Shift Left still moves nodes and Shift Left does not escape editing or reparent mode', () => {
+  const { t } = radialBranch();
+  const key = options => t.windowHandlers.get('keydown')({ key: 'ArrowLeft', shiftKey: true,
+    target: t.elements.get('#viewport'), preventDefault() {}, ...options });
+  t.run("select('math'); const originalX = map.nodes.math.x;");
+  key({ altKey: true });
+  assert.equal(t.run("sel === 'math' && map.nodes.math.x === originalX - 24 && history.length === 1"), true);
+  t.run("editing = { id: 'math' };"); key();
+  assert.equal(t.run('sel'), 'math');
+  t.run("editing = null; mode = { id: 'math', candidate: null }; let candidateKey = null; navigate = k => { candidateKey = k; }; setCandidate = () => {};");
+  key();
+  assert.equal(t.run("candidateKey === 'ArrowLeft' && sel === 'math'"), true);
+});
+
+test('right branch enters at either endpoint and walks siblings in visual order', () => {
   const { t, press } = radialBranch();
-  assert.equal(press('ArrowUp', 'a'), 'study');
+  t.run('const beforeNavigation = JSON.stringify(map);');
+  assert.deepEqual([press('ArrowUp', 'a'), ...Array.from({ length: 4 }, () => press('ArrowRight'))],
+    ['math', 'study', 'social', 'japanese', 'science']);
+  assert.deepEqual(Array.from({ length: 4 }, () => press('ArrowLeft')),
+    ['japanese', 'social', 'study', 'math']);
+  assert.equal(press('ArrowDown', 'a'), 'science');
+  assert.deepEqual(Array.from({ length: 4 }, () => press('ArrowLeft')),
+    ['japanese', 'social', 'study', 'math']);
+  assert.equal(t.run('JSON.stringify(map) === beforeNavigation && history.length === 0 && future.length === 0 && !saveDirty'), true);
+  assert.equal(t.timers.size, 0);
+});
+
+test('right branch stops at endpoints even with nearby parents, descendants and other branches', () => {
+  const { t, press } = radialBranch();
+  t.run(`map.nodes.near = { id: 'near', text: 'near', parent: 'b', x: 1100, y: 585, order: 20 };
+    map.nodes.child = { id: 'child', text: 'child', parent: 'science', x: 1080, y: 585, order: 21 };
+    invalidateTree();`);
+  for (let i = 0; i < 5; i++) {
+    assert.equal(press('ArrowLeft', 'math'), 'math');
+    assert.equal(press('ArrowRight', 'science'), 'science');
+  }
+  assert.equal(press('ArrowRight', 'study'), 'social');
+  assert.equal(press('ArrowRight', 'social'), 'japanese');
+  assert.equal(press('ArrowLeft', 'science'), 'japanese');
+});
+
+test('right branch endpoint entry ignores last visited child and stays put without children', () => {
+  const { t, press } = radialBranch();
+  press('ArrowLeft', 'social');
+  assert.equal(press('ArrowUp', 'a'), 'math');
   assert.equal(press('ArrowDown', 'a'), 'science');
   t.run(`for (const id of ['math', 'study', 'social', 'japanese', 'science']) delete map.nodes[id]; invalidateTree();`);
   assert.equal(press('ArrowUp', 'a'), 'a');
+  assert.equal(press('ArrowDown', 'a'), 'a');
 });
 
-test('inward picks a sibling that sits squarely in that direction over an off-axis parent', () => {
-  const { press } = radialBranch();
-  assert.equal(press('ArrowLeft', 'study'), 'math');
-  assert.equal(press('ArrowLeft', 'math'), 'a');
-});
-
-test('outward returns to the child last visited', () => {
-  const { press } = radialBranch();
-  press('ArrowLeft', 'math');
+test('right branch ordering follows moved coordinates, with deterministic ties and no stored reordering', () => {
+  const { t, press } = radialBranch();
+  t.run(`map.nodes.science.x = 600; map.nodes.science.y = 400;
+    for (const n of kids('a')) n.order = 100 - n.y;
+    const storedOrder = JSON.stringify(kids('a').map(n => [n.id, n.order]));`);
+  assert.equal(press('ArrowUp', 'a'), 'science');
   assert.equal(press('ArrowRight'), 'math');
+  assert.equal(t.run("JSON.stringify(kids('a').map(n => [n.id, n.order])) === storedOrder"), true);
+  t.run(`for (const n of kids('a')) Object.assign(n, { x: 926, y: 438 });`);
+  assert.deepEqual([press('ArrowUp', 'a'), ...Array.from({ length: 4 }, () => press('ArrowRight'))],
+    ['japanese', 'math', 'science', 'social', 'study']);
+  assert.equal(press('ArrowRight'), 'study');
 });
 
-test('outward on a leaf steps to the next sibling like the down key', () => {
-  const { press } = radialBranch();
-  assert.equal(press('ArrowRight', 'study'), 'social');
-});
-
-test('arrows fall back to the nearest node in a wider cone instead of a dead end', () => {
-  const { press } = radialBranch();
-  assert.equal(press('ArrowRight', 'science'), 'japanese');
+test('left, top and bottom branch keyboard behavior remains unchanged', () => {
+  for (const [x, y, outward, inward, cross] of [
+    [-200, 0, 'ArrowLeft', 'ArrowRight', 'ArrowDown'],
+    [0, -200, 'ArrowUp', 'ArrowDown', 'ArrowRight'],
+    [0, 200, 'ArrowDown', 'ArrowUp', 'ArrowRight'],
+  ]) {
+    const t = setup();
+    t.run(`Object.assign(map.nodes.root, { x: 0, y: 0 });
+      Object.assign(map.nodes.a, { x: ${x}, y: ${y} });
+      Object.assign(map.nodes.a1, { x: ${x * 2}, y: ${y * 2} });`);
+    assert.equal(t.run(`treeTarget('${outward}', map.nodes.a)`), 'a1');
+    assert.equal(t.run(`treeTarget('${inward}', map.nodes.a1)`), 'a');
+    assert.equal(t.run(`treeTarget('${cross}', map.nodes.a1)`), 'a1');
+  }
 });
 
 test('no active node initializes to root; pinch grabs root without displacement', () => {

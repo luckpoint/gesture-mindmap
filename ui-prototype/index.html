@@ -472,6 +472,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <dt>Tab</dt><dd>子を追加</dd>
     <dt>Delete</dt><dd>消す</dd>
     <dt>矢印</dt><dd>選択を移動（⌥で位置を動かす）</dd>
+    <dt>右向きの枝</dt><dd>親の↑/↓で最初/最後の子へ、子の←/→で前/次の兄弟へ（端で停止）、⇧←で親へ戻る</dd>
     <dt>⌘Z / ⇧⌘Z</dt><dd>元に戻す / やり直す</dd>
     <dt>⇧1</dt><dd>全体を表示</dd>
     <dt>⇧2</dt><dd>選んだノードに寄る</dd>
@@ -1328,6 +1329,23 @@ function branchKey(id) {
 function treeTarget(key, s) {
   const out = branchKey(s.id), parent = map.nodes[s.parent];
   const angle = (n, origin) => { const [a, b] = along(out, n.x - origin.x, n.y - origin.y); return Math.atan2(b, a); };
+  // The agreed right-hand branch traversal takes precedence over spatial
+  // navigation. Always return the current ID at an endpoint: null would let
+  // navigate() fall back to an unrelated nearby node.
+  if (out === 'ArrowRight') {
+    const ordered = origin => [...kids(origin.id)].sort((a, b) =>
+      angle(a, origin) - angle(b, origin) ||
+      Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y) ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    if (parent.id === map.root && (key === 'ArrowUp' || key === 'ArrowDown')) {
+      const children = ordered(s);
+      return (key === 'ArrowUp' ? children[0] : children.at(-1))?.id ?? s.id;
+    }
+    if (parent.id !== map.root && (key === 'ArrowLeft' || key === 'ArrowRight')) {
+      const siblings = ordered(parent), step = key === 'ArrowRight' ? 1 : -1;
+      return siblings[siblings.indexOf(s) + step]?.id ?? s.id;
+    }
+  }
   if (key === opposite[out]) return nearestInDirection(key, s, [parent, ...kids(parent.id)], [1]) ?? parent.id;
   if (key === out) {
     const children = kids(s.id);
@@ -1840,7 +1858,14 @@ addEventListener('keydown', e => {
   else if (k === ' ' && sel) { e.preventDefault(); startEdit(sel, false, e.shiftKey); }
   else if (k === 'F2' && sel) { e.preventDefault(); startEdit(sel, false, true); }
   else if ((k === 'Delete' || k === 'Backspace') && sel && sel !== map.root) { e.preventDefault(); removeNode(sel); }
-  else if (k.startsWith('Arrow')) { e.preventDefault(); e.altKey ? nudge(k) : navigate(k); }
+  else if (k.startsWith('Arrow')) {
+    e.preventDefault();
+    const selected = map.nodes[sel];
+    if (e.altKey) nudge(k);
+    else if (e.shiftKey && k === 'ArrowLeft' && selected?.parent != null && branchKey(selected.id) === 'ArrowRight') {
+      select(selected.parent); ensureVisible(map.nodes[selected.parent]);
+    } else navigate(k);
+  }
   else if (e.code === 'Digit1' && e.shiftKey) { e.preventDefault(); fitAll(); }
   else if (e.code === 'Digit2' && e.shiftKey) { e.preventDefault(); animateTo(centerOn(map.nodes[sel || map.root], 1.5)); }
   else if (k === '?') { e.preventDefault(); $('#keysDialog').showModal(); }
