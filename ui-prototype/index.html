@@ -574,6 +574,7 @@ const H = () => { const top = $($('#prompt').hidden ? '.dock' : '#prompt').getBo
 let map = sample();
 let library = null, mapId = null, mapClaim = { editable: false, release() {} }, stopWatch = null, switching = false;
 let view = { x: 0, y: 0, s: 1 };
+const lastChild = new Map();
 let sel = map.root, editing = null, mode = null, hand = null, gesture = null;
 let deletion = null;
 let history = [], future = [], forceSaveFail = false;
@@ -1159,7 +1160,7 @@ function positionMenu() {
 }
 
 /* ---------- selection & editing ---------- */
-function select(id) { sel = id; render(); }
+function select(id) { sel = id; if (map.nodes[id]?.parent != null) lastChild.set(map.nodes[id].parent, id); render(); }
 function startEdit(id, isNew = false, atEnd = false) {
   if (refuseReadOnly()) return;
   interruptHand();
@@ -1297,17 +1298,45 @@ function relatives(id) {
   const parent = map.nodes[id].parent;
   return Object.values(map.nodes).filter(n => n.id === id || n.id === parent || n.parent === id || (parent != null && n.parent === parent));
 }
+const along = (key, dx, dy) => ({ ArrowRight: [dx, dy], ArrowLeft: [-dx, dy], ArrowDown: [dy, dx], ArrowUp: [-dy, dx] })[key];
+const opposite = { ArrowRight: 'ArrowLeft', ArrowLeft: 'ArrowRight', ArrowDown: 'ArrowUp', ArrowUp: 'ArrowDown' };
+function nearestInDirection(key, from, nodes) {
+  for (const spread of [1, 6]) {
+    let best = null, bs = Infinity;
+    for (const n of nodes) {
+      if (n.id === from.id) continue;
+      const [a, b] = along(key, n.x - from.x, n.y - from.y);
+      if (a <= 10 || Math.abs(b) > a * spread) continue;
+      const score = a + Math.abs(b) * 2;
+      if (score < bs) { bs = score; best = n.id; }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+function branchKey(id) {
+  let n = map.nodes[id];
+  while (map.nodes[n.parent].parent != null) n = map.nodes[n.parent];
+  const root = map.nodes[map.root], dx = n.x - root.x, dy = n.y - root.y;
+  return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? 'ArrowLeft' : 'ArrowRight') : (dy < 0 ? 'ArrowUp' : 'ArrowDown');
+}
+function treeTarget(key, s) {
+  const out = branchKey(s.id), parent = map.nodes[s.parent];
+  const angle = (n, origin) => { const [a, b] = along(out, n.x - origin.x, n.y - origin.y); return Math.atan2(b, a); };
+  if (key === opposite[out]) return parent.id;
+  if (key === out) {
+    const children = kids(s.id);
+    if (children.some(n => n.id === lastChild.get(s.id))) return lastChild.get(s.id);
+    return [...children].sort((a, b) => Math.abs(angle(a, s)) - Math.abs(angle(b, s)))[0]?.id ?? null;
+  }
+  const siblings = [...kids(parent.id)].sort((a, b) => angle(a, parent) - angle(b, parent));
+  const step = key === 'ArrowDown' || key === 'ArrowRight' ? 1 : -1;
+  return siblings[siblings.indexOf(s) + step]?.id ?? s.id;
+}
 function navigate(key, nodes) {
   const s = map.nodes[sel] || map.nodes[map.root];
-  let best = null, bs = Infinity;
-  for (const n of nodes || relatives(s.id)) {
-    if (n.id === s.id) continue;
-    const dx = n.x - s.x, dy = n.y - s.y;
-    const [a, b] = { ArrowRight: [dx, dy], ArrowLeft: [-dx, dy], ArrowDown: [dy, dx], ArrowUp: [-dy, dx] }[key];
-    if (a <= 10 || Math.abs(b) > a) continue;
-    const score = n.id === s.parent ? -1 : a + Math.abs(b) * 2;
-    if (score < bs) { bs = score; best = n.id; }
-  }
+  const best = nodes ? nearestInDirection(key, s, nodes)
+    : (s.id === map.root ? nearestInDirection(key, s, kids(s.id)) : treeTarget(key, s)) ?? nearestInDirection(key, s, Object.values(map.nodes));
   if (best) { select(best); ensureVisible(map.nodes[best]); }
 }
 function nudge(key) {

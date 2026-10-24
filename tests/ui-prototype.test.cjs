@@ -532,26 +532,39 @@ test('camera down-left selects a diagonal node, no candidate and stopping retain
   assert.equal(t.run(`sel === 'b' && JSON.stringify(map) === originalMap && history.length === 0`), true);
 });
 
-test('keyboard and camera directions only reach parent, children and siblings', () => {
+test('camera directions only reach parent, children and siblings', () => {
   const t = setup(); prepareHand(t);
   t.run(`map.nodes.b.x = 600; map.nodes.b.y = 0; sel = 'a1';`);
-  const press = key => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} });
-  press('ArrowRight');
-  assert.equal(t.run('sel'), 'a1');
   t.run(`handSample(.4); for (let i = 0; i < 6; i++) handSample(.4); handSample(.3);`);
   assert.equal(t.run('sel'), 'a1');
-  press('ArrowLeft');
-  assert.equal(t.run('sel'), 'a');
 });
 
-test('arrows stay within a 45 degree cone and prefer the parent in that direction', () => {
+function radialBranch() {
   const t = setup();
-  t.run(`Object.assign(map.nodes.root, { x: 0, y: 0 }); Object.assign(map.nodes.a, { x: 900, y: -40 });
-    for (const [id, x, y] of [['math', 560, -335], ['study', 880, -490], ['social', 1210, -365]]) map.nodes[id] = { id, text: id, parent: 'a', x, y };
-    sel = 'a';`);
-  const press = key => { t.run(`sel = 'a'`); t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} }); return t.run('sel'); };
-  assert.equal(press('ArrowLeft'), 'root');
-  assert.equal(press('ArrowUp'), 'study');
+  t.run(`Object.assign(map.nodes.root, { x: 527, y: 455 }); Object.assign(map.nodes.a, { x: 926, y: 438 });
+    for (const [id, x, y] of [['math', 777, 306], ['study', 918, 238], ['social', 1064, 294], ['japanese', 1127, 437], ['science', 1054, 585]]) map.nodes[id] = { id, text: id, parent: 'a', x, y };
+    delete map.nodes.a1; invalidateTree();`);
+  const press = (key, from) => { if (from) t.run(`select('${from}')`); t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} }); return t.run('sel'); };
+  return { t, press };
+}
+
+test('arrows walk a radial branch by tree role: inward to the parent, outward to a child, across siblings by angle', () => {
+  const { press } = radialBranch();
+  assert.equal(press('ArrowRight', 'a'), 'japanese');
+  assert.equal(press('ArrowLeft', 'social'), 'a');
+  assert.deepEqual([press('ArrowUp', 'japanese'), press('ArrowUp'), press('ArrowUp'), press('ArrowUp')], ['social', 'study', 'math', 'math']);
+  assert.deepEqual(['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown'].map(k => press(k)), ['study', 'social', 'japanese', 'science']);
+});
+
+test('outward returns to the child last visited', () => {
+  const { press } = radialBranch();
+  press('ArrowLeft', 'math');
+  assert.equal(press('ArrowRight'), 'math');
+});
+
+test('arrows fall back to the nearest node in a wider cone instead of a dead end', () => {
+  const { press } = radialBranch();
+  assert.equal(press('ArrowRight', 'science'), 'japanese');
 });
 
 test('no active node initializes to root; pinch grabs root without displacement', () => {
@@ -1112,3 +1125,4 @@ test('static feature configuration disables instructions by default', () => {
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/features.js'), 'utf8'), context);
   assert.equal(context.MindmapFeatures.instructions, false);
 });
+
