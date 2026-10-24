@@ -1,5 +1,7 @@
 # Cloudflare Workers デプロイ調査・設計
 
+> 2026年10月24日：ノードのWeb Speech入力に合わせ、配信資産のPermissions-Policyを `camera=(self), microphone=(self), geolocation=()` に更新。音声はブラウザの認識サービスで処理される場合があり、アプリ自身は音声を保存しない。HTTPSでの実マイク・権限の確認は未完了。ローカルNode中継は `_headers` を適用しないため、ローカル成功を公開配信の確認とは扱わない。
+
 調査日：2026年10月24日。状態：提案。対象：現在の `lp-mindmap`。今回は調査・設計のみで、公開・Cloudflare設定変更・依存追加は行っていない。
 
 ## 1. 提案
@@ -171,7 +173,7 @@ Workers Builds導入時はプロジェクトルートをリポジトリルート
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
-  Permissions-Policy: camera=(self), microphone=(), geolocation=()
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=()
 ```
 
 カメラは同一オリジンの画面から利用できるようにする。MIMEの誤りは `nosniff` によって顕在化するため、JS・WASM・モデルの応答を公開前に確認する。

@@ -81,6 +81,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   });
   context.document.body = element('body');
   // Skip only the initial screen draw; all production handlers are registered.
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/speech/controller.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/debug.js'), 'utf8'), context);
@@ -1455,4 +1456,74 @@ test('camera diagnostics toggle exposes and hides the skeleton and values', () =
   assert.equal(t.elements.get('#handSkeleton').hidden, true);
   assert.equal(t.elements.get('#handDebugValues').hidden, true);
   assert.equal(t.elements.get('#handDebugToggle').attributes['aria-pressed'], 'false');
+});
+
+function mockSpeech(app) {
+  app.run(`speech.Recognition = class {
+    constructor() { globalThis.recognizer = this; }
+    start() { this.onstart(); }
+    stop() { this.stopped = true; }
+    abort() { this.aborted = true; this.onend?.(); }
+  };`);
+}
+test('hand add with voice commits speech once and supports Undo/Redo with instructions disabled', () => {
+  const app = setup({ renderUI: true, instructions: false }); mockSpeech(app);
+  app.run(`toggleHand(); $('#handSpeech').checked = true; handController.io.command('add');
+    globalThis.voiceNode = editing.id;
+    recognizer.onresult({ resultIndex: 0, results: [Object.assign([{transcript: 'Voice child'}], {isFinal: true})] });`);
+  assert.equal(app.run('map.nodes[voiceNode].text'), '');
+  assert.equal(app.run('speech.active && handController.io.blocked()'), true);
+  app.run('recognizer.onend();');
+  assert.equal(app.run('editing'), null);
+  assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
+  assert.equal(app.run('history.length'), 1);
+  app.run('undo();'); assert.equal(app.run('!!map.nodes[voiceNode]'), false);
+  app.run('redo();'); assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
+});
+test('voice failures retain editable nodes; cancel discards new nodes and ignores late results', () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run(`addChildAndEdit(map.root, true); recognizer.onerror({ error: 'not-allowed' });`);
+  assert.equal(app.run('!!editing && !speech.active'), true);
+  assert.equal(app.run('els.get(editing.id).nodeText.contentEditable'), 'plaintext-only');
+  app.run(`startNodeSpeech(true); globalThis.late = recognizer; cancelEdit();
+    late.onresult({ resultIndex: 0, results: [Object.assign([{transcript:'late'}], {isFinal:true})] }); late.onend();`);
+  assert.equal(app.run('Object.keys(map.nodes).length'), 7); assert.equal(app.run('history.length'), 0);
+});
+test('node speech controls keep editing on Tab and focusout; outside focus commits only final results', () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run('startEdit(map.root);');
+  const event = { target: app.run('els.get(editing.id).nodeText'), key: 'Tab', preventDefault() {}, stopPropagation() {} };
+  event.target.isContentEditable = true;
+  app.elements.get('#nodes').handlers.keydown(event);
+  assert.equal(app.run('document.activeElement === $("#nodeSpeechToggle")'), true);
+  app.elements.get('#nodeSpeech').children.push(app.elements.get('#nodeSpeechToggle'));
+  app.elements.get('#nodes').handlers.focusout({ target: event.target, relatedTarget: app.elements.get('#nodeSpeechToggle') });
+  assert.equal(app.run('!!editing'), true);
+  app.run(`startNodeSpeech(); recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:' appended'}], {isFinal:true})]});`);
+  app.elements.get('#nodes').handlers.focusout({ target: event.target, relatedTarget: app.elements.get('#title') });
+  assert.equal(app.run('editing'), null); assert.match(app.run('map.nodes[map.root].text'), /appended$/);
+});
+test('tab hiding aborts voice, restores typing and rejects delayed results', () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run('addChildAndEdit(map.root, true); document.hidden = true;');
+  app.documentHandlers.get('visibilitychange')();
+  assert.equal(app.run('speech.active'), false);
+  assert.equal(app.run('els.get(editing.id).nodeText.contentEditable'), 'plaintext-only');
+  app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'late'}], {isFinal:true})]}); recognizer.onend();`);
+  assert.equal(app.run('els.get(editing.id).nodeText.textContent'), '');
+});
+test('Escape cancels while speech has made the node non-editable', () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  app.run('addChildAndEdit(map.root, true);');
+  app.windowHandlers.get('keydown')({ key: 'Escape', preventDefault() {} });
+  assert.equal(app.run('editing'), null); assert.equal(app.run('speech.active'), false);
+  assert.equal(app.run('history.length'), 0);
+});
+test('editing Tab skips unsupported speech and reaches Done; reediting an empty child keeps it alive', () => {
+  const app = setup({ renderUI: true });
+  app.run('addChildAndEdit(map.root); startEdit(editing.id);');
+  const target = app.run('els.get(editing.id).nodeText'); target.isContentEditable = true;
+  app.elements.get('#nodes').handlers.keydown({ target, key: 'Tab', stopPropagation() {}, preventDefault() {} });
+  assert.equal(app.run('document.activeElement === $("#nodeSpeechDone")'), true);
+  assert.equal(app.run('!!map.nodes[editing.id]'), true);
 });
