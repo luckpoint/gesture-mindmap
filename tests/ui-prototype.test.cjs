@@ -1456,7 +1456,7 @@ test('read-only tabs can print without changing the map or history', async () =>
 });
 
 
-test('camera diagnostics toggle exposes and hides the skeleton and values', () => {
+test('debug panel toggle exposes and hides the camera skeleton and values', () => {
   const t = setup();
   t.elements.get('#handDebugToggle').onclick();
   assert.equal(t.elements.get('#handSkeleton').hidden, false);
