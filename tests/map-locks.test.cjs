@@ -64,3 +64,15 @@ test('a released waiting claim never takes the lock; wait: false does not queue'
 test('without Web Locks every map is editable', async () => {
   assert.equal((await MapLocks.claim('a', { locks: null })).editable, true);
 });
+
+test('other tabs holding or waiting for any map lock are counted, excluding this tab', async () => {
+  const locks = lockManager();
+  const mine = await MapLocks.claim('a', { locks });
+  assert.equal(await MapLocks.others('a', locks), 0);
+  const elsewhere = await MapLocks.claim('b', { locks });
+  assert.equal(await MapLocks.others('a', locks), 1);
+  elsewhere.release(); await tick();
+  await MapLocks.claim('a', { locks });
+  assert.equal(await MapLocks.others('a', locks), 1);
+  mine.release();
+});

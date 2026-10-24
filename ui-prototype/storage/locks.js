@@ -29,5 +29,11 @@
     const { held = [] } = await locks.query();
     return new Set(held.filter(l => l.name.startsWith(PREFIX)).map(l => l.name.slice(PREFIX.length)));
   }
-  return { claim, busy, PREFIX };
+  // Map locks held or awaited by any tab, except the one this tab holds.
+  async function others(own, locks = manager()) {
+    if (!locks) return 0;
+    const { held = [], pending = [] } = await locks.query(), mine = own && PREFIX + own;
+    return held.filter(l => l.name.startsWith(PREFIX) && l.name !== mine).length + pending.filter(l => l.name.startsWith(PREFIX)).length;
+  }
+  return { claim, busy, others, PREFIX };
 });

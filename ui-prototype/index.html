@@ -528,6 +528,10 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <button class="btn" data-dev="edge">端まで移動</button>
     <button class="btn" data-dev="reset">見本のマップに戻す</button>
   </div>
+  <h3>画像</h3>
+  <div class="dev__row">
+    <button class="btn" data-dev="gc-skew">次の起動で24時間後とみなして掃除</button>
+  </div>
 </aside>
 
 <script src="gestures/controller.js?v=20261023-still-point-12"></script>
@@ -540,7 +544,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="storage/library.js"></script>
 <script src="storage/locks.js"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
@@ -789,6 +793,18 @@ async function deleteMap(id) {
     } finally { switching = false; }
   }
   try { localStorage.removeItem(VIEW_KEY + id); } catch {}
+}
+async function cleanImages(now) {
+  const locks = globalThis.navigator?.locks;
+  if (!locks) return;
+  await locks.request('mindmap:gc', { ifAvailable: true }, async lock => {
+    if (!lock || await MapLocks.others(readOnly() ? null : mapId)) return;
+    const refs = new Set(), add = m => { for (const n of Object.values(m?.nodes || {})) if (n.image) refs.add(n.image.assetId); };
+    add(map);
+    for (const { id } of await library.list()) add(await library.load(id));
+    const removed = await imageStore.gc(refs, now);
+    if (removed) console.info(`使われていない画像${removed}件を削除しました`);
+  });
 }
 let mapList = [], busyMaps = new Set();
 const editedElsewhere = id => busyMaps.has(id) && (id !== mapId || readOnly());
@@ -1856,6 +1872,7 @@ $('#dev').addEventListener('click', e => {
   if (d === 's-error') { forceSaveFail = true; scheduleSave(); }
   if (d === 's-saved') { forceSaveFail = false; scheduleSave(); }
   if (d === 'edge') { animateTo(centerOn({ x: BOUND, y: 0 })); setTimeout(() => { edgeHint('right'); toast('「全体を表示」で戻れます'); }, 300); }
+  if (d === 'gc-skew') { try { localStorage.setItem(GC_SKEW_KEY, '1'); } catch {} toast('次の起動で、24時間後とみなして使われていない画像を消します'); }
   if (d === 'reset' && !readOnly()) { commit(() => { map = sample(); mapSessionId = InstructionTransport.id('map_'); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
 });
 document.addEventListener('pointerdown', e => {
@@ -1905,9 +1922,15 @@ void (async () => {
     toast('このブラウザでは保存できません。書き出して保管してください'); return;
   }
   try { await library.migrateLegacy(localStorage); } catch (error) { console.error('移行できませんでした', error); }
+  try {
+    const moved = await imageStore.migrate(NodeImageStore.indexedDBLegacy());
+    if (moved?.broken) console.warn(`壊れた画像${moved.broken}件は移しませんでした`);
+  } catch (error) { console.error('画像を移せませんでした', error); }
   navigator.storage?.persist?.().catch(() => {});
   let last = null; try { last = localStorage.getItem(LAST_KEY); } catch {}
   try { if (last && await library.load(last)) await openMap(last); else await openFallback(); } catch (error) { failOpen(error); }
+  let skew = 0; try { if (localStorage.getItem(GC_SKEW_KEY)) skew = NodeImageStore.DAY; localStorage.removeItem(GC_SKEW_KEY); } catch {}
+  cleanImages(Date.now() + skew).catch(error => console.error('画像を掃除できませんでした', error));
   library.watchList(list => { mapList = list; if (!$('#mapsMenu').hidden) void refreshBusyMaps(); else renderMapList(); });
   $('#mapsBtn').disabled = false;
 })();

@@ -53,54 +53,83 @@
     if ((expected.assetId && expected.assetId !== assetId) || (expected.width !== undefined && expected.width !== width) || (expected.height !== undefined && expected.height !== height)) throw new Error('画像のハッシュ・寸法が一致しません');
     return { assetId, blob, mime, width, height, createdAt: Date.now() };
   }
+  const DAY = 24 * 60 * 60 * 1000;
+  const fileName = id => id.slice('sha256:'.length);
+  function workerWriter(url) {
+    let worker, next = 0; const pending = new Map();
+    return (message, transfer) => {
+      if (!worker) {
+        worker = new Worker(url);
+        worker.onmessage = ({ data }) => { const p = pending.get(data.id); pending.delete(data.id); data.ok ? p.resolve() : p.reject(new Error(data.error)); };
+        worker.onerror = () => { for (const p of pending.values()) p.reject(new Error('画像を保存できません')); pending.clear(); worker = null; };
+      }
+      const id = ++next;
+      return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); worker.postMessage({ ...message, id }, transfer); });
+    };
+  }
+  // Image bytes live in OPFS as /images/<sha256 hex>. Writes go through a
+  // Worker because createSyncAccessHandle() is the write API every engine has.
   class Store {
-    constructor({ indexedDB = globalThis.indexedDB, name = 'mindmap-images' } = {}) { this.indexedDB = indexedDB; this.name = name; this.urls = new Map(); }
+    constructor({ directory, send = workerWriter('images/opfs-worker.js') } = {}) {
+      this.directory = directory || (async () => {
+        if (!globalThis.navigator?.storage?.getDirectory) throw new Error('このブラウザでは画像を保存できません');
+        return (await navigator.storage.getDirectory()).getDirectoryHandle('images', { create: true });
+      });
+      this.send = send; this.urls = new Map();
+    }
     verify(blob, expected) { return verify(blob, expected); }
-    open() {
-      if (!this.opening) this.opening = new Promise((resolve, reject) => {
-        if (!this.indexedDB) { reject(new Error('このブラウザでは画像を保存できません')); return; }
-        const req = this.indexedDB.open(this.name, 1); let blocked = false;
-        req.onupgradeneeded = () => req.result.createObjectStore('assets', { keyPath: 'assetId' });
-        req.onerror = () => reject(new Error('画像ストアを開けません'));
-        req.onblocked = () => { blocked = true; reject(new Error('別のタブを閉じて再試行してください')); };
-        req.onsuccess = () => { const db = req.result; if (blocked) { db.close(); return; } db.onversionchange = () => { db.close(); this.opening = null; }; resolve(db); };
-      }).catch(error => { this.opening = null; throw error; });
-      return this.opening;
+    async files() {
+      const dir = await this.directory(), out = new Map();
+      for await (const handle of dir.values()) if (handle.kind === 'file' && /^[a-f0-9]{64}$/.test(handle.name)) out.set('sha256:' + handle.name, await handle.getFile());
+      return out;
     }
     async get(id) {
       if (!F.assetId(id)) throw new Error('画像IDが正しくありません');
-      const db = await this.open();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('assets', 'readonly'), req = tx.objectStore('assets').get(id);
-        tx.oncomplete = () => resolve(req.result);
-        tx.onerror = tx.onabort = () => reject(new Error('画像を読み込めません'));
-      });
+      let file;
+      try { file = await (await (await this.directory()).getFileHandle(fileName(id))).getFile(); }
+      catch (error) { if (error?.name === 'NotFoundError') return undefined; throw new Error('画像を読み込めません'); }
+      let mime = '';
+      try { mime = sniff(new Uint8Array(await file.slice(0, 32).arrayBuffer())); } catch {}
+      return { assetId: id, mime, blob: new Blob([file], { type: mime }) };
     }
     async putMany(assets) {
       // Revalidate at the storage boundary; callers cannot forge trusted metadata.
       const verified = await Promise.all(assets.map(a => verify(a.blob, a)));
       if (!verified.length) return;
-      const db = await this.open();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction('assets', 'readwrite'), table = tx.objectStore('assets');
-        let capacity = false;
-        const req = table.getAll();
-        req.onsuccess = () => {
-          const existing = new Map(req.result.map(a => [a.assetId, a]));
-          // Count the verified replacement bytes, including when an existing
-          // record is corrupt. The content hash still identifies one asset.
-          const incoming = new Map(verified.map(a => [a.assetId, a]));
-          for (const [id, a] of incoming) existing.set(id, a);
-          if ([...existing.values()].reduce((sum, a) => sum + a.blob.size, 0) > F.MAX_TOTAL) { capacity = true; tx.abort(); return; }
-          // Rewriting validated bytes lets a portable bundle repair local
-          // corruption without changing references or adding another asset.
-          for (const a of incoming.values()) table.put(a);
-        };
-        tx.oncomplete = () => resolve();
-        tx.onerror = tx.onabort = () => reject(new Error(capacity ? '画像の総容量は50MiBまでです。画像込みで書き出してください' : '画像を保存できません。ブラウザの空き容量を確認してください'));
-      });
+      const incoming = new Map(verified.map(a => [a.assetId, a]));
+      // Count the verified replacement bytes, including when an existing file
+      // is corrupt. The content hash still identifies one asset.
+      const sizes = new Map([...await this.files()].map(([id, f]) => [id, f.size]));
+      for (const [id, a] of incoming) sizes.set(id, a.blob.size);
+      if ([...sizes.values()].reduce((sum, n) => sum + n, 0) > F.MAX_TOTAL) throw new Error('画像の総容量は50MiBまでです。画像込みで書き出してください');
+      try {
+        // Rewriting validated bytes lets a portable bundle repair local
+        // corruption without changing references or adding another asset.
+        for (const a of incoming.values()) {
+          const bytes = await a.blob.arrayBuffer();
+          await this.send({ op: 'write', name: fileName(a.assetId), bytes }, [bytes]);
+        }
+      } catch { throw new Error('画像を保存できません。ブラウザの空き容量を確認してください'); }
     }
     async put(blob, expected) { const a = await verify(blob, expected); await this.putMany([a]); return a; }
+    async gc(referenced, now = Date.now()) {
+      let removed = 0;
+      for (const [id, file] of await this.files()) {
+        if (referenced.has(id) || now - file.lastModified < DAY) continue;
+        await this.send({ op: 'remove', name: fileName(id) }); removed++;
+      }
+      return removed;
+    }
+    // Copies verified images out of the old IndexedDB store, then drops it.
+    async migrate(legacy) {
+      const records = await legacy.records();
+      if (!records) return null;
+      const good = [], broken = [];
+      for (const r of records) { try { good.push(await verify(r.blob, r)); } catch { broken.push(r.assetId); } }
+      await this.putMany(good);
+      await legacy.drop();
+      return { moved: good.length, broken: broken.length };
+    }
     acquire(id) {
       let entry = this.urls.get(id);
       if (!entry) {
@@ -120,8 +149,19 @@
       const e = this.urls.get(id); if (!e) return;
       if (--e.refs <= 0) { if (e.url) URL.revokeObjectURL(e.url); this.urls.delete(id); }
     }
-    close() { for (const [id, e] of this.urls) { e.refs = 1; this.release(id); } this.opening?.then(db => db.close()).catch(() => {}); this.opening = null; }
-    // Automatic GC is intentionally disabled until cross-tab references are tracked.
+    close() { for (const [id, e] of this.urls) { e.refs = 1; this.release(id); } }
   }
-  return { Store, verify };
+  function indexedDBLegacy(indexedDB = globalThis.indexedDB, name = 'mindmap-images') {
+    const request = r => new Promise((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); r.onblocked = () => reject(new Error('別のタブを閉じて再試行してください')); });
+    return {
+      async records() {
+        if (!indexedDB?.databases || !(await indexedDB.databases()).some(d => d.name === name)) return null;
+        const db = await request(indexedDB.open(name));
+        try { return db.objectStoreNames.contains('assets') ? await request(db.transaction('assets').objectStore('assets').getAll()) : []; }
+        finally { db.close(); }
+      },
+      drop: () => request(indexedDB.deleteDatabase(name)),
+    };
+  }
+  return { Store, verify, indexedDBLegacy, DAY };
 });

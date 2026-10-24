@@ -75,37 +75,76 @@ test('URL cache shares one URL and revokes it after the last DOM reference, incl
   store.get=async()=>null;await assert.rejects(store.acquire(a.assetId),/読み込めません/);store.release(a.assetId);
 });
 
+// OPFS /images directory and the Worker writer, kept in one Map of File-like values.
+function opfs(files = new Map(), now = () => Date.now()) {
+  const handle = name => ({ kind: 'file', name, getFile: async () => files.get(name) });
+  const directory = async () => ({
+    async *values() { for (const name of [...files.keys()]) yield handle(name); },
+    async getFileHandle(name) { if (!files.has(name)) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return handle(name); },
+  });
+  let writes = 0;
+  const send = async ({ op, name, bytes }) => {
+    if (op === 'write') { writes++; files.set(name, new File([bytes], name, { lastModified: now() })); }
+    else files.delete(name);
+  };
+  return { files, directory, send, writes: () => writes };
+}
+const hex = id => id.slice(7);
+
 test('verified writes repair corrupt existing bytes, deduplicate IDs and count replacement capacity', async t => {
   const {Store}=require('../ui-prototype/images/store.js');
   const old=global.createImageBitmap;global.createImageBitmap=async()=>({width:1,height:1,close(){}});t.after(()=>{global.createImageBitmap=old;});
-  const a=await verify(png), store=new Store();
-  const corrupt=new Blob(['corrupt local bytes'],{type:'image/png'});
-  const records=new Map([[a.assetId,{...a,blob:corrupt}]]);
-  let writes=0,aborted=false;
-  // Minimal transaction adapter: stage writes and publish only on completion.
-  store.open=async()=>({transaction(){
-    const staged=new Map(records),tx={
-      abort(){aborted=true;queueMicrotask(()=>tx.onabort());},
-      objectStore(){return {
-        getAll(){const req={};queueMicrotask(()=>{
-          req.result=[...records.values()];req.onsuccess();
-          if(!aborted) queueMicrotask(()=>{records.clear();for(const [id,a] of staged)records.set(id,a);tx.oncomplete();});
-        });return req;},
-        put(a){writes++;staged.set(a.assetId,a);},
-      };},
-    };return tx;
-  }});
+  const a=await verify(png), fs=opfs(), store=new Store(fs);
+  fs.files.set(hex(a.assetId), new File(['corrupt local bytes'], hex(a.assetId)));
+  await assert.rejects(store.acquire(a.assetId)); store.release(a.assetId);
   await store.putMany([a,a]);
-  assert.equal(writes,1);assert.equal(records.size,1);
-  assert.equal(await records.get(a.assetId).blob.text(),await png.text());
+  assert.equal(fs.writes(),1);assert.equal(fs.files.size,1);
+  const stored=await store.get(a.assetId);
+  assert.equal(stored.blob.type,'image/png');assert.equal(stored.mime,'image/png');
+  const m=map();m.nodes.root.image={assetId:a.assetId,alt:'画像',width:1,height:1};
+  assert.equal((await F.exportBundle(m,store)).assets[a.assetId].mime,'image/png');assert.equal(await stored.blob.text(),await png.text());
   // Replacing oversized corruption with the verified original fits the limit.
-  records.set(a.assetId,{...a,blob:{size:F.MAX_TOTAL+1}});
-  await store.putMany([a]);assert.equal(aborted,false);
-  // A genuinely full store still rejects the transaction without writing.
-  records.set(id,{assetId:id,blob:{size:F.MAX_TOTAL}});
-  const before=writes;
+  fs.files.set(hex(a.assetId),{size:F.MAX_TOTAL+1,lastModified:0});
+  await store.putMany([a]);assert.equal(fs.writes(),2);
+  // A genuinely full store still rejects the write.
+  fs.files.set('b'.repeat(64),{size:F.MAX_TOTAL,lastModified:0});
   await assert.rejects(store.putMany([a]),/50MiB/);
-  assert.equal(writes,before);assert.equal(records.get(a.assetId).blob,png);
+  assert.equal(fs.writes(),2);
+  assert.equal(await store.get('sha256:'+'c'.repeat(64)),undefined);
+});
+
+test('a failed Worker write is reported and adds no reference', async t => {
+  const {Store}=require('../ui-prototype/images/store.js');
+  const old=global.createImageBitmap;global.createImageBitmap=async()=>({width:1,height:1,close(){}});t.after(()=>{global.createImageBitmap=old;});
+  const fs=opfs(), store=new Store({...fs, send:async()=>{throw new Error('quota');}});
+  await assert.rejects(store.put(png),/空き容量/);
+  assert.equal(fs.files.size,0);
+});
+
+test('migration from IndexedDB moves verified images and drops the old store only after every write', async t => {
+  const {Store}=require('../ui-prototype/images/store.js');
+  const old=global.createImageBitmap;global.createImageBitmap=async()=>({width:1,height:1,close(){}});t.after(()=>{global.createImageBitmap=old;});
+  const a=await verify(png); let dropped=0;
+  const legacy={records:async()=>[{...a},{assetId:id,blob:new Blob(['broken'],{type:'image/png'}),width:1,height:1}],drop:async()=>{dropped++;}};
+  const failing=opfs(), failStore=new Store({...failing,send:async()=>{throw new Error('quota');}});
+  await assert.rejects(failStore.migrate(legacy));
+  assert.equal(dropped,0);
+  const fs=opfs(), store=new Store(fs);
+  assert.deepEqual(await store.migrate(legacy),{moved:1,broken:1});
+  assert.equal(dropped,1);assert.deepEqual([...fs.files.keys()],[hex(a.assetId)]);
+  assert.equal(await store.migrate({records:async()=>null,drop:async()=>{dropped++;}}),null);
+  assert.equal(dropped,1);
+});
+
+test('GC removes only unreferenced files older than 24 hours', async () => {
+  const {Store,DAY}=require('../ui-prototype/images/store.js');
+  const now=10*DAY, fs=opfs(), store=new Store(fs);
+  const file=age=>({size:1,lastModified:now-age});
+  fs.files.set('a'.repeat(64),file(2*DAY));   // referenced
+  fs.files.set('b'.repeat(64),file(DAY-1));   // recent
+  fs.files.set('c'.repeat(64),file(DAY));     // orphan
+  assert.equal(await store.gc(new Set(['sha256:'+'a'.repeat(64)]),now),1);
+  assert.deepEqual([...fs.files.keys()].sort(),['a'.repeat(64),'b'.repeat(64)]);
 });
 
 test('uploads keep small supported files, shrink large or unsupported ones to JPEG, and name nodes from files', async t => {
