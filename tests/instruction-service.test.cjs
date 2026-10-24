@@ -199,7 +199,10 @@ test('relay serves the landing page at /landing with a CTA back to the app', asy
   assert.match(page.headers.get('content-type'),/text\/html/);
   const html=await page.text();
   assert.match(html,/<a class="cta" href="\/">/);
-  for (const src of html.match(/landing\/[\w-]+\.webp/g)) {
+  const {messages}=require('../ui-prototype/i18n.js');
+  const keys=[...html.matchAll(/data-i18n-src="([^"]+)"/g)].map(m=>m[1]);
+  assert.ok(keys.length);
+  for (const src of Object.values(messages).flatMap(m=>keys.map(k=>m[k]))) {
     const image=await fetch(base+'/'+src);
     assert.equal(image.status,200);
     assert.equal(image.headers.get('content-type'),'image/webp');

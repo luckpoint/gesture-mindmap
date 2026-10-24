@@ -1025,6 +1025,13 @@
   "landing.lede": "A mind map that runs in your browser. Besides mouse and touch, you can add and delete nodes with hand gestures in front of your camera.",
   "landing.cta": "Try the mind map",
   "landing.ctaNote": "No sign-up. Maps are saved in this browser on your device.",
+  "landing.mapSrc": "landing/map.webp",
+  "landing.iconsSrc": "landing/icons.webp",
+  "landing.step1Src": "landing/step1.webp",
+  "landing.step2Src": "landing/step2.webp",
+  "landing.step3Src": "landing/step3.webp",
+  "landing.step4Src": "landing/step4.webp",
+  "landing.step5Src": "landing/step5.webp",
   "landing.mapAlt": "The mind map editor. Branches in different colors grow from the central node “Things to do this weekend”.",
   "landing.handsTitle": "✌️ adds a node.",
   "landing.handsLede": "Press “Hand control” at the bottom and allow the camera. Hands are recognized on your device, and the video is never saved.",
@@ -1081,6 +1088,13 @@
   "landing.lede": "ブラウザで動くマインドマップです。マウスやタッチはもちろん、カメラに映した手のジェスチャーでもノードを追加・削除できます。",
   "landing.cta": "マインドマップを試す",
   "landing.ctaNote": "登録不要。マップは端末のブラウザ内に保存されます。",
+  "landing.mapSrc": "landing/map.ja.webp",
+  "landing.iconsSrc": "landing/icons.ja.webp",
+  "landing.step1Src": "landing/step1.ja.webp",
+  "landing.step2Src": "landing/step2.ja.webp",
+  "landing.step3Src": "landing/step3.ja.webp",
+  "landing.step4Src": "landing/step4.ja.webp",
+  "landing.step5Src": "landing/step5.ja.webp",
   "landing.mapAlt": "マインドマップの編集画面。中心の「週末にやりたいこと」から色分けされた枝が広がっている",
   "landing.handsTitle": "✌️ でノードが増える。",
   "landing.handsLede": "画面下の「手で操作」を押してカメラを許可するだけ。手の形は端末内で認識し、カメラ映像は保存しません。",
@@ -1135,10 +1149,10 @@
     const value = messages[lang][key] ?? en[key] ?? key;
     return typeof value === 'function' ? value(...args) : value;
   }
-  const ATTRS = { i18n: null, i18nAriaLabel: 'aria-label', i18nTitle: 'title', i18nPlaceholder: 'placeholder', i18nAlt: 'alt', i18nContent: 'content' };
+  const ATTRS = { i18n: null, i18nAriaLabel: 'aria-label', i18nTitle: 'title', i18nPlaceholder: 'placeholder', i18nAlt: 'alt', i18nContent: 'content', i18nSrc: 'src' };
   function apply(doc) {
     doc.documentElement.lang = lang;
-    for (const el of doc.querySelectorAll('[data-i18n],[data-i18n-aria-label],[data-i18n-title],[data-i18n-placeholder],[data-i18n-alt],[data-i18n-content]'))
+    for (const el of doc.querySelectorAll('[data-i18n],[data-i18n-aria-label],[data-i18n-title],[data-i18n-placeholder],[data-i18n-alt],[data-i18n-content],[data-i18n-src]'))
       for (const [key, attr] of Object.entries(ATTRS)) if (el.dataset[key]) attr ? el.setAttribute(attr, t(el.dataset[key])) : el.textContent = t(el.dataset[key]);
   }
   if (globalThis.document?.querySelectorAll) apply(globalThis.document);
