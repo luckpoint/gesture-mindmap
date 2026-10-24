@@ -477,7 +477,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <dt>⇧2</dt><dd>選んだノードに寄る</dd>
     <dt>⌘= / ⌘-</dt><dd>拡大 / 縮小</dd>
     <dt>⌘0</dt><dd>100%にもどす</dd>
-    <dt>⌘K</dt><dd>指示の入力欄へ移動</dd>
+    <dt id="promptShortcutKey" hidden>⌘K</dt><dd id="promptShortcutHelp" hidden>指示の入力欄へ移動</dd>
     <dt>⇧H</dt><dd>手で操作のオン / オフ</dd>
     <dt>?</dt><dd>この一覧</dd>
   </dl>
@@ -486,7 +486,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 
 <nav class="dock panel" aria-label="おもな操作">
   <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
-  <button class="btn dock__btn" id="promptToggle" aria-expanded="true" aria-controls="prompt" title="指示欄（⌘K）"><svg class="i"><use href="#i-send"/></svg>指示欄</button>
+  <button class="btn dock__btn" id="promptToggle" hidden aria-expanded="false" aria-controls="prompt" title="指示欄（⌘K）"><svg class="i"><use href="#i-send"/></svg>指示欄</button>
   <button class="btn dock__btn" id="handBtn" aria-pressed="false" title="手で操作（⇧H）"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
   <button class="btn dock__btn" id="fitBtn" title="全体を表示（⇧1）"><svg class="i"><use href="#i-fit"/></svg>全体を表示</button>
 </nav>
@@ -511,7 +511,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
-<section class="prompt panel" id="prompt" aria-label="マップへの指示">
+<section class="prompt panel" id="prompt" aria-label="マップへの指示" hidden>
   <div class="prompt__head">
     <p class="prompt__target" id="promptTarget"></p>
     <button class="btn btn--icon btn--quiet" id="promptHide" aria-label="指示欄を隠す" title="指示欄を隠す"><svg class="i"><use href="#i-close"/></svg></button>
@@ -550,6 +550,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   </div>
 </aside>
 
+<script src="features.js"></script>
 <script src="gestures/controller.js?v=20261023-still-point-12"></script>
 <script src="gestures/camera.js?v=20261023-still-point-12"></script>
 <script src="images/format.js"></script>
@@ -562,6 +563,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="storage/history.js"></script>
 <script>
 const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
+const instructionsEnabled = globalThis.MindmapFeatures?.instructions === true;
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
@@ -577,7 +579,7 @@ let deletion = null;
 let history = [], future = [], forceSaveFail = false;
 let revision = 0, historyToken = 0, mapSessionId = InstructionTransport.id('map_');
 let instruction = null, instructionTimer, instructionUndoButton = null, draftVersion = 0;
-const instructionClient = new InstructionTransport.Client();
+const instructionClient = instructionsEnabled ? new InstructionTransport.Client() : null;
 const imageStore = new NodeImageStore.Store();
 let saveTimer, saveDirty = false, saveWrite = null, toastTimer, hintTimer, viewTimer;
 
@@ -1346,10 +1348,11 @@ function confirmReparent() {
 }
 
 /* ---------- instructions ---------- */
-function setPromptHidden(hidden) {
+function setPromptHidden(hidden, persist = true) {
+  hidden = !instructionsEnabled || hidden;
   $('#prompt').hidden = hidden;
   $('#promptToggle').setAttribute('aria-expanded', !hidden);
-  try { localStorage.setItem(PROMPT_KEY, hidden ? '1' : ''); } catch {}
+  if (instructionsEnabled && persist) { try { localStorage.setItem(PROMPT_KEY, hidden ? '1' : ''); } catch {} }
   resizePrompt();
 }
 function resizePrompt() {
@@ -1379,10 +1382,11 @@ function instructionToast(message, actions = [], transient = false, error = fals
   if (transient) instructionTimer = setTimeout(() => { if (!instruction) t.hidden = true; }, 5000);
 }
 async function checkCodexStatus() {
+  if (!instructionsEnabled) return;
   try {
     const status = await instructionClient.status();
     $('#promptConnection').textContent = status.reason || ''; $('#promptConnection').hidden = status.available;
-  } catch { $('#promptConnection').textContent = '指示を使うにはMacで npm start を実行し、そのURLを開いてください。'; $('#promptConnection').hidden = false; }
+  } catch { $('#promptConnection').textContent = '指示を使うにはMacで ENABLE_CODEX_INSTRUCTIONS=true npm start を実行し、そのURLを開いてください。'; $('#promptConnection').hidden = false; }
 }
 function instructionConflict(run) {
   return run.session !== mapSessionId || run.revision !== revision || !!(editing || gesture || mode || deletion || hand?.grab);
@@ -1413,6 +1417,7 @@ function cancelInstruction() {
   endInstruction('cancelled', '中止しました'); instructionClient.cancel();
 }
 async function sendInstruction(retryText) {
+  if (!instructionsEnabled) return;
   if (instruction?.state === 'awaiting_input' && typeof retryText !== 'string') { await answerInstruction(); return; }
   if (instruction) return;
   const text = typeof retryText === 'string' ? retryText : $('#promptInput').value;
@@ -1764,7 +1769,7 @@ addEventListener('keydown', e => {
     return;
   }
   const mod = e.metaKey || e.ctrlKey, k = e.key;
-  if (mod && k.toLowerCase() === 'k' && !e.isComposing) { e.preventDefault(); if (editing) finishEdit(); setPromptHidden(false); $('#promptInput').focus(); return; }
+  if (instructionsEnabled && mod && k.toLowerCase() === 'k' && !e.isComposing) { e.preventDefault(); if (editing) finishEdit(); setPromptHidden(false); $('#promptInput').focus(); return; }
   if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); zoomAt(W() / 2, innerHeight / 2, view.s * 1.25); return; }
   if (mod && k === '-') { e.preventDefault(); zoomAt(W() / 2, innerHeight / 2, view.s / 1.25); return; }
@@ -1928,7 +1933,12 @@ $('#promptToggle').onclick = () => {
   if (!$('#prompt').hidden) $('#promptInput').focus();
 };
 $('#promptHide').onclick = () => { setPromptHidden(true); vp.focus(); };
-try { if (localStorage.getItem(PROMPT_KEY)) setPromptHidden(true); } catch {}
+$('#promptToggle').hidden = !instructionsEnabled;
+$('#promptShortcutKey').hidden = !instructionsEnabled;
+$('#promptShortcutHelp').hidden = !instructionsEnabled;
+let promptHidden = !instructionsEnabled;
+try { promptHidden ||= !!localStorage.getItem(PROMPT_KEY); } catch {}
+setPromptHidden(promptHidden, false);
 $('#camToggle').onclick = () => {
   const c = $('#cam').classList.toggle('is-collapsed');
   $('#camToggle').textContent = c ? '表示' : '隠す';

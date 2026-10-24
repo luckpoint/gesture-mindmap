@@ -24,10 +24,19 @@ function body(req) {
     });
   });
 }
-export function createRelay(client, service = new InstructionService(client)) {
+export function createRelay(client, service, { instructions = false } = {}) {
+  instructions = instructions === true;
+  service = instructions ? (service || new InstructionService(client)) : null;
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
+      if (['GET', 'HEAD'].includes(req.method) && url.pathname === '/features.js') {
+        res.writeHead(200, { 'Content-Type': types['.js'], 'Cache-Control': 'no-store' });
+        res.end(req.method === 'HEAD' ? undefined : `globalThis.MindmapFeatures = Object.freeze({ instructions: ${instructions} });`); return;
+      }
+      if (!instructions && (url.pathname === '/api/codex' || url.pathname.startsWith('/api/codex/') || url.pathname === '/api/instructions' || url.pathname.startsWith('/api/instructions/'))) {
+        json(res, 404, { message: 'APIが見つかりません' }); return;
+      }
       if (req.method === 'GET' && url.pathname === '/api/codex/status') { json(res, 200, await client.status()); return; }
       if (req.method === 'POST' && url.pathname === '/api/instructions') {
         const run = service.submit(await body(req)); json(res, 202, { requestId: run.input.requestId }); return;
@@ -57,12 +66,13 @@ export function createRelay(client, service = new InstructionService(client)) {
   return { server, service };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const client = new CodexClient();
-  const { server, service } = createRelay(client);
+  const instructions = process.env.ENABLE_CODEX_INSTRUCTIONS === 'true';
+  const client = instructions ? new CodexClient() : null;
+  const { server, service } = createRelay(client, undefined, { instructions });
   // Keep ordinary editing available even if the CLI/login is unavailable.
-  client.start().catch(async () => { console.error('Codexを起動できません。CLI 0.163.0 とログイン状態・管理設定を確認し、中継を再起動してください。'); await client.close(); });
+  if (instructions) client.start().catch(async () => { console.error('Codexを起動できません。CLI 0.163.0 とログイン状態・管理設定を確認し、中継を再起動してください。'); await client.close(); });
   const port = Number(process.env.PORT || 8787);
   server.listen(port, '127.0.0.1', () => console.log(`Mindmap: http://127.0.0.1:${port}`));
-  const close = async () => { service.close(); server.closeAllConnections(); server.close(); await client.close(); };
+  const close = async () => { service?.close(); server.closeAllConnections(); server.close(); await client?.close(); };
   process.once('SIGINT', close); process.once('SIGTERM', close);
 }

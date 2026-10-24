@@ -33,7 +33,7 @@ function memoryLibrary() {
     watchList() { return () => {}; },
   };
 }
-function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
+function setup({ renderUI = false, handUI = false, stored = {}, instructions = true } = {}) {
   const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
   let timerId = 0;
   const frames = new Map(), intervals = new Map();
@@ -58,6 +58,7 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
     return elements.get(key);
   }
   const context = vm.createContext({
+    MindmapFeatures: { instructions },
     console, TextEncoder, AbortSignal, Blob, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: true }),
     document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
@@ -1083,4 +1084,31 @@ test('bytes and update times read in short units', () => {
   assert.deepEqual(JSON.parse(t.run(`JSON.stringify([0, 1023, 1024, 1536 * 1024].map(formatBytes))`)), ['0 B', '1023 B', '1 KB', '1.5 MB']);
   const now = Date.UTC(2026, 9, 24, 12);
   assert.deepEqual(JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 3 * 86400e3].map(d => ago(${now} - d, ${now})))`)), ['たった今', '5分前', '2時間前', '3日前']);
+});
+
+
+test('disabled instructions hide controls, ignore saved visibility, shortcut and submission without a transport', async () => {
+  const t = setup({ instructions: false, stored: { 'mindmap-proto:prompt-hidden': '' } });
+  assert.equal(t.run('instructionClient'), null);
+  assert.equal(t.elements.get('#prompt').hidden, true);
+  assert.equal(t.elements.get('#promptToggle').hidden, true);
+  assert.equal(t.elements.get('#promptShortcutKey').hidden, true);
+  assert.equal(t.elements.get('#promptShortcutHelp').hidden, true);
+  t.run('setPromptHidden(false)');
+  assert.equal(t.elements.get('#prompt').hidden, true);
+  let prevented = false;
+  t.windowHandlers.get('keydown')({ key: 'k', metaKey: true, target: { closest() { return null; } }, preventDefault() { prevented = true; } });
+  assert.equal(prevented, false);
+  await t.run("sendInstruction('変更してください')");
+  await t.run('checkCodexStatus()');
+  assert.equal(t.run('instruction'), null);
+  assert.equal(t.storage.get('mindmap-proto:prompt-hidden'), '');
+  t.run("commit(() => { map.nodes.root.text = '通常編集'; });");
+  assert.equal(t.run('map.nodes.root.text'), '通常編集');
+});
+
+test('static feature configuration disables instructions by default', () => {
+  const context = vm.createContext({});
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/features.js'), 'utf8'), context);
+  assert.equal(context.MindmapFeatures.instructions, false);
 });

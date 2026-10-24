@@ -137,8 +137,10 @@ test('stdio client waits for initialization and rejects server-initiated request
   c.receive({id:999,method:'item/commandExecution/requestApproval',params:{}}); assert.equal(proc.killed,true); assert.equal(c.available,false); assert.equal(sent.at(-1).error.code,-32601);
 });
 test('HTTP relay serves only the UI and validates bodies and client ownership', async t=>{
-  const {client,service}=await setup(t); const {createRelay}=await import('../server/index.mjs'); const {server}=createRelay(client,service);
+  const {client,service}=await setup(t); const {createRelay}=await import('../server/index.mjs'); const {server}=createRelay(client,service,{instructions:true});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve)); t.after(()=>{server.closeAllConnections();server.close();}); const base='http://127.0.0.1:'+server.address().port;
+  const config=await fetch(base+'/features.js'); assert.match(await config.text(),/instructions: true/);
+  assert.equal((await fetch(base+'/api/codex/status')).status,200);
   const ui=await fetch(base+'/'); assert.equal(ui.status,200); assert.match(await ui.text(),/promptInput/);
   assert.equal((await fetch(base+'/server/codex-client.mjs')).status,404);
   assert.equal((await fetch(base+'/api/instructions',{method:'POST',body:'{'})).status,400);
@@ -166,4 +168,21 @@ test('image profile enables only image generation and RPC diagnostics never reta
   c.receive({id:1,error:{code:-32603,message:'secret-value',data:{token:'secret-value'}}});
   await assert.rejects(pending,error=>error.message==='RPC_ERROR'&&error.method==='config/read'&&error.rpcCode===-32603&&!JSON.stringify(error).includes('secret'));
   assert.throws(()=>new CodexClient({profile:'unrestricted'}),/INVALID_PROFILE/);
+});
+
+
+test('disabled relay serves OFF configuration and rejects every instruction API without a client or service', async t => {
+  const {createRelay}=await import('../server/index.mjs');
+  const {server,service}=createRelay();
+  assert.equal(service,null);
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{server.closeAllConnections();server.close();});
+  const base='http://127.0.0.1:'+server.address().port;
+  const config=await fetch(base+'/features.js');
+  assert.equal(config.headers.get('cache-control'),'no-store');
+  assert.match(await config.text(),/instructions: false/);
+  for (const [path,method] of [['/api/codex/status','GET'],['/api/instructions','POST'],['/api/instructions/req_1/events','GET'],['/api/instructions/req_1/cancel','POST'],['/api/instructions/req_1/answer','POST']]) {
+    assert.equal((await fetch(base+path,{method})).status,404);
+  }
+  assert.equal((await fetch(base+'/')).status,200);
 });

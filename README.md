@@ -1,17 +1,27 @@
 # マインドマップ試作
 
-Node.js 22以上と **Codex CLI 0.163.0** を使います。マップの保存にRxDBを使うため、最初に `npm install && npm run setup` で `ui-prototype/vendor/rxdb.js` を生成します（静的配信のときも同梱してください）。
+Node.js 22以上を使います。指示欄は機能フラグで切り替え、既定ではOFFです。指示欄をONにする場合のみ **Codex CLI 0.163.0** とログインが必要です。マップの保存にRxDBを使うため、最初に `npm install && npm run setup` で `ui-prototype/vendor/rxdb.js` を生成します（静的配信のときも同梱してください）。
 
 ```sh
-codex --version
-codex login
 npm install && npm run setup
 npm start
 ```
 
 端末内に複数のマップを持てます。左上の「マップ」から作成・切り替え・削除ができ、JSONの読み込みは新しいマップとして追加します。同じマップを別のタブで開くと、そのタブは閲覧専用になります。Undo/Redoの履歴（最大1000件）もマップごとに保存し、再読み込み後も続けられます。仕様は [複数マップとRxDB＋OPFS保存](docs/multi-map-storage-design.md) にあります。
 
-表示された `http://127.0.0.1:8787` をMacのブラウザで開きます。別ポートは `PORT=8790 npm start` で指定できます。既存のCLIログインを使い、認証情報をブラウザへ渡しません。CLIの版が異なる場合や起動・認証に失敗した場合も、通常のマップ編集・JSON書き出しは使えます。静的ファイルだけを開いた場合、Codexへの指示は動きません。
+表示された `http://127.0.0.1:8787` をMacのブラウザで開きます。別ポートは `PORT=8790 npm start` で指定できます。指示欄とCodex連携をONにする場合は、次のように起動します。
+
+```sh
+codex --version
+codex login
+ENABLE_CODEX_INSTRUCTIONS=true npm start
+```
+
+`ENABLE_CODEX_INSTRUCTIONS` は文字列 `true` の場合だけONになり、未指定・`false`・その他の値はOFFです。OFFでは指示欄・開閉ボタンを表示せず、⌘K / Ctrl+Kも無効です。Codexプロセスと指示サービスを起動せず、`/api/codex/*` と `/api/instructions` 以下は404を返します。通常のマップ編集・保存・画像の読み込み／表示はそのまま使えます。
+
+Cloudflare Workersで公開する際は、`ui-prototype/` を静的アセットとして配信し、同梱の `features.js`（`instructions: false`）を使用します。Node.jsの中継サーバーは公開構成に含めません。ローカル中継では環境変数から同じURLの設定を返すため、ONで使った後も静的ファイルの設定はOFFのままです。機能フラグはブラウザの保存設定やURLパラメータでは切り替えません。
+
+ONでは既存のCLIログインを使い、認証情報をブラウザへ渡しません。CLIの版が異なる場合や起動・認証に失敗した場合も、通常のマップ編集・JSON書き出しは使えます。静的ファイルの配信では指示欄とCodex連携は無効です。
 
 下部の入力欄に指示を入力し、Enterまたは送信ボタンで実行します。Shift+Enterで改行、⌘K / Ctrl+Kで入力欄に移動できます。送信時点の選択ノードとマップ全体を渡し、毎回新しいスレッドを使います。削除を含む指示は、範囲と同時変更を確認してからまとめて反映します。一回のUndoで指示全体を戻せます。
 
