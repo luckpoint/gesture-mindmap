@@ -1092,6 +1092,23 @@ test('uploading as a child adds one named image node in a single undo and select
   assert.equal(t.run(`const added=map.nodes[sel]; added.parent==='a' && added.text==='海辺の電車' && added.image.alt==='海辺の電車' && added.image.assetId===ref.assetId && prepared===file && Object.keys(map.nodes).length===before+2`),true);
   t.run('undo()');assert.equal(t.run(`Object.keys(map.nodes).length===before+1`),true);
 });
+test('dropping an image file onto a node turns it into an image node; off-node or non-image drops do nothing', async () => {
+  const t=setup();
+  t.run(`const ref={assetId:'sha256:'+'e'.repeat(64),width:4,height:3};
+    NodeImageUpload.prepare=async f=>f; imageStore.put=async()=>ref;
+    let hitId='b'; document.elementFromPoint=()=>({closest:s=>s==='.node'&&hitId?{dataset:{id:hitId}}:null});
+    const png=Object.assign(new Blob(['x'],{type:'image/png'}),{name:'p.png'});
+    const drag=files=>({preventDefault(){}, clientX:0, clientY:0, dataTransfer:{types:['Files'], files}});
+    const before=Object.keys(map.nodes).length, text=map.nodes.b.text;`);
+  t.run(`$('#viewport').handlers.dragover(drag([png]))`);
+  assert.equal(t.run(`dropTarget`),'b');
+  await t.run(`$('#viewport').handlers.drop(drag([new Blob(['x'],{type:'text/plain'})]))`);
+  assert.equal(t.run(`!map.nodes.b.image && dropTarget===null && history.length===0`),true);
+  await t.run(`hitId=null; $('#viewport').handlers.drop(drag([png]))`);
+  assert.equal(t.run(`history.length`),0);
+  await t.run(`hitId='b'; $('#viewport').handlers.drop(drag([png]))`);
+  assert.equal(t.run(`map.nodes.b.image.assetId===ref.assetId && map.nodes.b.image.alt===text && map.nodes.b.text===text && Object.keys(map.nodes).length===before && history.length===1`),true);
+});
 test('uploading onto a node keeps its text, and failures leave the map untouched', async () => {
   const t=setup();
   t.run(`const ref={assetId:'sha256:'+'d'.repeat(64),width:4,height:3};

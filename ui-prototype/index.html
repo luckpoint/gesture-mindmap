@@ -101,6 +101,7 @@ button { font: inherit; color: inherit; }
 .node.is-grabbed { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
 .node.is-lost { opacity: 0.55; outline: var(--rule-2) dashed var(--color-ink-3); outline-offset: 4px; }
 .node.is-source { outline: var(--rule-3) solid var(--color-accent); outline-offset: 4px; }
+.node.is-drop-target { outline: var(--rule-3) dashed var(--color-accent); outline-offset: 4px; }
 .node__image { width: 192px; height: 144px; margin: 0 auto 12px; position: relative; display: grid; place-items: center; font: 14px/1.5 var(--font-ui); }
 .node__image img { width: 192px; height: 144px; object-fit: contain; border-radius: var(--radius-sm); }
 .node__image span { position: absolute; inset: 0; display: grid; place-items: center; }
@@ -1053,15 +1054,43 @@ function pickImage(nodeId, child) {
   imagePick = { nodeId, child };
   $('#imageInput').click();
 }
-$('#imageInput').onchange = async e => {
-  const file = e.target.files[0], pick = imagePick;
-  e.target.value = ''; imagePick = null;
-  if (!file || !pick || !map.nodes[pick.nodeId]) return;
+async function adoptImageFile(file, pick) {
   const target = { ...pick, mapSessionId, revision };
   const alt = pick.child ? NodeImageUpload.name(file) : map.nodes[pick.nodeId].text || NodeImageUpload.name(file);
   try { await attachNodeImage(await NodeImageUpload.prepare(file), target, alt); }
   catch (error) { toast(error.message || '画像を追加できませんでした'); }
+}
+$('#imageInput').onchange = async e => {
+  const file = e.target.files[0], pick = imagePick;
+  e.target.value = ''; imagePick = null;
+  if (!file || !pick || !map.nodes[pick.nodeId]) return;
+  await adoptImageFile(file, pick);
 };
+let dropTarget = null;
+function setDropTarget(id) {
+  if (dropTarget === id) return;
+  els.get(dropTarget)?.classList.remove('is-drop-target');
+  dropTarget = id;
+  els.get(id)?.classList.add('is-drop-target');
+}
+const nodeIdAt = e => document.elementFromPoint(e.clientX, e.clientY)?.closest('.node')?.dataset.id;
+vp.addEventListener('dragover', e => {
+  if (!e.dataTransfer?.types.includes('Files')) return;
+  e.preventDefault();
+  const id = nodeIdAt(e);
+  e.dataTransfer.dropEffect = id ? 'copy' : 'none';
+  setDropTarget(id ?? null);
+});
+vp.addEventListener('dragleave', e => { if (!vp.contains(e.relatedTarget)) setDropTarget(null); });
+vp.addEventListener('drop', async e => {
+  if (!e.dataTransfer?.types.includes('Files')) return;
+  e.preventDefault();
+  setDropTarget(null);
+  const id = nodeIdAt(e), file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (!id || !map.nodes[id] || refuseReadOnly()) return;
+  if (!file) { toast('画像ファイルをドロップしてください'); return; }
+  await adoptImageFile(file, { nodeId: id, child: false });
+});
 let viewing = null;
 function openImageViewer(id) {
   const ref = map.nodes[id]?.image;
