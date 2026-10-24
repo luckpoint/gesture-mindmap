@@ -822,7 +822,7 @@ test('peace adds and edits one child per hold; empty edit cancels and committed 
   assert.equal(t.run('JSON.stringify(map) === originalMap && !editing && history.length === 0'), true);
 });
 
-test('thumb-down opens confirmation once, permits hand choice and fresh pinch confirmation, and suppresses map gestures', () => {
+test('thumb-down opens confirmation once, palm chooses scope and thumb-right confirms without pinch', () => {
   const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
   t.run(`sel = 'a';
     const dialogSample = (pose = null, ratio = .8, y = .5) => { cameraSession.io.frame({ pointer: { x: .5, y }, wrist: { x: .5, y: .7 }, ratio, pose }, handTime); handTime += 50; };
@@ -835,7 +835,9 @@ test('thumb-down opens confirmation once, permits hand choice and fresh pinch co
   assert.equal(t.run(`deletion.scope === 'branch' && !!map.nodes.a && !gesture`), true);
   t.run(`for (let i = 0; i < 3; i++) dialogSample('palm'); dialogSample('palm', .8, .6);
     for (let i = 0; i < 6; i++) dialogSample('palm', .8, .6); dialogSample('palm', .8, .7);
-    for (let i = 0; i < 14; i++) dialogSample(null, .1, .7);`);
+    for (let i = 0; i < 14; i++) dialogSample(null, .1, .7);
+    if (!deletion || !map.nodes.a) throw new Error('Pinch confirmed deletion');
+    for (let i = 0; i < 14; i++) dialogSample('thumbRight');`);
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
 
@@ -1552,4 +1554,16 @@ test('crossed index fingers stop the camera and clear Hand control until enabled
   assert.equal(t.run('history.length === 0 && JSON.stringify(map) === originalMap'), true);
   t.run('toggleHand();');
   assert.equal(t.run('!!cameraSession && !handController.disabled'), true);
+});
+
+
+test('palm selection then pinch centers that node at the same scale without changing the map or history', () => {
+  const t = setup({ handUI: true }); prepareHand(t);
+  t.run(`view.s = 1.5; stableHand(.25, .425); const centeredId = sel; const centeredScale = view.s;
+    handSample(.05, .1, .1);`);
+  assert.equal(t.run("centeredId === 'a' && sel === centeredId && hand.hover === centeredId"), true);
+  assert.equal(t.run('map.nodes[sel].x * view.s + view.x === W()/2 && map.nodes[sel].y * view.s + view.y === H()/2 && view.s === centeredScale'), true);
+  assert.match(t.elements.get('#handHelp').textContent, /中央に移動しました/);
+  t.run('const centerAnim = animId; stableHand(.1, .1, .1);');
+  assert.equal(t.run('animId === centerAnim && !gesture && history.length === 0 && JSON.stringify(map) === originalMap'), true);
 });

@@ -3,12 +3,12 @@ const { test } = require('node:test');
 const { HandController, handFrame, directionalTarget, mapPointer, proximityTarget } = require('../ui-prototype/gestures/controller.js');
 
 function setup(options = {}) {
-  const events = [], dragEvents = [], zooms = [], pans = [], commands = [], dialogEvents = [], selections = []; let blocked = false, time = 0, dialog = false;
+  const events = [], dragEvents = [], zooms = [], pans = [], commands = [], dialogEvents = [], selections = [], centers = []; let blocked = false, time = 0, dialog = false;
   const controller = new HandController({
     blocked: () => blocked, activate: () => events.push('activate'),
     navigate: direction => events.push(direction), paint() {},
     nodes: () => [{ id: 'a', left: 450, right: 550, top: 360, bottom: 440 }],
-    select: id => selections.push(id),
+    select: id => selections.push(id), center: id => centers.push(id),
     zoom: factor => zooms.push(factor),
     pan: (x, y) => pans.push({ x, y }),
     command: action => commands.push(action), dialog: () => dialog,
@@ -24,7 +24,7 @@ function setup(options = {}) {
     time += 50;
   };
   const stable = (x = .5, y = .5, extra = {}) => { for (let i = 0; i < 3; i++) feed(x, y, extra); };
-  return { controller, events, dragEvents, zooms, pans, commands, dialogEvents, selections, feed, stable, block: value => blocked = value, dialog: value => dialog = value,
+  return { controller, events, dragEvents, zooms, pans, commands, dialogEvents, selections, centers, feed, stable, block: value => blocked = value, dialog: value => dialog = value,
     lost: () => { controller.update(null, time); time += 50; },
     advance: duration => time += duration,
     moves: () => events.filter(e => typeof e === 'object') };
@@ -196,19 +196,20 @@ test('pause, ordinary input, two hands and zoom transitions cannot issue command
   }
 });
 
-test('dialog requires an open hand and a fresh long pinch; never drags or zooms', () => {
+test('dialog palm navigation remains available but pinching never confirms or centers', () => {
   const t = setup(); t.stable(); t.dialog(true);
   holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, []);
   t.stable(.5, .5, { pose: 'palm' }); t.feed(.5, .6, { pose: 'palm' });
   assert.deepEqual(t.dialogEvents, [1]);
   t.stable(.5, .6, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1]);
   for (let i = 0; i < 12; i++) t.feed(.5, .6, { ratio: .1 });
-  assert.deepEqual(t.dialogEvents, [1, 'select']);
-  holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1, 'select']);
+  assert.deepEqual(t.dialogEvents, [1]);
+  holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1]);
   holdPose(t, 'peace'); holdPose(t, null, { hands: 2, distance: .5 });
   assert.deepEqual(t.commands, []); assert.deepEqual(t.zooms, []); assert.deepEqual(t.dragEvents, []);
   t.controller.paused = true; t.stable(); holdPose(t, null, { ratio: .1 });
-  assert.deepEqual(t.dialogEvents, [1, 'select']);
+  assert.deepEqual(t.dialogEvents, [1]);
+  assert.deepEqual(t.centers, []);
 });
 
 test('landmarks recognize peace and downward thumb separately from point and fist', () => {
@@ -490,7 +491,7 @@ test('proximity uses actual displayed size, nearest edges and deterministic ties
   assert.equal(proximityTarget([scaled], { x: 300, y: 320 }), 'a');
 });
 
-for (const pose of ['point', 'bothFists', null]) test(`${pose} without radial hand motion never selects, moves a node or moves the view`, () => {
+for (const pose of ['point', 'bothFists']) test(`${pose} without radial hand motion never selects, moves a node or moves the view`, () => {
   const t = setup(); t.stable(); const count = t.selections.length;
   for (let i = 0; i < 20; i++) t.feed(.1 + i * .03, .2, { pose, ratio: .1, ...(pose === 'bothFists' ? { hands: 2, distance: .4 } : {}) });
   assert.equal(t.selections.length, count); assert.equal(t.controller.state.hover, null);
@@ -666,4 +667,51 @@ for (const cause of ['loss', 'pose', 'gap', 'clock', 'cancel']) test(`${cause} r
   t.stable(.5, .5, frame); assert.equal(disabled, 0);
   for (let i = 0; i < 5; i++) t.feed(.5, .5, frame);
   assert.equal(disabled, 1);
+});
+
+
+test('pinch centers the palm-selected node once, retains it through motion, and rearms on a fresh palm', () => {
+  const t = setup(); t.stable();
+  t.feed(.1, .2, { ratio: .1 });
+  assert.deepEqual(t.centers, ['a']);
+  assert.equal(t.controller.state.hover, 'a');
+  assert.equal(t.controller.state.state, 'centered');
+  for (let i = 0; i < 20; i++) t.feed(.1, .2, { ratio: i % 2 ? .4 : .1 });
+  assert.deepEqual(t.centers, ['a']);
+  t.stable(); t.feed(.5, .5, { ratio: .1 });
+  assert.deepEqual(t.centers, ['a', 'a']);
+  assert.deepEqual([...t.dragEvents, ...t.pans, ...t.zooms, ...t.commands], []);
+});
+
+for (const cause of ['unarmed', 'waiting', 'empty', 'loss', 'blocked', 'identity', 'wrist', 'gap', 'clock', 'malformed', 'two', 'point', 'paused']) test(`pinch cannot center after ${cause}`, () => {
+  const t = setup();
+  if (cause === 'waiting') t.feed();
+  else if (cause !== 'unarmed') t.stable();
+  if (cause === 'empty') t.feed(.1, .1);
+  if (cause === 'loss') t.lost();
+  if (cause === 'blocked') t.block(true);
+  if (cause === 'gap') t.advance(1500);
+  if (cause === 'clock') t.advance(-500);
+  if (cause === 'point') t.feed(.5, .5, { pose: 'point' });
+  if (cause === 'paused') t.controller.paused = true;
+  t.feed(cause === 'malformed' ? NaN : .5, .5, { ratio: .1,
+    ...(cause === 'identity' ? { identity: 'Right' } : {}),
+    ...(cause === 'wrist' ? { wrist: { x: .1, y: .1 } } : {}),
+    ...(cause === 'two' ? { hands: 2, distance: .4, pose: 'neutral' } : {}) });
+  assert.deepEqual(t.centers, []);
+});
+
+
+test('landmark-derived palm then 3D pinch centers the selected node', () => {
+  const t = setup();
+  const points = poseLandmarks('open');
+  const palm = handFrame({ landmarks: [points] }, 640, 480);
+  const point = mapPointer(palm.pointer, t.controller.io.bounds());
+  t.controller.io.nodes = () => [{ id: 'landmark', left: point.x - 50, right: point.x + 50, top: point.y - 40, bottom: point.y + 40 }];
+  t.stable(.5, .5, palm);
+  points[8] = { ...points[4] };
+  const pinch = handFrame({ landmarks: [points] }, 640, 480);
+  assert.equal(pinch.pose, null);
+  t.stable(.5, .5, pinch);
+  assert.deepEqual(t.centers, ['landmark']);
 });

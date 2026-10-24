@@ -57,7 +57,7 @@
     cancel() {
       if (this.state.grab) this.io.cancel();
       this.state.hover = null; this.state.pointerVisible = false;
-      this.state.grab = null; this.pinchAt = null;
+      this.state.grab = null; this.centerTarget = null;
       this.dragPoint = null; this.dragAt = null; this.dragFiltered = null;
       this.dragScale = 1; this.dragVelocity = { x: 0, y: 0 }; this.dragRaw = null;
       this.dragMoving = false; this.dragStopPoint = null; this.dragStopAt = null; this.dragStillPoint = null;
@@ -145,6 +145,18 @@
       if (changed || (this.lastAt !== null && (now - this.lastAt > c.maxGap || now < this.lastAt))) this.cancel();
       this.identity = frame.identity; this.wrist = { ...frame.wrist }; this.lastAt = now;
       if (dialog) { this.updateDialog(frame, point, now); return; }
+      // Capture the last palm-selected node before finger flexion can change
+      // the pointer/target. Keep it latched until the hand opens again.
+      if (!frame.pose && frame.ratio < c.open &&
+          (this.centerTarget || (frame.ratio <= c.close && s.hover))) {
+        if (!this.centerTarget) {
+          this.centerTarget = s.hover;
+          this.io.center?.(this.centerTarget);
+        }
+        s.hover = this.centerTarget; s.state = 'centered';
+        this.io.paint(s); return;
+      }
+      if (this.centerTarget) this.cancel();
       const openPalm = frame.pose === 'palm';
       if (!openPalm) { this.cancel(); s.state = 'neutral'; this.io.paint(s); return; }
       if (this.pendingAt === null) this.pendingAt = now;
@@ -243,21 +255,20 @@
       }
       if (side) {
         // A held tilt presses the button on that side once; changing pose rearms it.
-        this.anchor = null; this.pendingAt = null; this.pinchAt = null;
+        this.anchor = null; this.pendingAt = null;
         s.progress = this.choiceAt === null ? 0 : Math.min(1, (now - this.choiceAt) / c.commandStable);
         if (s.progress >= 1) { this.choiceAt = null; s.progress = 0; this.io.dialogChoose?.(side); }
         s.state = 'dialog'; this.io.paint(s); return;
       }
-      // An open palm navigates the dialog and arms a fresh pinch.
+      // An open palm navigates the dialog; tilted thumbs press its buttons.
       const pointing = frame.pose === 'palm' || (!frame.pose && frame.ratio >= c.open);
       if (pointing && !this.dialogPoint) {
         this.anchor = null; this.pendingAt = null;
       }
       this.dialogPoint = pointing;
       if (frame.pose && frame.pose !== 'palm') {
-        this.anchor = null; this.pendingAt = null; this.pinchAt = null;
+        this.anchor = null; this.pendingAt = null;
       } else if (frame.pose === 'palm' || (!frame.pose && frame.ratio >= c.open)) {
-        this.pinchAt = null;
         if (!this.anchor) {
           if (this.pendingAt === null) this.pendingAt = now;
           if (now - this.pendingAt >= c.stable) this.anchor = { ...point };
@@ -266,19 +277,11 @@
           this.io.dialogNavigate?.(point.y > this.anchor.y ? 1 : -1);
           this.anchor = { ...point }; this.lastSwitch = now;
         } else if (!pointing) this.anchor = { ...point };
-      } else if (this.anchor && frame.ratio <= c.close) {
-        this.anchor = { ...point };
-        if (this.pinchAt === null) this.pinchAt = now;
-        if (now - this.pinchAt >= c.commandStable) {
-          this.anchor = null; this.pendingAt = null; this.pinchAt = null;
-          this.io.dialogSelect?.();
-        }
       } else {
-        this.pinchAt = null;
-        if (this.anchor) this.anchor = { ...point };
+        this.anchor = null; this.pendingAt = null;
       }
       s.state = 'dialog';
-      s.progress = this.pinchAt === null ? 0 : Math.min(1, (now - this.pinchAt) / c.commandStable);
+      s.progress = 0;
       this.io.paint(s);
     }
     rebaseDrag(point, now) {
