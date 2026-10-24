@@ -737,3 +737,42 @@ test('two fists pan the viewport, revert node previews and keep scale, nodes and
   t.run(`editing = { id: 'root' }; panSample(.3, .3); panSample(.4, .4);`);
   assert.equal(t.run('hand.state === "blocked" && JSON.stringify(view) === JSON.stringify(stoppedPan)'), true);
 });
+
+function mockQuestions(t) {
+  t.run(`var resolveConversation, conversationState, cancelledConversation = 0;
+    instructionClient.run = (input, onState) => { conversationState = onState; return new Promise(resolve => { resolveConversation = resolve; }); };
+    instructionClient.answer = async answer => { conversationState('thinking'); };
+    instructionClient.cancel = () => { cancelledConversation++; };
+    $('#promptInput').value = 'ノードを整理して';
+  `);
+  return t.run('sendInstruction()');
+}
+test('question UI accepts multiple replies and applies the final proposal as one history entry', async()=>{
+  const t=setup(); const pending=mockQuestions(t);
+  t.run(`conversationState('awaiting_input', {questionId:'q1', message:'対象は？'});`);
+  assert.equal(t.run(`instruction.state === 'awaiting_input' && !$('#promptSend').disabled && $('#promptInput').value === '' && history.length === 0`),true);
+  assert.equal(t.elements.get('#promptQuestion').textContent,'対象は？');
+  t.run(`$('#promptInput').value = '図書館'; draftVersion++;`); await t.run('sendInstruction()');
+  assert.equal(t.run(`instruction.state === 'thinking' && $('#promptSend').disabled`),true);
+  t.run(`conversationState('awaiting_input', {questionId:'q2', message:'名前は？'}); $('#promptInput').value = '新しい本'; draftVersion++;`);
+  await t.run('sendInstruction()');
+  t.run(`resolveConversation({status:'ok',message:'',operations:[{type:'update_node',nodeId:'b',text:'新しい本'}]});`); await pending;
+  assert.equal(t.run(`instruction === null && map.nodes.b.text === '新しい本' && history.length === 1 && $('#promptInput').value === '' && $('#promptQuestion').hidden`),true);
+  t.run('undo()'); assert.equal(t.run('map.nodes.b.text'),'図書館に行く');
+});
+test('question UI preserves an edited draft and ends continuation when the map changes',async()=>{
+  const t=setup(); const pending=mockQuestions(t);
+  t.run(`$('#promptInput').value = '下書き'; draftVersion++; conversationState('awaiting_input', {questionId:'q1',message:'対象は？'});`);
+  assert.equal(t.elements.get('#promptInput').value,'下書き');
+  t.run(`commit(() => { map.nodes.a.text = '変更'; });`);
+  assert.equal(t.run(`instruction === null && cancelledConversation === 1 && $('#promptQuestion').hidden`),true);
+  t.run(`resolveConversation({status:'ok',message:'',operations:[{type:'update_node',nodeId:'b',text:'不正な遅延結果'}]});`); await pending;
+  assert.equal(t.run('map.nodes.b.text'),'図書館に行く');
+});
+test('answer POST failures keep the question and typed answer available',async()=>{
+  const t=setup(); const pending=mockQuestions(t);
+  t.run(`conversationState('awaiting_input', {questionId:'q1',message:'対象は？'}); instructionClient.answer = async () => { throw new Error('通信失敗'); }; $('#promptInput').value = '図書館'; draftVersion++;`);
+  await t.run('sendInstruction()');
+  assert.equal(t.run(`instruction.state === 'awaiting_input' && !$('#promptSend').disabled && !$('#promptQuestion').hidden && $('#promptInput').value === '図書館'`),true);
+  t.run(`cancelInstruction(); resolveConversation({status:'no_change',message:'',operations:[]});`); await pending;
+});

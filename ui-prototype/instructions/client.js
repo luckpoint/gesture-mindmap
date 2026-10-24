@@ -16,11 +16,33 @@
     path(input, action) { return `/api/instructions/${encodeURIComponent(input.requestId)}/${action}?clientSessionId=${encodeURIComponent(this.clientSessionId)}`; }
     stopRemote(input, keepalive = false) { return this.fetcher(this.path(input, 'cancel'), { method: 'POST', keepalive }).catch(() => {}); }
     cancel() { if (this.active) this.active.finish(new Error('中止しました'), true); }
+    async answer(answer) {
+      const run = this.active;
+      if (!run || run.state !== 'awaiting_input' || run.answering) throw new Error('回答待ちの質問がありません');
+      const questionId = run.questionId;
+      const submission = run.submission || { questionId, answerId: id('answer_'), answer,
+        mapSessionId: run.input.mapSessionId, baseRevision: run.input.baseRevision };
+      if (submission.answer !== answer) throw new Error('送信確認ができていません。同じ回答を再送するか中止してください');
+      run.submission = submission; run.answering = true;
+      try {
+        const response = await this.fetcher(this.path(run.input, 'answer'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(submission), signal: AbortSignal.timeout(15000) });
+        const accepted = await response.json();
+        if (!response.ok) {
+          if (response.status < 500) run.submission = null;
+          throw new Error(accepted.message || '回答を送信できませんでした');
+        }
+        if (accepted.requestId !== run.input.requestId) throw new Error('実行IDが一致しません');
+        // SSE may already have delivered the next question or final result.
+        if (!run.done && run.state === 'awaiting_input' && run.questionId === questionId) {
+          run.state = 'thinking'; run.armTimer(); run.onState('thinking');
+        }
+      } finally { run.answering = false; }
+    }
     run(input, onState = () => {}) {
       if (this.active) return Promise.reject(new Error('既に実行中です'));
       input = { ...input, clientSessionId: this.clientSessionId };
       return new Promise((resolve, reject) => {
-        const run = { input, source: null, done: false };
+        const run = { input, source: null, done: false, state: 'thinking', onState };
         const finish = (error, stop = false, proposal) => {
           if (run.done) return; run.done = true;
           clearTimeout(run.timer); clearTimeout(run.reconnectTimer); run.source?.close();
@@ -29,7 +51,11 @@
           error ? reject(error) : resolve(proposal);
         };
         run.finish = finish; this.active = run;
-        run.timer = setTimeout(() => finish(new Error('Codexの応答がタイムアウトしました'), true), this.timeout);
+        run.armTimer = () => {
+          clearTimeout(run.timer);
+          run.timer = setTimeout(() => finish(new Error('Codexの応答がタイムアウトしました'), true), this.timeout);
+        };
+        run.armTimer();
         onState('submitting');
         (async () => {
           try {
@@ -56,7 +82,15 @@
                 if (data.state === 'result') finish(null, false, data.proposal);
                 else if (data.state === 'failed') finish(new Error(data.message || 'Codexの指示処理に失敗しました'));
                 else if (data.state === 'cancelled') finish(new Error('中止しました'));
-                else if (data.state !== 'thinking') throw new Error('実行状態の形式が正しくありません');
+                else if (data.state === 'awaiting_input') {
+                  if (typeof data.questionId !== 'string' || !data.questionId || typeof data.message !== 'string' || !data.message.trim()) throw new Error('質問の形式が正しくありません');
+                  clearTimeout(run.timer);
+                  const changed = run.questionId !== data.questionId;
+                  run.state = 'awaiting_input'; run.questionId = data.questionId;
+                  if (changed) { run.submission = null; onState('awaiting_input', data); }
+                } else if (data.state === 'thinking') {
+                  if (run.state !== 'thinking') { run.state = 'thinking'; run.armTimer(); onState('thinking'); }
+                } else throw new Error('実行状態の形式が正しくありません');
               } catch (error) { finish(error, true); }
             };
           } catch (error) { if (!run.done) finish(new Error(error.name === 'TimeoutError' ? 'Codexへの接続がタイムアウトしました' : error.message), true); }

@@ -13,7 +13,7 @@ class Fake extends EventEmitter {
     if (this.override) { const value = this.override(method, params); if (value !== undefined) return value; }
     if (method==='model/list') return {data:[{model:'available-model',isDefault:true}]};
     if (method==='thread/start') return {thread:{id:'thread_'+(++this.n)}};
-    if (method==='turn/start') return {turn:{id:'turn_'+params.threadId}};
+    if (method==='turn/start') return {turn:{id:'turn_'+this.calls.filter(c=>c.method==='turn/start').length}};
     if (method==='turn/interrupt') queueMicrotask(()=>this.emit('notification','turn/completed',{threadId:params.threadId,turn:{id:params.turnId,status:'interrupted'}}));
     return {};
   }
@@ -43,6 +43,50 @@ test('duplicate POST is idempotent; other clients are independent; ownership is 
   const {client,service}=await setup(t); const run=service.submit(input()); assert.equal(service.submit(input()),run);
   assert.throws(()=>service.submit({...input(),prompt:'変更'}),/重複/); assert.throws(()=>service.get('req_1','tab_2'),/見つかりません/);
   service.submit(input('req_2','tab_2')); await tick(); assert.equal(client.calls.filter(c=>c.method==='turn/start').length,2);
+});
+const question = {status:'needs_input',message:'どちらのノードですか？',operations:[]};
+function answer(run, overrides = {}) {
+  return {questionId:run.payload.questionId,answerId:'answer_1',answer:'図書館の方',mapSessionId:run.input.mapSessionId,baseRevision:run.input.baseRevision,...overrides};
+}
+test('questions retain the thread, replay over SSE, and accept multiple answer turns exactly once', async t=>{
+  const {client,service}=await setup(t); const run=service.submit(input()); await tick();
+  const threadId=run.threadId, oldTurnId=run.turnId;
+  client.result(run,'completed',JSON.stringify(question));
+  assert.equal(run.state,'awaiting_input'); assert.equal(run.done,false); assert.equal(service.clients.get('tab_1'),run);
+  const questionId=run.payload.questionId;
+  client.result(run,'completed',JSON.stringify(question)); assert.equal(run.payload.questionId,questionId);
+  assert.equal(client.calls.filter(c=>c.method==='thread/unsubscribe').length,0);
+  const events=[]; const off=service.subscribe(run,e=>events.push(e)); assert.equal(events[0].message,question.message);
+  const first=answer(run); service.answer(run,first); service.answer(run,first); await tick();
+  assert.equal(client.calls.filter(c=>c.method==='turn/start').length,2); assert.notEqual(run.turnId,oldTurnId);
+  const secondTurn=client.calls.filter(c=>c.method==='turn/start')[1];
+  assert.equal(secondTurn.params.threadId,threadId); assert.ok(secondTurn.params.outputSchema);
+  assert.deepEqual(JSON.parse(secondTurn.params.input[0].text),{questionId:first.questionId,answerId:'answer_1',answer:'図書館の方'});
+  client.emit('notification','turn/completed',{threadId,turn:{id:oldTurnId,status:'completed',items:[{id:'late',type:'agentMessage',text:JSON.stringify(plan)}]}});
+  assert.equal(run.state,'thinking');
+  client.result(run,'completed',JSON.stringify({...question,message:'削除範囲は？'}));
+  assert.notEqual(run.payload.questionId,first.questionId);
+  assert.throws(()=>service.answer(run,{...first,answerId:'stale'}),/回答できません/);
+  service.answer(run,first); assert.equal(run.state,'awaiting_input');
+  assert.throws(()=>service.answer(run,{...first,answer:'変更'}),/重複/);
+  assert.throws(()=>service.answer(run,answer(run,{baseRevision:1})),/マップが変わって/);
+  assert.throws(()=>service.answer(run,answer(run,{answer:' '})),/形式/);
+  service.answer(run,answer(run,{answerId:'answer_2',answer:'子孫も含めて'})); await tick();
+  client.result(run); await tick();
+  assert.equal(run.state,'result'); assert.equal(client.calls.filter(c=>c.method==='thread/start').length,1);
+  assert.equal(client.calls.filter(c=>c.method==='thread/unsubscribe').length,1); off();
+});
+test('answer wait has a separate timeout and cancellation releases an idle thread without interrupt', async t=>{
+  const {client,service}=await setup(t,{executionTimeout:30,inputTimeout:150,grace:1000}); const run=service.submit(input()); await tick();
+  client.result(run,'completed',JSON.stringify(question));
+  await new Promise(r=>setTimeout(r,50)); assert.equal(run.state,'awaiting_input');
+  const lateAnswer=answer(run); service.cancel(run); await tick(); assert.equal(run.state,'cancelled');
+  assert.equal(client.calls.filter(c=>c.method==='turn/interrupt').length,0);
+  assert.equal(client.calls.filter(c=>c.method==='thread/unsubscribe').length,1);
+  assert.throws(()=>service.answer(run,lateAnswer),/回答できません/);
+  const timed=await setup(t,{inputTimeout:15,grace:1000}); const expired=timed.service.submit(input()); await tick();
+  timed.client.result(expired,'completed',JSON.stringify(question));
+  await new Promise(r=>setTimeout(r,30)); assert.equal(expired.state,'failed'); assert.match(expired.payload.message,/回答待ち/);
 });
 test('cancel while thread or turn IDs are pending interrupts late turns and releases subscriptions', async t=>{
   for (const stage of ['thread/start','turn/start']) {
@@ -101,6 +145,12 @@ test('HTTP relay serves only the UI and validates bodies and client ownership', 
   assert.equal((await fetch(base+'/api/instructions',{method:'POST',body:JSON.stringify({...input(),selectedNodeId:'missing'})})).status,400);
   assert.equal((await fetch(base+'/api/instructions',{method:'POST',body:'x'.repeat(1024*1024+1)})).status,413);
   const post=await fetch(base+'/api/instructions',{method:'POST',body:JSON.stringify(input())}); assert.equal(post.status,202);
+  const run=service.get('req_1','tab_1'); client.result(run,'completed',JSON.stringify(question));
+  const reply=answer(run);
+  assert.equal((await fetch(base+'/api/instructions/req_1/answer?clientSessionId=wrong',{method:'POST',body:JSON.stringify(reply)})).status,404);
+  assert.equal((await fetch(base+'/api/instructions/req_1/answer?clientSessionId=tab_1',{method:'POST',body:JSON.stringify(reply)})).status,202);
+  assert.equal((await fetch(base+'/api/instructions/req_1/answer?clientSessionId=tab_1',{method:'POST',body:JSON.stringify(reply)})).status,202);
+  assert.equal(client.calls.filter(c=>c.method==='turn/start').length,2);
   assert.equal((await fetch(base+'/api/instructions/req_1/cancel?clientSessionId=wrong',{method:'POST'})).status,404);
   assert.equal((await fetch(base+'/api/instructions/req_1/cancel?clientSessionId=tab_1',{method:'POST'})).status,200);
 });

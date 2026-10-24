@@ -259,6 +259,7 @@ button { font: inherit; color: inherit; }
 .prompt__input:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 1px; }
 .prompt__note { margin: 8px 4px 0; font-size: var(--text-xs); color: var(--color-ink-2); line-height: 1.5; }
 .prompt__connection { margin: 4px 4px 0; font-size: var(--text-xs); color: var(--color-danger); }
+.prompt__question { margin: 0 4px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24vh; overflow-y: auto; font-size: var(--text-sm); line-height: 1.5; }
 .notices { position: fixed; top: var(--notice-top, 80px); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); display: grid; gap: 8px; z-index: 7; pointer-events: none; }
 .notices .toast { position: static; transform: none; max-width: 100%; pointer-events: auto; flex-wrap: wrap; overflow-wrap: anywhere; }
 .dock { bottom: calc(var(--kb, 0px) + max(var(--space-md), env(safe-area-inset-bottom))); }
@@ -443,8 +444,9 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 
 <section class="prompt panel" aria-label="マップへの指示">
   <p class="prompt__target" id="promptTarget"></p>
+  <p class="prompt__question" id="promptQuestion" role="status" aria-live="polite" hidden></p>
   <form class="prompt__form" id="promptForm">
-    <textarea class="prompt__input" id="promptInput" rows="1" maxlength="4000" aria-label="マップへの指示" placeholder="マップへの指示を入力" aria-describedby="promptNote promptConnection"></textarea>
+    <textarea class="prompt__input" id="promptInput" rows="1" maxlength="4000" aria-label="マップへの指示" placeholder="マップへの指示を入力" aria-describedby="promptQuestion promptNote promptConnection"></textarea>
     <button class="btn btn--primary" id="promptSend" type="submit">送信</button>
   </form>
   <p class="prompt__note" id="promptNote">指示と現在のマップをCodexへ送信します</p>
@@ -568,6 +570,9 @@ function changed() {
   revision++; historyToken++;
   if (instructionUndoButton) instructionUndoButton.disabled = true;
   if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
+  if (instruction?.state === 'awaiting_input' || instruction?.state === 'answering') {
+    endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel();
+  }
   render(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length;
 }
 function restore(from, to) {
@@ -995,10 +1000,12 @@ function instructionConflict(run) {
 function endInstruction(state, message, counts) {
   const run = instruction; if (!run) return;
   instruction = null; $('#promptSend').disabled = false;
+  $('#promptSend').textContent = '送信'; $('#promptQuestion').hidden = true;
+  $('#promptInput').placeholder = 'マップへの指示を入力'; $('#promptInput').setAttribute('aria-label', 'マップへの指示');
   if ($('#instructionDialog').open) $('#instructionDialog').close();
   const input = $('#promptInput'), actions = [];
   if (state === 'succeeded') {
-    if (draftVersion === run.draftVersion && input.value === run.text) { input.value = ''; draftVersion++; resizePrompt(); }
+    if (draftVersion === run.sentDraftVersion && input.value === run.sentText) { input.value = ''; draftVersion++; }
     if (counts) {
       const token = historyToken;
       actions.push({ label: '元に戻す', undo: true, run: () => { if (historyToken === token) { undo(); $('#instructionToast').hidden = true; } } });
@@ -1008,6 +1015,7 @@ function endInstruction(state, message, counts) {
   }
   if (state === 'failed') actions.push({ label: '再試行', run: () => { if (!instruction) void sendInstruction(run.text); } });
   instructionToast(message, actions, ['succeeded', 'cancelled', 'no_change'].includes(state), state === 'failed' || state === 'conflict');
+  resizePrompt();
 }
 function cancelInstruction() {
   if (!instruction) return;
@@ -1015,6 +1023,7 @@ function cancelInstruction() {
   endInstruction('cancelled', '中止しました'); instructionClient.cancel();
 }
 async function sendInstruction(retryText) {
+  if (instruction?.state === 'awaiting_input' && typeof retryText !== 'string') { await answerInstruction(); return; }
   if (instruction) return;
   const text = typeof retryText === 'string' ? retryText : $('#promptInput').value;
   if (!text.trim()) return;
@@ -1029,11 +1038,26 @@ async function sendInstruction(retryText) {
     InstructionOperations.validateInput(input);
     if (new TextEncoder().encode(JSON.stringify(input)).length > 1024 * 1024) throw new Error('送信データは1MiBまでです。マップを小さくしてください');
   } catch (error) { instructionToast(error.message, [], false, true); return; }
-  const run = instruction = { id: input.requestId, session: mapSessionId, revision, selection: sel, text, draftVersion, state: 'thinking', snapshot: input.map };
+  const run = instruction = { id: input.requestId, session: mapSessionId, revision, selection: sel, text, draftVersion, sentText: text, sentDraftVersion: draftVersion, state: 'thinking', snapshot: input.map };
   $('#promptSend').disabled = true;
   instructionToast('考えています', [{ label: '中止', run: cancelInstruction }]);
   try {
-    const proposal = await instructionClient.run(input);
+    const proposal = await instructionClient.run(input, (state, data) => {
+      if (instruction !== run) return;
+      if (state === 'awaiting_input') {
+        if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel(); return; }
+        const field = $('#promptInput');
+        if (draftVersion === run.sentDraftVersion && field.value === run.sentText) { field.value = ''; draftVersion++; }
+        run.state = state; run.questionId = data.questionId;
+        $('#promptQuestion').textContent = data.message; $('#promptQuestion').hidden = false;
+        field.placeholder = '質問への回答を入力'; field.setAttribute('aria-label', 'Codexへの回答');
+        $('#promptSend').textContent = '回答'; $('#promptSend').disabled = false;
+        instructionToast('回答を待っています', [{ label: '中止', run: cancelInstruction }]); resizePrompt();
+      } else if (state === 'thinking') {
+        run.state = state; $('#promptQuestion').hidden = true; $('#promptSend').disabled = true;
+        instructionToast('考えています', [{ label: '中止', run: cancelInstruction }]); resizePrompt();
+      }
+    });
     if (instruction !== run || instructionClient.applied.has(run.id)) return;
     if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください'); return; }
     InstructionOperations.validateProposal(proposal);
@@ -1042,6 +1066,20 @@ async function sendInstruction(retryText) {
     run.prepared = InstructionOperations.prepare(run.snapshot, proposal, { size });
     if (run.prepared.deletions.length) confirmInstruction(); else applyInstruction();
   } catch (error) { if (instruction === run) endInstruction('failed', error.message || 'Codexに接続できませんでした'); }
+}
+async function answerInstruction() {
+  const run = instruction, field = $('#promptInput'), answer = field.value;
+  if (!run || run.state !== 'awaiting_input' || !answer.trim()) return;
+  if (instructionConflict(run)) { endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel(); return; }
+  const questionId = run.questionId;
+  run.sentText = answer; run.sentDraftVersion = draftVersion;
+  run.state = 'answering'; $('#promptSend').disabled = true;
+  try { await instructionClient.answer(answer); }
+  catch (error) {
+    if (instruction !== run || run.questionId !== questionId || run.state !== 'answering') return;
+    run.state = 'awaiting_input'; $('#promptSend').disabled = false;
+    instructionToast(error.message || '回答を送信できませんでした', [{ label: '中止', run: cancelInstruction }], false, true);
+  }
 }
 function confirmInstruction() {
   const run = instruction; run.state = 'awaiting_confirmation';
@@ -1451,6 +1489,9 @@ function importMap(m) {
     mapSessionId = InstructionTransport.id('map_'); revision++; historyToken++;
     if (instructionUndoButton) instructionUndoButton.disabled = true;
     if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
+    if (instruction?.state === 'awaiting_input' || instruction?.state === 'answering') {
+      endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel();
+    }
   } catch (error) {
     map = previous.map;
     sel = previous.sel;

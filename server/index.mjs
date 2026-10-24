@@ -32,9 +32,10 @@ export function createRelay(client, service = new InstructionService(client)) {
       if (req.method === 'POST' && url.pathname === '/api/instructions') {
         const run = service.submit(await body(req)); json(res, 202, { requestId: run.input.requestId }); return;
       }
-      const match = url.pathname.match(/^\/api\/instructions\/([^/]+)\/(events|cancel)$/);
+      const match = url.pathname.match(/^\/api\/instructions\/([^/]+)\/(events|cancel|answer)$/);
       if (match) {
         const run = service.get(match[1], url.searchParams.get('clientSessionId'));
+        if (req.method === 'POST' && match[2] === 'answer') { service.answer(run, await body(req)); json(res, 202, { requestId: run.input.requestId }); return; }
         if (req.method === 'POST' && match[2] === 'cancel') { service.cancel(run); json(res, 200, { requestId: run.input.requestId }); return; }
         if (req.method === 'GET' && match[2] === 'events') {
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });
