@@ -1,5 +1,6 @@
-/* Optional camera diagnostics. Coordinates follow the mirrored object-fit:cover
-   preview; text is drawn normally so landmark numbers remain readable. */
+/* Camera panel overlays: the always-on hand shape and optional diagnostics.
+   Preview coordinates follow the mirrored object-fit:cover video; text is
+   drawn normally so landmark numbers remain readable. */
 (function (root) {
   const chains = [[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [5, 9, 10, 11, 12],
     [9, 13, 14, 15, 16], [13, 17, 18, 19, 20], [0, 17]];
@@ -7,6 +8,55 @@
     const scale = Math.max(viewWidth / width, viewHeight / height);
     return { x: viewWidth - (point.x * width * scale + (viewWidth - width * scale) / 2),
       y: point.y * height * scale + (viewHeight - height * scale) / 2 };
+  }
+  // Mirrors all hands and scales them as one group to fill the view.
+  function fitPoints(hands, width, height, viewWidth, viewHeight) {
+    const flat = hands.flat(), xs = flat.map(p => (1 - p.x) * width), ys = flat.map(p => p.y * height);
+    const left = Math.min(...xs), top = Math.min(...ys), w = Math.max(...xs) - left, h = Math.max(...ys) - top;
+    if (!(w > 0 && h > 0)) return null;
+    const pad = Math.min(viewWidth, viewHeight) * .12;
+    const scale = Math.min((viewWidth - pad * 2) / w, (viewHeight - pad * 2) / h);
+    const ox = (viewWidth - w * scale) / 2, oy = (viewHeight - h * scale) / 2;
+    return hands.map(points => points.map(p => ({ x: ox + ((1 - p.x) * width - left) * scale, y: oy + (p.y * height - top) * scale })));
+  }
+  function context2d(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const dpr = Math.min(root.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx?.scale(dpr, dpr);
+    return ctx && { ctx, rect };
+  }
+  class HandShapeView {
+    constructor(canvas) { this.canvas = canvas; }
+    clear() { this.canvas.getContext('2d')?.clearRect(0, 0, this.canvas.width, this.canvas.height); }
+    draw(result, width, height, fit) {
+      this.clear();
+      const hands = result?.landmarks?.filter(points => points?.length === 21 && points.every(p => Number.isFinite(p?.x) && Number.isFinite(p?.y)));
+      if (!hands?.length || !(width > 0 && height > 0)) return;
+      const target = context2d(this.canvas);
+      if (!target) return;
+      const { ctx, rect } = target;
+      const projected = fit ? fitPoints(hands, width, height, rect.width, rect.height)
+        : hands.map(points => points.map(p => previewPoint(p, width, height, rect.width, rect.height)));
+      if (!projected) return;
+      ctx.lineCap = ctx.lineJoin = 'round';
+      projected.forEach((points, index) => {
+        const color = index ? '#ffc857' : '#63ffd5';
+        for (const [lineWidth, strokeStyle] of [[fit ? 9 : 6, '#10261f'], [fit ? 5 : 3, color]]) {
+          ctx.lineWidth = lineWidth; ctx.strokeStyle = strokeStyle;
+          for (const chain of chains) {
+            ctx.beginPath();
+            chain.forEach((id, i) => ctx[i ? 'lineTo' : 'moveTo'](points[id].x, points[id].y));
+            ctx.stroke();
+          }
+        }
+        ctx.fillStyle = color;
+        for (const p of points) { ctx.beginPath(); ctx.arc(p.x, p.y, fit ? 4 : 3, 0, Math.PI * 2); ctx.fill(); }
+      });
+    }
   }
   class HandDebugOverlay {
     constructor(canvas, output) { this.canvas = canvas; this.output = output; this.enabled = false; }
@@ -22,15 +72,10 @@
     draw(result, width, height) {
       if (!this.enabled) return;
       if (!result?.landmarks?.length || !(width > 0 && height > 0)) { this.clear(); return; }
-      const rect = this.canvas.getBoundingClientRect();
       // A collapsed preview has no drawing area. Don't allocate or measure hands.
-      if (!rect.width || !rect.height) { this.clear(); return; }
-      const dpr = Math.min(root.devicePixelRatio || 1, 2);
-      this.canvas.width = Math.round(rect.width * dpr);
-      this.canvas.height = Math.round(rect.height * dpr);
-      const ctx = this.canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.scale(dpr, dpr);
+      const target = context2d(this.canvas);
+      if (!target) { this.clear(); return; }
+      const { ctx, rect } = target;
       ctx.lineWidth = 1.5; ctx.font = 'bold 10px monospace';
       const values = [];
       result.landmarks.forEach((points, index) => {
@@ -63,5 +108,6 @@
     }
   }
   root.HandDebugOverlay = HandDebugOverlay;
-  if (typeof module !== 'undefined') module.exports = { HandDebugOverlay, previewPoint };
+  root.HandShapeView = HandShapeView;
+  if (typeof module !== 'undefined') module.exports = { HandDebugOverlay, HandShapeView, previewPoint, fitPoints };
 })(globalThis);

@@ -1567,3 +1567,29 @@ test('palm selection then pinch centers that node at the same scale without chan
   t.run('const centerAnim = animId; stableHand(.1, .1, .1);');
   assert.equal(t.run('animId === centerAnim && !gesture && history.length === 0 && JSON.stringify(map) === originalMap'), true);
 });
+
+
+test('camera video starts hidden, toggles and persists while the panel stays visible', () => {
+  const t = setup({ handUI: true });
+  assert.equal(t.run('camVideo'), false);
+  const button = t.elements.get('#camVideoToggle');
+  assert.equal(button.attributes['aria-pressed'], 'false');
+  t.run('toggleHand();');
+  button.onclick();
+  assert.equal(t.run('camVideo && !$("#cam").hidden'), true);
+  assert.equal(button.attributes['aria-pressed'], 'true');
+  assert.equal(t.storage.get('mindmap-proto:camera-video'), '1');
+  assert.equal(setup({ stored: { 'mindmap-proto:camera-video': '1' } }).run('camVideo'), true);
+  button.onclick();
+  assert.equal(t.storage.get('mindmap-proto:camera-video'), '');
+});
+
+test('the current hand pose is shown large and cleared when the hand is lost', () => {
+  const t = setup({ handUI: true }); prepareHand(t);
+  const pose = () => t.elements.get('#handPose').textContent;
+  assert.equal(pose(), '✋ パー');
+  t.run('handSample(.5, .5, .1);'); assert.equal(pose(), '🤏 つまみ');
+  t.run("handSample(.5, .5, .8, 'peace');"); assert.equal(pose(), '✌️ ピース');
+  t.run("cameraSession.io.frame({ pointer: { x: .5, y: .5 }, ratio: .4, pose: 'neutral', hands: 2 }, handTime);"); assert.equal(pose(), '❔ 判定なし');
+  t.run('cameraSession.io.frame(null, handTime);'); assert.equal(pose(), '');
+});

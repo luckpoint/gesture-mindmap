@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { HandDebugOverlay, previewPoint } = require('../ui-prototype/gestures/debug.js');
+const { HandDebugOverlay, HandShapeView, previewPoint, fitPoints } = require('../ui-prototype/gestures/debug.js');
 const { handFrame } = require('../ui-prototype/gestures/controller.js');
 global.I18n = { t: key => key };
 global.HandGestures = { handFrame };
@@ -55,4 +55,29 @@ test('invalid hands are reported without drawing stale skeletons', () => {
   t.overlay.draw({ landmarks: [[{ x: NaN, y: .2 }]] }, 640, 480);
   assert.equal(t.labels.length, 0);
   assert.match(t.output.textContent, /invalid landmarks/);
+});
+
+test('hand shape fits all hands mirrored inside the padded view, or follows the preview when video is shown', () => {
+  const t = setup(), shape = new HandShapeView(t.canvas);
+  const fitted = fitPoints([t.points], 640, 480, 320, 240)[0];
+  const xs = fitted.map(p => p.x), ys = fitted.map(p => p.y);
+  assert.ok(Math.min(...xs) >= 28.8 - 1e-9 && Math.max(...xs) <= 320 - 28.8 + 1e-9);
+  assert.ok(Math.abs(Math.min(...ys) - 28.8) < 1e-9 || Math.abs(Math.min(...xs) - 28.8) < 1e-9);
+  assert.ok(fitted[0].x > fitted[20].x); // Mirrored like the preview.
+  shape.draw({ landmarks: [t.points] }, 640, 480, true);
+  assert.equal(t.lines.length, (21 + 6) * 2); // Outline pass and colour pass.
+  assert.deepEqual(t.lines[0], [fitted[0].x, fitted[0].y]);
+  t.lines.length = 0;
+  shape.draw({ landmarks: [t.points] }, 640, 480, false);
+  assert.deepEqual(t.lines[0], Object.values(previewPoint(t.points[0], 640, 480, 320, 240)));
+});
+
+test('hand shape clears and skips missing, malformed, flat or collapsed hands', () => {
+  const t = setup(), shape = new HandShapeView(t.canvas);
+  for (const result of [null, { landmarks: [] }, { landmarks: [[{ x: NaN, y: .2 }]] }, { landmarks: [t.points.map(() => ({ x: .5, y: .5 }))] }]) shape.draw(result, 640, 480, true);
+  shape.draw({ landmarks: [t.points] }, 0, 480, true);
+  t.canvas.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  shape.draw({ landmarks: [t.points] }, 640, 480, true);
+  assert.equal(t.lines.length, 0);
+  assert.equal(t.clears.length, 6);
 });

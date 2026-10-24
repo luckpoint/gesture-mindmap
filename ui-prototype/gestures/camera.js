@@ -29,7 +29,7 @@
         this.io.status(tr('cam.preparing'));
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261024-pinch-center-7');
+          this.worker = new Worker('gestures/hand-worker.js?v=20261024-cam-shape-8');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
             this.initTimer = setTimeout(() => reject(new Error(tr('cam.initTimeout'))), 30000);
@@ -72,7 +72,7 @@
       const sentAt = this.sentAt;
       requestAnimationFrame(() => {
         if (!this.closed) this.io.metrics({ mode: this.mode, inferenceMs, displayMs: performance.now() - sentAt,
-          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261024-pinch-center-7" });
+          hands: result.landmarks?.length || 0, frameValid: !!sample, revision: "20261024-cam-shape-8" });
       });
       this.busy = false;
     }

@@ -291,7 +291,11 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 .cam__view { position: relative; aspect-ratio: 4 / 3; border: 3px solid var(--cam-ring); border-radius: var(--radius-sm); background: var(--color-cam); overflow: hidden; display: grid; place-items: center; transition: border-color .2s; }
 .cam__progress { position: absolute; left: 0; bottom: 0; height: 4px; width: calc(var(--p, 0) * 100%); background: var(--color-accent); }
 #camToggle { position: absolute; top: 4px; right: 4px; min-height: 28px; min-width: 28px; border-radius: 50%; background: #0006; color: var(--color-paper); }
-#camToggle .i { width: 16px; height: 16px; }
+#camToggle .i, #camVideoToggle .i { width: 16px; height: 16px; }
+#camVideoToggle { position: absolute; top: 4px; left: 4px; min-height: 28px; min-width: 28px; border-radius: 50%; background: #0006; color: var(--color-paper); z-index: 1; }
+.cam.is-video-off .cam__view video { visibility: hidden; }
+.cam__pose { position: absolute; left: 8px; bottom: 10px; padding: 2px 10px; border-radius: 999px; background: #10261fcc; color: var(--color-paper); font-size: var(--text-lg); font-weight: 700; pointer-events: none; }
+.cam__pose:empty, .cam.is-debug #handShape, .cam.is-debug .cam__pose { display: none; }
 .cam__view video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .cam__skeleton { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .cam.is-debug { --cam-w: min(400px, calc(100vw - 32px)); }
@@ -312,7 +316,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 #handTips:has(+ .cam__guide:not([hidden])) { display: none; }
 .cam.is-collapsed { top: auto; bottom: var(--cam-floor); width: auto; padding: 4px; border-radius: 50%; }
 .cam.is-collapsed .cam__view { width: 64px; aspect-ratio: 1; border-radius: 50%; }
-.cam.is-collapsed > :not(.cam__view), .cam.is-collapsed .cam__msg, .cam.is-collapsed .cam__skeleton { display: none; }
+.cam.is-collapsed > :not(.cam__view), .cam.is-collapsed .cam__msg, .cam.is-collapsed .cam__skeleton, .cam.is-collapsed .cam__pose, .cam.is-collapsed #camVideoToggle { display: none; }
 .cam.is-collapsed #camToggle { inset: 0; width: 100%; height: 100%; opacity: 0; }
 
 /* ---------- instruction field ---------- */
@@ -404,6 +408,8 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></symbol>
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></symbol>
@@ -564,12 +570,15 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <p id="speechNote" data-i18n="speech.note"></p>
 </section>
 
-<figure class="cam panel" id="cam" hidden>
+<figure class="cam panel is-video-off" id="cam" hidden>
   <div class="cam__view">
     <video id="camVideo" autoplay muted playsinline data-i18n-aria-label="cam.preview"></video>
+    <canvas class="cam__skeleton" id="handShape" aria-hidden="true"></canvas>
     <canvas class="cam__skeleton" id="handSkeleton" aria-hidden="true" hidden></canvas>
+    <span class="cam__pose" id="handPose" aria-hidden="true"></span>
     <span class="cam__msg" id="camMsg" role="status" aria-live="polite" hidden></span>
     <span class="cam__progress" id="handProgress" aria-hidden="true"></span>
+    <button class="btn btn--icon" id="camVideoToggle" aria-pressed="false" data-i18n-aria-label="cam.videoShow" data-i18n-title="cam.videoShow"><svg class="i"><use href="#i-eye-off"/></svg></button>
     <button class="btn btn--icon" id="camToggle" data-i18n-aria-label="cam.hide" data-i18n-title="cam.hide"><svg class="i"><use href="#i-minus"/></svg></button>
   </div>
   <figcaption>
@@ -640,14 +649,14 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <p id="paletteStatus" role="status"></p>
   </div>
 </aside>
-<script src="i18n.js?v=20261024-pinch-center-7"></script>
+<script src="i18n.js?v=20261024-cam-shape-8"></script>
 <script src="icons/catalog.js"></script>
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
 <script src="speech/controller.js?v=20261024-3"></script>
-<script src="gestures/controller.js?v=20261024-pinch-center-7"></script>
-<script src="gestures/debug.js?v=20261024-pinch-center-7"></script>
-<script src="gestures/camera.js?v=20261024-pinch-center-7"></script>
+<script src="gestures/controller.js?v=20261024-cam-shape-8"></script>
+<script src="gestures/debug.js?v=20261024-cam-shape-8"></script>
+<script src="gestures/camera.js?v=20261024-cam-shape-8"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -658,7 +667,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="storage/history.js"></script>
 <script src="print.js"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', CAM_VIDEO_KEY = 'mindmap-proto:camera-video', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
 const instructionsEnabled = globalThis.MindmapFeatures?.instructions === true;
 const tr = I18n.t;
 const $ = s => document.querySelector(s);
@@ -1764,7 +1773,24 @@ function applyInstruction() {
 
 /* ---------- camera hand input ---------- */
 let handController = null, cameraSession = null, handPaintKey = '', handMode = 'worker', camStatus = '';
-const handDebug = new HandDebugOverlay($('#handSkeleton'), $('#handDebugValues'));
+const handDebug = new HandDebugOverlay($('#handSkeleton'), $('#handDebugValues')), handShape = new HandShapeView($('#handShape'));
+let camVideo = false;
+try { camVideo = localStorage.getItem(CAM_VIDEO_KEY) === '1'; } catch {}
+function setCamVideo(on) {
+  camVideo = on;
+  $('#cam').classList.toggle('is-video-off', !on);
+  const button = $('#camVideoToggle'), label = tr(on ? 'cam.videoHide' : 'cam.videoShow');
+  button.setAttribute('aria-pressed', String(on)); button.setAttribute('aria-label', label); button.title = label;
+  button.querySelector('use').setAttribute('href', on ? '#i-eye' : '#i-eye-off');
+  try { localStorage.setItem(CAM_VIDEO_KEY, on ? '1' : ''); } catch {}
+}
+setCamVideo(camVideo);
+$('#camVideoToggle').onclick = () => setCamVideo(!camVideo);
+function handPose(frame) {
+  if (!frame) return '';
+  const pose = frame.pose && frame.pose !== 'neutral' ? frame.pose : frame.ratio <= handController?.config.close ? 'pinch' : 'neutral';
+  return tr('hand.pose.' + pose);
+}
 $('#handDebugToggle').onclick = () => {
   const enabled = !handDebug.enabled;
   handDebug.setEnabled(enabled);
@@ -1820,8 +1846,8 @@ function toggleHand(inputMode = 'worker') {
   const session = new CameraSession({
     video: $('#camVideo'),
     status: message => { camStatus = message; updateHand(); },
-    frame: (frame, now) => handController?.update(frame, now),
-    debug: (result, width, height) => handDebug.draw(result, width, height),
+    frame: (frame, now) => { $('#handPose').textContent = handPose(frame); handController?.update(frame, now); },
+    debug: (result, width, height) => { handShape.draw(result, width, height, !camVideo); handDebug.draw(result, width, height); },
     metrics: m => { $('#handMetrics').textContent = tr('dev.metrics', m); },
     cameras: (cameras, active) => {
       const select = $('#camSelect');
