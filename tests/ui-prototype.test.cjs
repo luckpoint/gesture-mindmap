@@ -1226,6 +1226,14 @@ test('node menu flips below the selection when it would cover a node above', () 
   t.run(`Object.assign(map.nodes.a1, { x: 600, y: 300 });`);
   assert.equal(menuY(), 400 + 25 + 16);
 });
+test('the image action switches both its full and short labels once the node has an image', () => {
+  const t = setup({ renderUI: true });
+  const labels = () => ['long', 'short'].map(kind => t.elements.get(`[data-act=image] .btn__label--${kind}`).textContent);
+  t.run(`select('a'); positionMenu();`);
+  assert.deepEqual(labels(), ['画像にする', '画像']);
+  t.run(`map.nodes.a.image = 'img_1'; positionMenu();`);
+  assert.deepEqual(labels(), ['画像を変更', '画像変更']);
+});
 
 test('an English browser gets English samples, dialogs and notices', () => {
   const t = setup({ lang: 'en' });

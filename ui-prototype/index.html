@@ -199,6 +199,7 @@ body.keyboard-open .speech { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 }
 .menu__list .btn { justify-content: flex-start; }
 .menu__dev { display: none; }
+.btn__label--short { display: none; }
 .maps { left: 0; right: auto; width: min(340px, calc(100vw - 24px)); max-height: 60dvh; overflow: auto; }
 .maps__list { list-style: none; margin: 4px 0 0; padding: 6px 0 0; border-top: 1px solid var(--color-rule); display: grid; gap: 2px; }
 .maps__row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: var(--radius-sm); }
@@ -466,12 +467,12 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <input type="file" id="imageInput" accept="image/*" hidden>
 
 <div class="node-menu panel" id="nodeMenu" role="toolbar" data-i18n-aria-label="node.menu" hidden>
-  <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label" data-i18n="node.addChild"></span></button>
+  <button class="btn" data-act="child"><svg class="i"><use href="#i-child"/></svg><span class="btn__label btn__label--long" data-i18n="node.addChild"></span><span class="btn__label btn__label--short" data-i18n="node.addChild.short"></span></button>
   <button class="btn" data-act="edit" data-i18n-title="node.editTitle"><svg class="i"><use href="#i-edit"/></svg><span class="btn__label" data-i18n="node.edit"></span></button>
-  <button class="btn" data-act="image-child"><svg class="i"><use href="#i-image-child"/></svg><span class="btn__label" data-i18n="node.imageChild"></span></button>
-  <button class="btn" data-act="image"><svg class="i"><use href="#i-image"/></svg><span class="btn__label" data-i18n="node.image"></span></button>
+  <button class="btn" data-act="image-child"><svg class="i"><use href="#i-image-child"/></svg><span class="btn__label btn__label--long" data-i18n="node.imageChild"></span><span class="btn__label btn__label--short" data-i18n="node.imageChild.short"></span></button>
+  <button class="btn" data-act="image"><svg class="i"><use href="#i-image"/></svg><span class="btn__label btn__label--long" data-i18n="node.image"></span><span class="btn__label btn__label--short" data-i18n="node.image.short"></span></button>
   <button class="btn" data-act="remove-image" data-i18n="node.removeImage" hidden></button>
-  <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label" data-i18n="node.reparent"></span></button>
+  <button class="btn" data-act="reparent"><svg class="i"><use href="#i-link"/></svg><span class="btn__label btn__label--long" data-i18n="node.reparent"></span><span class="btn__label btn__label--short" data-i18n="node.reparent.short"></span></button>
   <button class="btn btn--danger btn--icon" data-act="delete" data-i18n-aria-label="node.delete"><svg class="i"><use href="#i-trash"/></svg></button>
 </div>
 
@@ -1301,7 +1302,9 @@ function positionMenu() {
   if (!n || editing || mode || deletion || hand?.grab || gesture?.moved) { menu.hidden = true; return; }
   menu.hidden = false;
   menu.querySelector('[data-act=remove-image]').hidden = !n.image;
-  menu.querySelector('[data-act=image] .btn__label').textContent = tr(n.image ? 'node.changeImage' : 'node.image');
+  const imageKey = n.image ? 'node.changeImage' : 'node.image';
+  menu.querySelector('[data-act=image] .btn__label--long').textContent = tr(imageKey);
+  menu.querySelector('[data-act=image] .btn__label--short').textContent = tr(`${imageKey}.short`);
   for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
   const el = els.get(sel), half = el.offsetHeight / 2;
   const mw = menu.offsetWidth, mh = menu.offsetHeight;

@@ -54,9 +54,11 @@ body.canvas-narrow .node-menu {
   transform: none !important; max-width: none; flex-wrap: nowrap; padding: 6px;
   border-radius: var(--radius-lg); box-shadow: var(--shadow-1); z-index: 5;
 }
-body.canvas-narrow .node-menu .btn { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; min-height: 60px; padding: 6px 2px; font-size: var(--text-xs); line-height: 1.2; white-space: normal; text-align: center; border-radius: var(--radius-md); }
+body.canvas-narrow .node-menu .btn { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; min-height: 60px; padding: 6px 0; font-size: 11px; line-height: 1.2; white-space: normal; text-align: center; border-radius: var(--radius-md); }
 body.canvas-narrow .node-menu .btn .i { width: 24px; height: 24px; }
 body.canvas-narrow .node-menu .btn__label { display: block; max-width: 100%; overflow-wrap: anywhere; }
+body.canvas-narrow .node-menu .btn__label--long { display: none; }
+body.canvas-narrow .node-menu .btn--icon { flex: 0 0 32px; }
 body.canvas-narrow .node-menu:not([hidden]) ~ .dock { display: none; }
 body.canvas-narrow .save__text { display: none; }
 body.canvas-narrow .dock { left: max(var(--space-sm), env(safe-area-inset-left)); right: calc(var(--space-sm) + var(--side)); transform: none; justify-content: space-between; }
