@@ -193,12 +193,23 @@ button { font: inherit; color: inherit; }
 }
 .menu__list .btn { justify-content: flex-start; }
 .maps { left: 0; right: auto; width: min(340px, calc(100vw - 24px)); max-height: 60dvh; overflow: auto; }
-.maps__list { list-style: none; margin: 4px 0 0; padding: 4px 0 0; border-top: 1px solid var(--color-rule); display: grid; gap: 2px; }
-.maps__row { display: flex; align-items: center; gap: 2px; }
-.maps__open { flex: 1; min-width: 0; flex-direction: column; align-items: flex-start !important; gap: 0; padding: 6px 12px; text-align: left; white-space: normal; }
-.maps__open[aria-current="true"] { background: var(--color-accent-soft); }
-.maps__name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.maps__meta { color: var(--color-ink-2); font-size: var(--text-xs); font-weight: 400; }
+.maps__list { list-style: none; margin: 4px 0 0; padding: 6px 0 0; border-top: 1px solid var(--color-rule); display: grid; gap: 2px; }
+.maps__row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: var(--radius-sm); }
+.maps__row:hover { background: var(--color-paper-2); }
+.maps__row--current, .maps__row--current:hover { background: var(--color-accent-soft); box-shadow: inset 3px 0 0 var(--color-accent); }
+.maps__open { flex: 1; min-width: 0; display: grid !important; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 2px; padding: 8px 8px 8px 14px; text-align: left; white-space: normal; }
+.maps__open:hover { background: transparent; }
+.maps__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maps__size { color: var(--color-ink-2); font-size: var(--text-xs); font-weight: 400; font-variant-numeric: tabular-nums; }
+.maps__meta { grid-column: 1 / -1; color: var(--color-ink-2); font-size: var(--text-xs); font-weight: 400; }
+.maps__remove { color: var(--color-ink-2); opacity: 0; }
+.maps__row:hover .maps__remove, .maps__row:focus-within .maps__remove { opacity: 1; }
+.maps__remove:hover { color: var(--color-danger); }
+@media (hover: none) { .maps__remove { opacity: 1; } }
+.maps__usage { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin-top: 6px; padding: 10px 14px 6px; border-top: 1px solid var(--color-rule); color: var(--color-ink-2); font-size: var(--text-xs); }
+.maps__usage-value { font-variant-numeric: tabular-nums; }
+.maps__bar { grid-column: 1 / -1; height: 4px; border-radius: var(--radius-pill); background: var(--color-paper-2); overflow: hidden; }
+.maps__bar span { display: block; height: 100%; background: var(--color-accent); }
 
 .dock {
   position: fixed; left: calc((100% - var(--side)) / 2); bottom: max(var(--space-md), env(safe-area-inset-bottom));
@@ -365,6 +376,10 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
       <div class="menu__list maps panel" id="mapsMenu" hidden>
         <button class="btn" id="newMapBtn"><svg class="i"><use href="#i-plus"/></svg>新しいマップ</button>
         <ul class="maps__list" id="mapsList" aria-label="マップの一覧"></ul>
+        <div class="maps__usage" id="mapsUsage" hidden>
+          <span>画像の使用量</span><span class="maps__usage-value" id="mapsUsageText"></span>
+          <div class="maps__bar"><span id="mapsUsageBar"></span></div>
+        </div>
       </div>
     </div>
     <input class="title" id="title" aria-label="マップの名前" autocomplete="off" spellcheck="false">
@@ -831,33 +846,56 @@ async function cleanImages(now) {
     if (removed) console.info(`使われていない画像${removed}件を削除しました`);
   });
 }
-let mapList = [], busyMaps = new Set();
+let mapList = [], busyMaps = new Set(), mapSizes = new Map(), imageBytes = null;
 const editedElsewhere = id => busyMaps.has(id) && (id !== mapId || readOnly());
+const formatBytes = n => n < 1024 ? n + ' B' : n < 1024 ** 2 ? Math.round(n / 1024) + ' KB' : (n / 1024 ** 2).toFixed(1) + ' MB';
+function ago(t, now = Date.now()) {
+  const min = Math.floor((now - t) / 60000);
+  if (min < 1) return 'たった今';
+  if (min < 60) return min + '分前';
+  if (min < 24 * 60) return Math.floor(min / 60) + '時間前';
+  if (min < 7 * 24 * 60) return Math.floor(min / (24 * 60)) + '日前';
+  return new Date(t).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+}
 function renderMapList() {
   const list = $('#mapsList');
-  const when = t => new Date(t).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   list.replaceChildren(...mapList.map(m => {
-    const row = Object.assign(document.createElement('li'), { className: 'maps__row' });
-    const open = Object.assign(document.createElement('button'), { className: 'btn maps__open' });
+    const row = Object.assign(document.createElement('li'), { className: 'maps__row' + (m.id === mapId ? ' maps__row--current' : '') });
+    const open = Object.assign(document.createElement('button'), { className: 'btn maps__open', title: '更新 ' + new Date(m.updatedAt).toLocaleString('ja-JP') });
     open.dataset.open = m.id; open.setAttribute('aria-current', m.id === mapId);
+    const size = mapSizes.get(m.id);
     const name = Object.assign(document.createElement('span'), { className: 'maps__name', textContent: m.title || '無題のマップ' });
-    const meta = Object.assign(document.createElement('span'), { className: 'maps__meta', textContent: '更新 ' + when(m.updatedAt) + (editedElsewhere(m.id) ? '・編集中（別のタブ）' : '') });
-    open.append(name, meta);
-    const remove = Object.assign(document.createElement('button'), { className: 'btn btn--icon btn--danger', innerHTML: '<svg class="i"><use href="#i-trash"/></svg>' });
+    const bytes = Object.assign(document.createElement('span'), { className: 'maps__size', textContent: size ? formatBytes(size.bytes) : '—' });
+    const meta = Object.assign(document.createElement('span'), { className: 'maps__meta', textContent: [ago(m.updatedAt), size?.images && `画像 ${size.images}枚`, editedElsewhere(m.id) && '編集中（別のタブ）'].filter(Boolean).join(' · ') });
+    open.append(name, bytes, meta);
+    const remove = Object.assign(document.createElement('button'), { className: 'btn btn--icon maps__remove', innerHTML: '<svg class="i"><use href="#i-trash"/></svg>' });
     remove.dataset.remove = m.id; remove.disabled = editedElsewhere(m.id);
     remove.setAttribute('aria-label', `「${m.title || '無題のマップ'}」を削除`);
     row.append(open, remove);
     return row;
   }));
+  $('#mapsUsage').hidden = imageBytes === null;
+  if (imageBytes === null) return;
+  $('#mapsUsageText').textContent = `${formatBytes(imageBytes)} / ${formatBytes(NodeImageFormat.MAX_TOTAL)}`;
+  $('#mapsUsageBar').style.width = Math.min(100, imageBytes / NodeImageFormat.MAX_TOTAL * 100) + '%';
 }
-async function refreshBusyMaps() {
-  try { busyMaps = await MapLocks.busy(); } catch { busyMaps = new Set(); }
+async function measureMaps() {
+  try {
+    const files = await imageStore.files(), fileSize = id => files.get(id)?.size || 0;
+    const stats = await Promise.all(mapList.map(async m => [m.id, await library.stats(m.id)]));
+    mapSizes = new Map(stats.filter(([, s]) => s).map(([id, s]) => [id, { bytes: s.bytes + s.assets.reduce((n, a) => n + fileSize(a), 0), images: s.images }]));
+    imageBytes = [...files.values()].reduce((n, f) => n + f.size, 0);
+  } catch { mapSizes = new Map(); imageBytes = null; }
+}
+async function refreshMapsMenu() {
+  const [busy] = await Promise.all([MapLocks.busy().catch(() => new Set()), measureMaps()]);
+  busyMaps = busy;
   renderMapList();
 }
 function toggleMapsMenu(open) {
   $('#mapsMenu').hidden = !open;
   $('#mapsBtn').setAttribute('aria-expanded', open);
-  if (open) void refreshBusyMaps();
+  if (open) void refreshMapsMenu();
 }
 let mapDeleting = null;
 function confirmMapDelete(id) {
@@ -1958,7 +1996,7 @@ void (async () => {
   try { if (last && await library.load(last)) await openMap(last); else await openFallback(); } catch (error) { failOpen(error); }
   let skew = 0; try { if (localStorage.getItem(GC_SKEW_KEY)) skew = NodeImageStore.DAY; localStorage.removeItem(GC_SKEW_KEY); } catch {}
   cleanImages(Date.now() + skew).catch(error => console.error('画像を掃除できませんでした', error));
-  library.watchList(list => { mapList = list; if (!$('#mapsMenu').hidden) void refreshBusyMaps(); else renderMapList(); });
+  library.watchList(list => { mapList = list; if (!$('#mapsMenu').hidden) void refreshMapsMenu(); else renderMapList(); });
   $('#mapsBtn').disabled = false;
 })();
 </script>

@@ -27,6 +27,7 @@ function memoryLibrary() {
       watchers.get(id)?.(clone(map));
     },
     async remove(id) { docs.delete(id); },
+    async stats(id) { const d = docs.get(id); return d ? { bytes: JSON.stringify(d.map).length, images: 0, assets: [] } : null; },
     async list() { return [...docs].map(([id, d]) => ({ id, title: d.map.title, updatedAt: d.updatedAt })).sort((a, b) => b.updatedAt - a.updatedAt); },
     watch(id, fn) { watchers.set(id, fn); return () => watchers.delete(id); },
     watchList() { return () => {}; },
@@ -1032,4 +1033,32 @@ test('cmd K and a Codex question reopen a hidden instruction field', async () =>
   mockQuestions(t); t.run('setPromptHidden(true)');
   t.run(`conversationState('awaiting_input', {questionId:'q1', message:'対象は？'});`);
   assert.equal(t.run(`!$('#prompt').hidden`), true);
+});
+
+test('the map menu shows each map size with its images and the total image usage', async () => {
+  const t = setup();
+  t.run(`library.docs.set('m_other', { map: sample(), updatedAt: 2, cursor: 0, log: new Map() });
+    library.stats = async id => ({ bytes: 1000, images: id === 'm_first' ? 2 : 0, assets: id === 'm_first' ? ['x', 'y'] : ['y'] });
+    imageStore.files = async () => new Map([['x', { size: 1024 * 1024 }], ['y', { size: 2048 }]]);
+    MapLocks.busy = async () => new Set();
+    mapList = [{ id: 'm_first', title: 'A', updatedAt: Date.now() }, { id: 'm_other', title: 'B', updatedAt: Date.now() - 3 * 3600000 }];`);
+  await t.run('refreshMapsMenu()');
+  const rows = t.elements.get('#mapsList').children, cell = (row, i) => row.children[0].children[i].textContent;
+  assert.deepEqual(rows.map(r => cell(r, 1)), ['1.0 MB', '3 KB']);
+  assert.deepEqual(rows.map(r => cell(r, 2)), ['たった今 · 画像 2枚', '3時間前']);
+  assert.equal(rows[0].className.includes('maps__row--current'), true);
+  assert.equal(t.run(`$('#mapsUsageText').textContent`), '1.0 MB / 50.0 MB');
+  assert.equal(t.run(`$('#mapsUsage').hidden`), false);
+
+  t.run(`imageStore.files = async () => { throw Error('no opfs'); }`);
+  await t.run('refreshMapsMenu()');
+  assert.equal(cell(t.elements.get('#mapsList').children[0], 1), '—');
+  assert.equal(t.run(`$('#mapsUsage').hidden`), true);
+});
+
+test('bytes and update times read in short units', () => {
+  const t = setup();
+  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([0, 1023, 1024, 1536 * 1024].map(formatBytes))`)), ['0 B', '1023 B', '1 KB', '1.5 MB']);
+  const now = Date.UTC(2026, 9, 24, 12);
+  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 3 * 86400e3].map(d => ago(${now} - d, ${now})))`)), ['たった今', '5分前', '2時間前', '3日前']);
 });

@@ -71,3 +71,19 @@ test('a save in one instance reaches the subscriptions of another', async () => 
   assert.equal(maps.at(-1), undefined);
   stopList(); stopMap(); await one.close(); await two.close();
 });
+
+test('stats count map and history bytes and every referenced image', async () => {
+  const lib = await open(), image = n => ({ assetId: 'sha256:' + String(n).repeat(64), alt: '', width: 10, height: 10 });
+  const m = map('画像'); m.nodes.c.image = image(1);
+  const id = await lib.create(m);
+  const before = await lib.stats(id);
+  const old = { ...m.nodes.c, image: image(2) };
+  await lib.save(id, m, { cursor: 1, put: [{ seq: 1, prev: 0, at: 1, before: { meta: {}, nodes: { c: old } }, after: { meta: {}, nodes: { c: m.nodes.c } } }] });
+  const after = await lib.stats(id);
+  assert.equal(before.images, 1);
+  assert.deepEqual(before.assets, [image(1).assetId]);
+  assert.deepEqual(after.assets, [image(1).assetId, image(2).assetId]);
+  assert.equal(after.bytes > before.bytes, true);
+  assert.equal(await lib.stats('missing'), null);
+  await lib.close();
+});

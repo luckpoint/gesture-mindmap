@@ -59,6 +59,16 @@
       const entries = await this.history.find({ selector: { mapId: id }, sort: [{ seq: 'asc' }] }).exec();
       return { cursor: doc?.cursor ?? 0, entries: entries.map(entryOf) };
     }
+    // Bytes of the map and its history, plus every image they reference.
+    async stats(id) {
+      const doc = await this.maps.findOne(id).exec();
+      if (!doc) return null;
+      const entries = (await this.history.find({ selector: { mapId: id } }).exec()).map(e => e.toJSON());
+      const current = Object.values(doc.nodes).filter(n => n.image);
+      const nodes = [...current, ...entries.flatMap(e => [...Object.values(e.before.nodes), ...Object.values(e.after.nodes)])];
+      const assets = [...new Set(nodes.filter(n => n?.image).map(n => n.image.assetId))];
+      return { bytes: new TextEncoder().encode(JSON.stringify([doc.toJSON(), entries])).length, images: current.length, assets };
+    }
     async remove(id) {
       await (await this.maps.findOne(id).exec())?.remove();
       await this.history.find({ selector: { mapId: id } }).remove();
