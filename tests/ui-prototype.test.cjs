@@ -14,12 +14,16 @@ function memoryLibrary() {
   let next = 0, clock = 1;
   return {
     docs, watchers, failSave: false, failCreate: false,
-    async create(map) { if (this.failCreate) throw new Error('作成できませんでした'); const id = 'm_' + ++next; docs.set(id, { map: clone(map), updatedAt: ++clock }); return id; },
+    async create(map) { if (this.failCreate) throw new Error('作成できませんでした'); const id = 'm_' + ++next; docs.set(id, { map: clone(map), updatedAt: ++clock, cursor: 0, log: new Map() }); return id; },
     async load(id) { return docs.has(id) ? clone(docs.get(id).map) : null; },
-    async save(id, map) {
+    async log(id) { const d = docs.get(id); return { cursor: d?.cursor ?? 0, entries: d ? [...d.log.values()].map(clone) : [] }; },
+    async save(id, map, { cursor, put = [], drop = [] } = {}) {
       if (this.failSave) throw new Error('保存できませんでした');
-      if (!docs.has(id)) throw new Error('マップが見つかりません');
-      docs.set(id, { map: clone(map), updatedAt: ++clock });
+      const d = docs.get(id);
+      if (!d) throw new Error('マップが見つかりません');
+      for (const seq of drop) d.log.delete(seq);
+      for (const e of put) d.log.set(e.seq, clone(e));
+      Object.assign(d, { map: clone(map), updatedAt: ++clock }, cursor === undefined ? {} : { cursor });
       watchers.get(id)?.(clone(map));
     },
     async remove(id) { docs.delete(id); },
@@ -76,10 +80,10 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
-  for (const file of ['library.js', 'locks.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
+  for (const file of ['library.js', 'locks.js', 'history.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
   context.memoryLibrary = memoryLibrary;
-  vm.runInContext(`library = memoryLibrary(); library.docs.set('m_first', { map: sample(), updatedAt: 1 });
+  vm.runInContext(`library = memoryLibrary(); library.docs.set('m_first', { map: sample(), updatedAt: 1, cursor: 0, log: new Map() });
     mapId = 'm_first'; mapClaim = { editable: true, release() { this.released = true; } };`, context);
   vm.runInContext(`
     ${renderUI ? '' : 'render = () => {};'} fitAll = () => {}; applyView = () => {};
@@ -304,30 +308,56 @@ test('dropping a node on a sibling swaps their subtrees in one undo step', () =>
   assert.equal(run('map.nodes.a.x === -540 && map.nodes.b.x === -320'), true);
 });
 
-test('205 drags retain only the latest 200 snapshots and support undo and redo', () => {
+test('drags beyond the limit retain only the latest entries and support undo and redo', () => {
   const { run, elements } = setup();
-  const handlers = elements.get('#viewport').handlers;
-  for (let i = 0; i < 205; i++) {
-    handlers.pointerdown(mouse(100, 100, 'a'));
-    handlers.pointermove(mouse(110, 100));
-    handlers.pointerup(mouse(110, 100));
-  }
-  assert.equal(run('history.length'), 200);
-  assert.equal(run('JSON.parse(history[0]).nodes.a.x'), 360);
-  assert.equal(run('map.nodes.a.x'), 2360);
-  run('for (let i = 0; i < 205; i++) undo();');
-  assert.equal(run('map.nodes.a.x === 360 && history.length === 0 && future.length === 200'), true);
-  run('for (let i = 0; i < 205; i++) redo();');
-  assert.equal(run('map.nodes.a.x === 2360 && history.length === 200 && future.length === 0'), true);
+  const handlers = elements.get('#viewport').handlers, limit = run('HISTORY_LIMIT'), total = limit + 5;
+  // Alternate x and y so the node never reaches the canvas bound.
+  const drag = i => { handlers.pointerdown(mouse(100, 100, 'a')); handlers.pointermove(i % 2 ? mouse(100, 110) : mouse(110, 100)); handlers.pointerup(mouse(100, 100)); };
+  const at = k => [310 + 10 * Math.ceil(k / 2), -130 + 10 * Math.floor(k / 2)];
+  for (let i = 0; i < total; i++) drag(i);
+  assert.equal(run('history.length'), limit);
+  assert.deepEqual(JSON.parse(run('JSON.stringify([history[0].before.nodes.a.x, history[0].before.nodes.a.y])')), at(5));
+  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y])')), at(total));
+  run(`for (let i = 0; i < ${total}; i++) undo();`);
+  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y, history.length, future.length])')), [...at(5), 0, limit]);
+  run(`for (let i = 0; i < ${total}; i++) redo();`);
+  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y, history.length, future.length])')), [...at(total), limit, 0]);
   run(`commit(() => { map.nodes.a.text = 'changed'; });`);
-  assert.equal(run('history.length'), 200);
+  assert.equal(run('history.length'), limit);
   run('undo();');
-  handlers.pointerdown(mouse(100, 100, 'a'));
-  handlers.pointermove(mouse(110, 100));
-  handlers.pointerup(mouse(110, 100));
-  assert.equal(run('history.length === 200 && future.length === 0'), true);
+  drag(0);
+  assert.equal(run('history.length === HISTORY_LIMIT && future.length === 0'), true);
   run('undo();');
-  assert.equal(run(`map.nodes.a.x === 2360 && map.nodes.a.text !== 'changed'`), true);
+  assert.equal(run(`map.nodes.a.x === ${at(total)[0]} && map.nodes.a.text !== 'changed'`), true);
+});
+
+test('history survives reopening: undo and redo continue from the saved cursor', async () => {
+  const t = setup({ renderUI: true });
+  t.run(`commit(() => { map.nodes.a.text = '一'; }); commit(() => { map.nodes.b.x += 50; }); addChildAndEdit('c');
+    els.get(sel).nodeText.textContent = '新しい子'; finishEdit(); undo();`);
+  await t.run('flushSave()');
+  const other = await t.run('library.create(blankMap())');
+  await t.run(`switchMap('${other}')`);
+  assert.equal(t.run('history.length + future.length'), 0);
+  await t.run(`switchMap('m_first')`);
+  assert.equal(t.run(`history.length === 2 && future.length === 1 && map.nodes.a.text === '一' && !$('#undo').disabled && !$('#redo').disabled`), true);
+  t.run('redo();');
+  assert.equal(t.run(`Object.values(map.nodes).some(n => n.text === '新しい子')`), true);
+  t.run('undo(); undo(); undo();');
+  assert.equal(t.run(`map.nodes.a.text === sample().nodes.a.text && map.nodes.b.x === sample().nodes.b.x`), true);
+  t.run(`commit(() => { map.title = '別の道'; });`);
+  await t.run('flushSave()');
+  assert.equal(t.run(`library.docs.get('m_first').log.size === 1 && library.docs.get('m_first').cursor === history[0].seq`), true);
+});
+
+test('an empty new node leaves no history entry, and a failed save keeps entries for the next try', async () => {
+  const t = setup({ renderUI: true });
+  t.run(`addChildAndEdit('a'); finishEdit();`);
+  assert.equal(t.run('history.length === 0 && unsaved.size === 0'), true);
+  t.run(`library.failSave = true; commit(() => { map.nodes.a.text = '保存待ち'; });`);
+  await assert.rejects(t.run('flushSave()'));
+  t.run('library.failSave = false;'); await t.run('scheduleSave(), flushSave()');
+  assert.equal(t.run(`library.docs.get('m_first').log.size === 1 && library.docs.get('m_first').cursor === history[0].seq`), true);
 });
 
 test('drag coalesces events and only updates the moved subtree and incident edges', () => {
@@ -672,7 +702,7 @@ test('single deletion promotes direct children in place, preserves descendants a
   assert.equal(t.run(`!deletion && !map.nodes.a && map.nodes.a1.parent === 'root' && map.nodes[d].parent === 'a1' && sel === 'root' && valid(map) && history.length === beforeHistory + 1`), true);
   assert.equal(t.run(`kids('root').map(n => n.id).join(',') === ['a1', secondChild, 'b', 'c'].join(',') && map.nodes[secondChild].parent === 'root'`), true);
   assert.equal(t.run(`map.nodes.a1.x === 540 && map.nodes.a1.y === -220 && map.nodes[d].x === 600`), true);
-  t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === beforeDelete'), true);
+  t.run('undo();'); assert.equal(t.run('MapHistory.same(map, JSON.parse(beforeDelete))'), true);
   t.run('redo();'); assert.equal(t.run(`!map.nodes.a && map.nodes[d].parent === 'a1' && valid(map)`), true);
 });
 
@@ -683,7 +713,7 @@ test('branch deletion removes all descendants only after confirmation; cancellat
   assert.equal(t.timers.size, 0);
   t.run(`removeNode('a'); chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(t.run(`!map.nodes.a && !map.nodes.a1 && !!map.nodes.b && history.length === 1 && sel === 'root'`), true);
-  t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === before'), true);
+  t.run('undo();'); assert.equal(t.run('MapHistory.same(map, JSON.parse(before))'), true);
 });
 
 test('leaf deletion, root protection, stale confirmation and fixed target', async () => {

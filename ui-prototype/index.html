@@ -543,6 +543,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="instructions/client.js"></script>
 <script src="storage/library.js"></script>
 <script src="storage/locks.js"></script>
+<script src="storage/history.js"></script>
 <script>
 const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
 const $ = s => document.querySelector(s);
@@ -626,16 +627,22 @@ function addNode(pid, text, pos) {
 }
 
 /* ---------- history & save ---------- */
-function pushHistory(snapshot, target = history) {
-  target.push(snapshot);
-  if (target.length > 200) target.splice(0, target.length - 200);
+const HISTORY_LIMIT = 1000;
+let lastSeq = 0, unsaved = new Map(), dropped = new Set();
+const cursor = () => history.at(-1)?.seq ?? 0;
+function forget(entries) { for (const e of entries) { unsaved.delete(e.seq); dropped.add(e.seq); } }
+function record(before) {
+  const entry = { seq: ++lastSeq, prev: cursor(), at: Date.now(), ...MapHistory.diff(JSON.parse(before), map) };
+  forget(future); future = [];
+  history.push(entry); unsaved.set(entry.seq, entry);
+  if (history.length > HISTORY_LIMIT) forget(history.splice(0, history.length - HISTORY_LIMIT));
 }
 function commit(fn) {
   if (refuseReadOnly()) return;
   interruptHand();
-  pushHistory(JSON.stringify(map));
-  future = [];
+  const before = JSON.stringify(map);
   fn();
+  record(before);
   changed();
 }
 function changed() {
@@ -660,8 +667,9 @@ function restore(from, to) {
   if (gesture?.hand) { interruptHand(); return; }
   if (!from.length) return;
   if (editing) finishEdit();
-  pushHistory(JSON.stringify(map), to);
-  map = JSON.parse(from.pop());
+  const entry = from.pop();
+  map = MapHistory.apply(map, entry, from === history ? 'before' : 'after');
+  to.push(entry);
   if (!map.nodes[sel]) sel = null;
   $('#title').value = map.title;
   changed();
@@ -679,13 +687,21 @@ async function flushSave() {
   saveDirty = false;
   // A drag in progress is not a committed state; store the map from before it.
   const id = mapId, snapshot = JSON.parse(gesture?.pre ?? JSON.stringify(map));
+  const changes = { cursor: cursor(), put: [...unsaved.values()], drop: [...dropped] };
+  unsaved = new Map(); dropped = new Set();
   saveWrite = (async () => {
     if (!library) throw new Error('このブラウザでは保存できません');
     if (forceSaveFail) throw new Error('保存できませんでした');
-    await library.save(id, snapshot);
+    await library.save(id, snapshot, changes);
   })();
   try { await saveWrite; if (!saveDirty) setSave('saved'); }
-  catch (error) { saveDirty = true; setSave('error'); throw error; }
+  catch (error) {
+    if (mapId === id) {
+      for (const e of changes.put) if (!dropped.has(e.seq)) unsaved.set(e.seq, e);
+      for (const seq of changes.drop) dropped.add(seq);
+    }
+    saveDirty = true; setSave('error'); throw error;
+  }
   finally { saveWrite = null; }
 }
 function setSave(state) {
@@ -708,10 +724,15 @@ function storedView(id) {
   } catch {}
   return null;
 }
-function showMap(id, m, claim) {
+function useLog(m, log) {
+  const { undo, redo, discard } = MapHistory.verify(m, log.cursor, log.entries);
+  history = undo; future = redo.reverse(); unsaved = new Map(); dropped = new Set(discard);
+  lastSeq = log.entries.reduce((max, e) => Math.max(max, e.seq), 0);
+}
+function showMap(id, m, claim, log = { cursor: 0, entries: [] }) {
   stopWatch?.(); stopWatch = null;
   clearTimeout(saveTimer); saveDirty = false;
-  map = m; mapId = id; mapClaim = claim; sel = map.root; history = []; future = []; invalidateTree();
+  map = m; mapId = id; mapClaim = claim; sel = map.root; useLog(m, log); invalidateTree();
   mapSessionId = InstructionTransport.id('map_'); revision++; historyToken++;
   endStaleInstruction();
   try { localStorage.setItem(LAST_KEY, id); } catch {}
@@ -734,19 +755,19 @@ function showRemote(m) {
   render();
 }
 async function grantEdit(id) {
-  const m = await library.load(id);
+  const [m, log] = await Promise.all([library.load(id), library.log(id)]);
   if (id !== mapId || !mapClaim.editable || switching) return;
   stopWatch?.(); stopWatch = null;
-  if (m) { map = m; invalidateTree(); revision++; if (!map.nodes[sel]) sel = map.root; $('#title').value = map.title; render(); }
+  if (m) { map = m; useLog(m, log); invalidateTree(); revision++; if (!map.nodes[sel]) sel = map.root; $('#title').value = map.title; render(); }
   setSave('saved'); updateAccess(); renderMapList();
   toast('編集できるようになりました');
 }
 async function openMap(id) {
   const claim = await MapLocks.claim(id, { granted: () => { void grantEdit(id); } });
   try {
-    const m = await library.load(id);
+    const [m, log] = await Promise.all([library.load(id), claim.editable ? library.log(id) : undefined]);
     if (!m) throw new Error('マップを読み込めません');
-    showMap(id, m, claim);
+    showMap(id, m, claim, log);
   } catch (error) { claim.release(); throw error; }
 }
 async function openFallback() {
@@ -801,7 +822,11 @@ async function cleanImages(now) {
     if (!lock || await MapLocks.others(readOnly() ? null : mapId)) return;
     const refs = new Set(), add = m => { for (const n of Object.values(m?.nodes || {})) if (n.image) refs.add(n.image.assetId); };
     add(map);
-    for (const { id } of await library.list()) add(await library.load(id));
+    for (const e of [...history, ...future]) MapHistory.references(e).forEach(id => refs.add(id));
+    for (const { id } of await library.list()) {
+      add(await library.load(id));
+      for (const e of (await library.log(id)).entries) MapHistory.references(e).forEach(ref => refs.add(ref));
+    }
     const removed = await imageStore.gc(refs, now);
     if (removed) console.info(`使われていない画像${removed}件を削除しました`);
   });
@@ -1117,8 +1142,11 @@ function finishEdit() {
   const text = (t?.textContent || '').trim();
   if (t) t.contentEditable = 'false';
   if (isNew) {
-    if (!text) { map = JSON.parse(history.pop()); sel = pid; }
-    else map.nodes[id].text = text;
+    // The add was recorded with empty text; fold the typed text into it, or drop it.
+    const added = history.pop(); forget([added]);
+    const before = MapHistory.apply(map, added, 'before');
+    if (!text) { map = before; sel = pid; }
+    else { map.nodes[id].text = text; record(JSON.stringify(before)); }
     changed();
   } else if (text && text !== orig) {
     commit(() => { map.nodes[id].text = text; });
@@ -1580,10 +1608,9 @@ function finishNodeDrag(g) {
   if (hand) hand.grab = null;
   if (g.swap) {
     for (const [id, p] of g.orig) Object.assign(map.nodes[id], p);
-    pushHistory(g.pre); future = [];
-    InstructionOperations.swap(map, g.id, g.swap); changed();
+    InstructionOperations.swap(map, g.id, g.swap); record(g.pre); changed();
     toast('入れ替えました', '元に戻す', undo);
-  } else if (JSON.stringify(map) !== g.pre) { pushHistory(g.pre); future = []; changed(); }
+  } else if (JSON.stringify(map) !== g.pre) { record(g.pre); changed(); }
   else render();
   updateHand();
 }

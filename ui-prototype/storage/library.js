@@ -16,11 +16,22 @@
     required: ['id', 'version', 'title', 'root', 'seq', 'nodes', 'cursor', 'createdAt', 'updatedAt'],
     indexes: ['updatedAt'],
   };
+  const side = { type: 'object', properties: { meta: { type: 'object' }, nodes: { type: 'object' } }, required: ['meta', 'nodes'] };
+  const historySchema = {
+    version: 0, primaryKey: { key: 'id', fields: ['mapId', 'seq'], separator: '|' }, type: 'object',
+    properties: {
+      id: { type: 'string', maxLength: 64 }, mapId: { type: 'string', maxLength: 32 },
+      seq: { type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER, multipleOf: 1 }, prev: { type: 'integer' }, at: time, before: side, after: side,
+    },
+    required: ['id', 'mapId', 'seq', 'prev', 'at', 'before', 'after'],
+    indexes: [['mapId', 'seq']],
+  };
+  const entryOf = doc => { const { seq, prev, at, before, after } = doc.toJSON(); return JSON.parse(JSON.stringify({ seq, prev, at, before, after })); };
   const newId = () => 'm_' + [...crypto.getRandomValues(new Uint8Array(12))].map(n => n.toString(16).padStart(2, '0')).join('');
   const toMap = doc => { const { version, title, root, seq, nodes } = doc.toJSON(); return JSON.parse(JSON.stringify({ version, title, root, seq, nodes })); };
   const summary = doc => ({ id: doc.id, title: doc.title, updatedAt: doc.updatedAt });
   class Library {
-    constructor(db) { this.db = db; this.maps = db.maps; }
+    constructor(db) { this.db = db; this.maps = db.maps; this.history = db.history; }
     newest() { return this.maps.find({ sort: [{ updatedAt: 'desc' }] }); }
     async create(map) {
       const m = F.migrate(map), id = newId(), now = Date.now();
@@ -31,12 +42,27 @@
       const doc = await this.maps.findOne(id).exec(), m = doc && toMap(doc);
       return m && F.validMap(m) ? F.migrate(m) : null;
     }
-    async save(id, map) {
+    // Writes in the order history deletions, history additions, then the map
+    // with its cursor, so an interrupted save leaves a map that is complete.
+    async save(id, map, { cursor, put = [], drop = [] } = {}) {
       const m = F.migrate(map), doc = await this.maps.findOne(id).exec();
       if (!doc) throw new Error('マップが見つかりません');
-      await doc.incrementalPatch({ ...m, updatedAt: Date.now() });
+      if (drop.length) await this.history.bulkRemove(drop.map(seq => id + '|' + seq));
+      if (put.length) {
+        const { error } = await this.history.bulkUpsert(put.map(e => ({ ...e, id: id + '|' + e.seq, mapId: id })));
+        if (error.length) throw new Error('履歴を保存できません');
+      }
+      await doc.incrementalPatch({ ...m, ...(cursor === undefined ? {} : { cursor }), updatedAt: Date.now() });
     }
-    async remove(id) { await (await this.maps.findOne(id).exec())?.remove(); }
+    async log(id) {
+      const doc = await this.maps.findOne(id).exec();
+      const entries = await this.history.find({ selector: { mapId: id }, sort: [{ seq: 'asc' }] }).exec();
+      return { cursor: doc?.cursor ?? 0, entries: entries.map(entryOf) };
+    }
+    async remove(id) {
+      await (await this.maps.findOne(id).exec())?.remove();
+      await this.history.find({ selector: { mapId: id } }).remove();
+    }
     async list() { return (await this.newest().exec()).map(summary); }
     watchList(fn) { const s = this.newest().$.subscribe(docs => fn(docs.map(summary))); return () => s.unsubscribe(); }
     watch(id, fn) { const s = this.maps.findOne(id).$.subscribe(doc => fn(doc && toMap(doc))); return () => s.unsubscribe(); }
@@ -53,7 +79,7 @@
   }
   async function open({ createRxDatabase, storage, name = 'mindmap', ...options }) {
     const db = await createRxDatabase({ name, storage, ...options });
-    await db.addCollections({ maps: { schema } });
+    await db.addCollections({ maps: { schema }, history: { schema: historySchema } });
     return new Library(db);
   }
   return { open, schema, LEGACY };
