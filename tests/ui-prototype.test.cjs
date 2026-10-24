@@ -1506,6 +1506,41 @@ test('node speech controls keep editing on Tab and focusout; outside focus commi
   app.elements.get('#nodes').handlers.focusout({ target: event.target, relatedTarget: app.elements.get('#title') });
   assert.equal(app.run('editing'), null); assert.match(app.run('map.nodes[map.root].text'), /appended$/);
 });
+for (const pointerType of ['mouse', 'touch']) test(`Safari ${pointerType} speech controls focus before blur and remain clickable`, () => {
+  const app = setup({ renderUI: true }); mockSpeech(app);
+  const panel = app.elements.get('#nodeSpeech');
+  const toggle = app.elements.get('#nodeSpeechToggle');
+  const done = app.elements.get('#nodeSpeechDone');
+  const cancel = app.elements.get('#nodeSpeechCancel');
+  panel.children.push(toggle, done, cancel);
+  function press(button) {
+    let prevented = false;
+    const previous = app.context.document.activeElement;
+    button.handlers.pointerdown({ currentTarget: button, pointerType, button: 0, isPrimary: true,
+      preventDefault() { prevented = true; } });
+    // Model Safari: the native pointer default blurs without focusing a button.
+    const relatedTarget = prevented ? app.context.document.activeElement : null;
+    app.elements.get('#nodes').handlers.focusout({ target: previous, relatedTarget });
+    assert.equal(prevented, true);
+    assert.equal(app.context.document.activeElement, button);
+    assert.equal(app.run('!!editing'), true);
+    button.onclick();
+  }
+  app.run('startEdit(map.root);');
+  press(toggle);
+  assert.equal(app.run('speech.active && speech.state === "listening"'), true);
+  assert.equal(panel.hidden, false);
+  press(toggle);
+  assert.equal(app.run('recognizer.stopped'), true);
+  app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:' Safari'}], {isFinal:true})]}); recognizer.onend();`);
+  press(done);
+  assert.equal(app.run('editing'), null);
+  assert.match(app.run('map.nodes[map.root].text'), / Safari$/);
+  app.run('startEdit(map.root);');
+  press(cancel);
+  assert.equal(app.run('editing'), null);
+});
+
 test('tab hiding aborts voice, restores typing and rejects delayed results', () => {
   const app = setup({ renderUI: true }); mockSpeech(app);
   app.run('addChildAndEdit(map.root, true); confirmNodeSpeech(); document.hidden = true;');

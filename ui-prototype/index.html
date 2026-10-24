@@ -1365,6 +1365,15 @@ function confirmNodeSpeech() {
 $('#nodeSpeechToggle').onclick = () => speech.active ? speech.stop() : startNodeSpeech();
 $('#nodeSpeechDone').onclick = confirmNodeSpeech;
 $('#nodeSpeechCancel').onclick = () => { cancelEdit(); vp.focus(); };
+for (const id of ['#nodeSpeechToggle', '#nodeSpeechDone', '#nodeSpeechCancel']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.isPrimary === false || e.currentTarget.disabled) return;
+    // Safari does not focus buttons on tap/click. Move focus before its default
+    // blur can end the edit, and keep recognition in the subsequent user click.
+    e.preventDefault();
+    e.currentTarget.focus({ preventScroll: true });
+  });
+}
 $('#nodeSpeech').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); vp.focus(); } });
 $('#nodeSpeech').addEventListener('focusout', e => {
   if (editing && !editing.handInput && e.relatedTarget && !$('#nodeSpeech').contains(e.relatedTarget) && e.relatedTarget !== els.get(editing.id)?.nodeText) finishEdit();
