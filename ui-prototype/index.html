@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Maru+Gothic:wght@500;700&display=swap">
 <link rel="stylesheet" href="tokens.css">
+<style id="pageStyle"></style>
 <style>
 /* Hallmark · app-scope: mind-map canvas · tone: soft · anchor hue: coral 35
  * genre: playful (soft end) · theme: Coral-derived · fonts: Zen Maru Gothic + BIZ UDPGothic
@@ -336,6 +337,19 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
 }
+@media print {
+  html, body { height: auto; overflow: visible; background: #fff; }
+  body > :not(#viewport) { display: none !important; }
+  #viewport {
+    position: relative; inset: auto; width: var(--print-w); height: calc(var(--print-h) - 1px);
+    overflow: hidden; background: #fff; break-inside: avoid;
+  }
+  #world { transform: var(--print-transform) !important; }
+  #viewport, .node, .edge { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .node { box-shadow: none; outline: none !important; opacity: 1 !important; transition: none; --lift: 1; }
+  .node[data-tag]::before, .node__image span { display: none; }
+  .edge.is-preview, .edge.is-old { display: none; }
+}
 </style>
 <link rel="stylesheet" href="icons/palette.css">
 </head>
@@ -361,6 +375,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 17H4v-8h16v8h-3"/><rect x="7" y="14" width="10" height="7"/></symbol>
   <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></symbol>
 </svg>
 
@@ -402,6 +417,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
         <hr class="menu__separator" id="paletteSeparator" hidden>
         <button class="btn" id="exportBtn"><svg class="i"><use href="#i-down"/></svg><span data-i18n="file.exportJson"></span></button>
         <button class="btn" id="importBtn"><svg class="i"><use href="#i-up"/></svg><span data-i18n="file.import"></span></button>
+        <button class="btn" id="printBtn"><svg class="i"><use href="#i-print"/></svg><span data-i18n="file.print"></span></button>
       </div>
     </div>
     <button class="btn btn--quiet" id="devBtn" aria-expanded="false" aria-controls="dev"><svg class="i"><use href="#i-flask"/></svg><span class="btn__label--wide" data-i18n="dev.button"></span></button>
@@ -481,6 +497,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <dt data-i18n="keys.verticalBranch"></dt><dd data-i18n="keys.verticalBranchHelp"></dd>
     <dt data-i18n="keys.toChild"></dt><dd data-i18n="keys.toChildHelp"></dd>
     <dt>⌘Z / ⇧⌘Z</dt><dd data-i18n="keys.undoRedo"></dd>
+    <dt>⌘P</dt><dd data-i18n="keys.print"></dd>
     <dt>⇧1</dt><dd data-i18n="view.fit"></dd>
     <dt>⇧2</dt><dd data-i18n="keys.focus"></dd>
     <dt>⌘= / ⌘-</dt><dd data-i18n="keys.zoom"></dd>
@@ -589,6 +606,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="storage/library.js"></script>
 <script src="storage/locks.js"></script>
 <script src="storage/history.js"></script>
+<script src="print.js"></script>
 <script>
 const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:', GC_SKEW_KEY = 'mindmap:gc-skew';
 const instructionsEnabled = globalThis.MindmapFeatures?.instructions === true;
@@ -988,13 +1006,17 @@ function animateTo(target) {
   requestAnimationFrame(step);
 }
 function centerOn(pt, s = view.s) { return { x: W() / 2 - pt.x * s, y: H() / 2 - pt.y * s, s }; }
-function fitAll() {
+function mapBounds() {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const n of Object.values(map.nodes)) {
     const { w, h } = size(n);
     x0 = Math.min(x0, n.x - w / 2); x1 = Math.max(x1, n.x + w / 2);
     y0 = Math.min(y0, n.y - h / 2 - 30); y1 = Math.max(y1, n.y + h / 2);
   }
+  return { x0, y0, x1, y1 };
+}
+function fitAll() {
+  const { x0, y0, x1, y1 } = mapBounds();
   const top = Math.min($('.topbar').getBoundingClientRect().bottom + 16, H() / 3), side = Math.min(40, W() / 10);
   const w = Math.max(1, W() - side * 2), h = Math.max(1, H() - top - 24);
   const s = clamp(Math.min(w / (x1 - x0), h / (y1 - y0)), ZMIN, 1.25);
@@ -1054,9 +1076,10 @@ function renderNodeImage(el, ref) {
   img.width = 192; img.height = 144;
   const message = document.createElement('span'); message.textContent = tr('image.loading');
   frame.append(img, message); el.prepend(frame);
-  const state = el.imageState = { id: ref.assetId, frame, img };
-  img.onload = () => { if (el.imageState === state) { message.hidden = true; renderEdges(); positionMenu(); } };
-  const failed = () => { if (el.imageState === state) { state.failed = true; img.hidden = true; message.hidden = false; message.textContent = tr('image.loadFailed'); } };
+  let settle;
+  const state = el.imageState = { id: ref.assetId, frame, img, ready: new Promise(resolve => { settle = resolve; }) };
+  img.onload = () => { settle(); if (el.imageState === state) { message.hidden = true; renderEdges(); positionMenu(); } };
+  const failed = () => { settle(); if (el.imageState === state) { state.failed = true; img.hidden = true; message.hidden = false; message.textContent = tr('image.loadFailed'); } };
   img.onerror = failed;
   imageStore.acquire(ref.assetId).then(url => { if (el.imageState === state) img.src = url; }, failed);
 }
@@ -1853,6 +1876,7 @@ nodesEl.addEventListener('keydown', e => {
 });
 nodesEl.addEventListener('focusout', e => { if (editing && e.target.isContentEditable) finishEdit(); });
 addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.isComposing) { e.preventDefault(); void printMap(); return; }
   if (deletion) {
     if (e.key === 'Escape') { e.preventDefault(); closeDelete(); }
     return;
@@ -1934,6 +1958,30 @@ async function exportJson() {
     toast(tr('file.exported'));
   } catch (error) { toast(error.message || tr('file.exportFailed')); }
 }
+let printing = false, titleBeforePrint = null;
+async function printMap() {
+  toggleFileMenu(false);
+  if (printing) return;
+  printing = true;
+  try {
+    const images = [...els.values()].map(el => el.imageState?.ready).filter(Boolean);
+    await Promise.race([Promise.all(images), new Promise(resolve => setTimeout(resolve, 3000))]);
+    print();
+  } finally { printing = false; }
+}
+addEventListener('beforeprint', () => {
+  const p = PrintLayout.fit(mapBounds());
+  $('#pageStyle').textContent = `@page { size: A4 ${p.orientation}; margin: 10mm }`;
+  vp.style.setProperty('--print-w', p.width + 'px');
+  vp.style.setProperty('--print-h', p.height + 'px');
+  vp.style.setProperty('--print-transform', `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
+  titleBeforePrint ??= document.title;
+  document.title = map.title || tr('maps.untitled');
+});
+addEventListener('afterprint', () => {
+  if (titleBeforePrint !== null) document.title = titleBeforePrint;
+  titleBeforePrint = null;
+});
 $('#nodeMenu').addEventListener('click', e => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (!act || !sel) return;
@@ -1974,6 +2022,7 @@ $('#modeOk').onclick = confirmReparent;
 $('#modeCancel').onclick = endReparent;
 $('#fileBtn').onclick = () => toggleFileMenu($('#fileMenu').hidden);
 $('#exportBtn').onclick = exportJson;
+$('#printBtn').onclick = printMap;
 $('#saveExport').onclick = exportJson;
 $('#importBtn').onclick = () => { toggleFileMenu(false); $('#fileInput').click(); };
 async function importMap(m) {

@@ -85,6 +85,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   for (const file of ['library.js', 'locks.js', 'history.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
+  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/print.js'), 'utf8'), context);
   if (paletteUI) for (const file of ['catalog.js', 'palette.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/icons', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
   context.memoryLibrary = memoryLibrary;
@@ -1362,4 +1363,64 @@ test('palette drag rejects stale, blocked, cancelled and forged drops without fe
     assert.equal(run('history.length'),0,action);
     assert.equal(run('dropTarget'),null,action);
   }
+});
+
+test('beforeprint fits the whole map on A4 without touching the view; afterprint restores the title', () => {
+  const t = setup({ renderUI: true });
+  t.run(`view = { x: 5, y: 6, s: 2 }; document.title = 'App'; map.title = 'Plan'; world.style.transform = 'screen';`);
+  const timers = t.timers.size, stored = [...t.storage];
+  t.windowHandlers.get('beforeprint')();
+  assert.match(t.run(`$('#pageStyle').textContent`), /size: A4 landscape/);
+  assert.match(t.run(`vp.style['--print-transform']`), /^translate\(.+px, .+px\) scale\(0\.\d+\)$/);
+  assert.equal(t.run(`view.x === 5 && view.y === 6 && view.s === 2 && world.style.transform === 'screen' && document.title === 'Plan'`), true);
+  assert.equal(t.timers.size, timers);
+  assert.deepEqual([...t.storage], stored);
+  t.windowHandlers.get('afterprint')();
+  assert.equal(t.run(`document.title === 'App'`), true);
+});
+
+test('cmd P prints once, even while deleting, and ignores a second request while waiting', async () => {
+  const t = setup();
+  let printed = 0, prevented = 0;
+  t.context.print = () => { printed++; };
+  t.run(`deletion = {};`);
+  const press = () => t.windowHandlers.get('keydown')({ key: 'p', metaKey: true, target: t.context.document.body, preventDefault() { prevented++; } });
+  press(); press();
+  await new Promise(setImmediate);
+  assert.equal(prevented, 2);
+  assert.equal(printed, 1);
+  press(); await new Promise(setImmediate);
+  assert.equal(printed, 2);
+});
+
+test('printing waits for loading images and gives up after three seconds', async () => {
+  const t = setup({ renderUI: true });
+  let printed = 0;
+  t.context.print = () => { printed++; };
+  t.run(`imageStore.acquire = () => new Promise(() => {});
+    map.nodes.a.image = { assetId: 'sha256:' + 'a'.repeat(64), alt: '', width: 1, height: 1 };
+    map.nodes.b.image = { assetId: 'sha256:' + 'b'.repeat(64), alt: '', width: 1, height: 1 }; render();`);
+  t.run('printMap()'); await new Promise(setImmediate);
+  assert.equal(printed, 0);
+  t.run(`els.get('a').imageState.img.onload(); els.get('b').imageState.img.onerror();`);
+  await new Promise(setImmediate);
+  assert.equal(printed, 1);
+
+  t.run(`clearNodeImage(els.get('a')); render();`);
+  t.run('printMap()'); await new Promise(setImmediate);
+  assert.equal(printed, 1);
+  t.timers.get(Math.max(...t.timers.keys()))();
+  await new Promise(setImmediate);
+  assert.equal(printed, 2);
+});
+
+test('read-only tabs can print without changing the map or history', async () => {
+  const t = setup();
+  let printed = 0;
+  t.context.print = () => { printed++; };
+  t.run(`commit(() => { map.nodes.a.text = 'x'; }); mapClaim = { editable: false, release() {} }; updateAccess(); const before = JSON.stringify(map);`);
+  await t.run('printMap()');
+  t.windowHandlers.get('beforeprint')(); t.windowHandlers.get('afterprint')();
+  assert.equal(printed, 1);
+  assert.equal(t.run(`JSON.stringify(map) === before && history.length === 1 && future.length === 0`), true);
 });

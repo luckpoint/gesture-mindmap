@@ -73,3 +73,7 @@ test('apply sets the page language, text and attributes', () => {
   assert.deepEqual(input.attributes, { 'aria-label': 'マップへの指示', placeholder: 'マップへの指示を入力' });
   I18n.use('en');
 });
+
+test('print messages exist in both languages', () => {
+  for (const key of ['file.print', 'keys.print']) assert.ok(en[key] && ja[key], key);
+});

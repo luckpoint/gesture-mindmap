@@ -1,6 +1,6 @@
 # A4印刷設計
 
-2026年10月24日。設計案。未実装。
+2026年10月24日。実装済み。
 
 ## 1. 要件と決定
 
@@ -57,15 +57,15 @@ addEventListener('beforeprint', () => {
   pageStyle.textContent = `@page { size: A4 ${p.orientation}; margin: 10mm }`;
   vp.style.setProperty('--print-w', p.width + 'px');
   vp.style.setProperty('--print-h', p.height + 'px');
-  world.style.transform = `translate(${p.x}px, ${p.y}px) scale(${p.scale})`;
+  vp.style.setProperty('--print-transform', `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
   savedTitle = document.title; document.title = map.title || tr('maps.untitled');
 });
-addEventListener('afterprint', () => { document.title = savedTitle; applyView(); });
+addEventListener('afterprint', () => { document.title = savedTitle; });
 ```
 
 - `pageStyle` は `<head>` に置く空の `<style id="pageStyle">`。
 - `document.title` を変えると、ブラウザのヘッダーと「PDFに保存」の既定ファイル名がマップ名になる。
-- `view` は書き換えない。`afterprint` で `applyView()` を呼べば画面の表示に戻る。
+- `view` も `#world` のインラインの transform も書き換えない。印刷用の transform はCSS変数で渡し、`@media print` の中だけで使う。印刷用の表示に切り替わると `resize` が発火し、既存の処理が `applyView()` で transform を画面用に戻してしまうため（Chromeで確認）。画面に戻すための処理は不要。
 
 ### 3.4 印刷用CSS
 
@@ -79,6 +79,7 @@ addEventListener('afterprint', () => { document.title = savedTitle; applyView();
     position: relative; inset: auto; width: var(--print-w); height: calc(var(--print-h) - 1px);
     overflow: hidden; background: #fff; break-inside: avoid;
   }
+  #world { transform: var(--print-transform) !important; }
   #viewport, .node, .edge { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .node { box-shadow: none; outline: none !important; opacity: 1 !important; transition: none; --lift: 1; }
   .node[data-tag]::before, .node__image span { display: none; }
@@ -107,7 +108,7 @@ stateDiagram-v2
     WaitingImages --> PrintLayout: 画像の読み込み完了 or 3秒経過 → window.print()
     Screen --> PrintLayout: ブラウザのメニュー・共有シートから印刷（beforeprint）
     PrintLayout --> Dialog: @page・transform・titleを適用
-    Dialog --> Screen: 印刷 / PDF保存 / キャンセル（afterprint → applyView()）
+    Dialog --> Screen: 印刷 / PDF保存 / キャンセル（afterprint → title を戻す）
 ```
 
 - `WaitingImages` 中に再度 `printMap()` が呼ばれたら無視する（二重のダイアログを防ぐ）。
@@ -124,8 +125,8 @@ stateDiagram-v2
 
 `tests/ui-prototype.test.cjs`（追記、既存の模擬DOMを使う）：
 
-- `beforeprint` で `#world` の transform と `pageStyle` が変わり、`view` と保存予定（`storeView`）は変わらない。
-- `afterprint` で transform と `document.title` が元に戻る。
+- `beforeprint` で `--print-transform` と `pageStyle` が変わり、`view`・`#world` の transform・保存予定（`storeView`）は変わらない。
+- `afterprint` で `document.title` が元に戻る。
 - ⌘P は `preventDefault()` され、`window.print` が一度だけ呼ばれる。待機中の2回目は呼ばれない。
 - 読み込み中の画像があると `window.print` は画像完了まで待ち、3秒で打ち切る。
 - 閲覧専用タブでも印刷でき、マップとUndo履歴が変わらない。
