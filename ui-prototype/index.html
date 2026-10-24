@@ -1302,8 +1302,8 @@ function navigate(key, nodes) {
     if (n.id === s.id) continue;
     const dx = n.x - s.x, dy = n.y - s.y;
     const [a, b] = { ArrowRight: [dx, dy], ArrowLeft: [-dx, dy], ArrowDown: [dy, dx], ArrowUp: [-dy, dx] }[key];
-    if (a <= 10) continue;
-    const score = a + Math.abs(b) * 2;
+    if (a <= 10 || Math.abs(b) > a) continue;
+    const score = n.id === s.parent ? -1 : a + Math.abs(b) * 2;
     if (score < bs) { bs = score; best = n.id; }
   }
   if (best) { select(best); ensureVisible(map.nodes[best]); }

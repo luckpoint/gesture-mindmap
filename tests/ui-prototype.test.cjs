@@ -543,6 +543,16 @@ test('keyboard and camera directions only reach parent, children and siblings', 
   assert.equal(t.run('sel'), 'a');
 });
 
+test('arrows stay within a 45 degree cone and prefer the parent in that direction', () => {
+  const t = setup();
+  t.run(`Object.assign(map.nodes.root, { x: 0, y: 0 }); Object.assign(map.nodes.a, { x: 900, y: -40 });
+    for (const [id, x, y] of [['math', 560, -335], ['study', 880, -490], ['social', 1210, -365]]) map.nodes[id] = { id, text: id, parent: 'a', x, y };
+    sel = 'a';`);
+  const press = key => { t.run(`sel = 'a'`); t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} }); return t.run('sel'); };
+  assert.equal(press('ArrowLeft'), 'root');
+  assert.equal(press('ArrowUp'), 'study');
+});
+
 test('no active node initializes to root; pinch grabs root without displacement', () => {
   const t = setup(); prepareHand(t);
   t.run(`sel = null; interruptHand(); stableHand(); stableHand(.1, .5, .1);`);
