@@ -47,7 +47,7 @@
   class HandController {
     constructor(io, options = {}) {
       this.io = io;
-      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .18, fastSmoothing: .7, dragSpeed: 500, deadzone: 6, movingDeadzone: .75, stopStable: 350, stable: 100, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomHandDeadzone: .003, zoomGain: 2.5, maxGap: TRACKING_TIMEOUT_MS, ...options };
+      this.config = { close: .32, open: .55, gain: 1.8, smoothing: .18, fastSmoothing: .7, dragSpeed: 500, deadzone: 6, movingDeadzone: .75, stopStable: 350, stable: 100, disableStable: 300, commandStable: 600, commandDrift: .04, threshold: .065, cooldown: 250, zoomDeadzone: .008, zoomHandDeadzone: .003, zoomGain: 2.5, palmGrace: 220, maxGap: TRACKING_TIMEOUT_MS, ...options };
       this.state = { state: 'nohand', initialized: false, hover: null, grab: null, x: 0, y: 0 };
       this.paused = false;
       this.commandHeld = false; this.commandFrame = null; this.commandResetAt = null;
@@ -65,14 +65,47 @@
       this.identity = null; this.wrist = null; this.lastSwitch = -Infinity;
       this.zoomDistance = null; this.zoomPendingAt = null; this.zoomLastAt = null;
       this.panLastAt = null; this.panPendingAt = null; this.panRaw = null;
+      this.palmFrame = null;
       this.zoomPalms = null; this.panMode = null; this.dialogPoint = false;
       this.commandPose = null; this.commandAt = null; this.commandPoint = null;
       this.choice = null; this.choiceAt = null; this.choicePoint = null;
+      this.disableAt = null; this.disableLastAt = null;
       this.state.progress = 0;
       this.state.state = this.paused ? 'paused' : 'nohand'; this.io.paint(this.state);
     }
     update(frame, now) {
+      if (this.disabled) return;
+      // Stopping remains available during dialogs and ordinary-input blocking.
+      if (frame?.hands === 2 && frame.pose === 'cross' && Number.isFinite(now)) {
+        const since = this.disableLastAt !== null && now >= this.disableLastAt &&
+          now - this.disableLastAt <= this.config.maxGap ? this.disableAt : now;
+        this.cancel();
+        this.disableAt = since; this.disableLastAt = now;
+        this.state.state = 'disableWaiting';
+        this.state.progress = Math.min(1, (now - since) / this.config.disableStable);
+        this.io.paint(this.state);
+        if (this.state.progress >= 1) {
+          this.disabled = true;
+          this.io.disable?.();
+        }
+        return;
+      }
+      this.disableAt = null; this.disableLastAt = null;
+      const previous = this.palmFrame;
+      const validPalmTrack = frame && frame.hands !== 2 &&
+        [frame.pointer?.x, frame.pointer?.y, frame.wrist?.x, frame.wrist?.y, frame.ratio, now].every(Number.isFinite);
+      const continuous = validPalmTrack && previous && now >= previous.now &&
+        now - previous.now <= this.config.palmGrace &&
+        (!previous.identity || !frame.identity || previous.identity === frame.identity) &&
+        Math.hypot(frame.wrist.x - previous.wrist.x, frame.wrist.y - previous.wrist.y) < .2;
+      // Only bridge uncertain open-hand frames. Explicit poses, pinches and
+      // tracking loss must switch immediately; uncertain frames never renew the grace period.
+      const palm = validPalmTrack && frame.pose === 'palm'
+        ? { now, identity: frame.identity, wrist: { ...frame.wrist } }
+        : continuous && !frame.pose && frame.ratio > this.config.close ? previous : null;
+      if (palm && frame.pose !== 'palm') frame = { ...frame, pose: 'palm' };
       this.updateInteraction(frame, now);
+      this.palmFrame = palm;
       // Pointer feedback is independent of selection, dialogs and zoom mode.
       const point = frame?.pose === 'palm' ? frame.pointer : frame?.palmPointer;
       this.state.pointerVisible = !!point && [point.x, point.y].every(Number.isFinite);
@@ -89,7 +122,7 @@
       if (dialog && frame?.hands === 2) {
         this.cancel(); s.state = 'dialog'; this.io.paint(s); return;
       }
-      if (frame?.pose === 'bothFists' || frame?.pose === 'point') {
+      if (frame?.pose === 'point') {
         this.cancel(); s.state = 'neutral'; this.io.paint(s); return;
       }
       if (!dialog && frame?.pose === 'fist') {
@@ -129,7 +162,7 @@
       const s = this.state, c = this.config, distance = frame.distance;
       const palms = frame.palms;
       if (!Number.isFinite(distance) || distance < .05 || !Number.isFinite(now) ||
-          palms?.length !== 2 || !palms.every(p => [p?.x, p?.y].every(Number.isFinite)) || frame.pose) {
+          palms?.length !== 2 || !palms.every(p => [p?.x, p?.y].every(Number.isFinite)) || frame.pose !== 'bothFists') {
         this.cancel(); s.state = 'neutral'; this.io.paint(s); return;
       }
       const copy = () => palms.map(p => ({ ...p }));
@@ -418,11 +451,24 @@
       : fingers[0].extended && fingers.slice(1).every(f => f.folded) ? 'point'
       : fingers.every(f => f.folded) ? 'fist'
       : fingers.every(f => f.extended) && ratio >= .55 ? 'palm' : null;
-    return { pointer, tip: p[8], wrist: p[0], handSize: size / width, ratio,
+    return { pointer, indexBase: p[5], tip: p[8], wrist: p[0], handSize: size / width, ratio,
       measurements: { ratio2D, ratio3D, palmSize: size,
         space: worldSize > 1e-6 ? 'world' : hasDepth ? 'image3D' : 'image2D', fingers,
         thumb: { mcpBend, ipBend, extended: thumbExtended, pointsDown: thumbPointsDown, side: thumbSide } },
       pose, identity: category?.score >= .8 ? category.categoryName : null };
+  }
+  function crossedIndexes(first, second, width, height) {
+    if (first.pose !== 'point' || second.pose !== 'point') return false;
+    const vector = (a, b) => ({ x: (b.x - a.x) * width, y: (b.y - a.y) * height });
+    const a = vector(first.indexBase, first.tip), b = vector(second.indexBase, second.tip);
+    const offset = vector(first.indexBase, second.indexBase);
+    const cross = (u, v) => u.x * v.y - u.y * v.x;
+    const determinant = cross(a, b), length = Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y);
+    // Require at least a 30-degree crossing, within both fingers rather than
+    // touching fingertips or intersecting imaginary extensions of the fingers.
+    if (!length || Math.abs(determinant) / length < .5) return false;
+    const t = cross(offset, b) / determinant, u = cross(offset, a) / determinant;
+    return t >= .15 && t <= .9 && u >= .15 && u <= .9;
   }
   function handFrame(result, width, height, options = {}) {
     const first = singleHandFrame(result, width, height, 0, options);
@@ -440,7 +486,8 @@
       frame.palmPointer = first.pose === 'palm' && second.pose === 'palm' ? frame.pointer
         : (first.pose === 'palm' ? first.pointer : second.pointer);
     }
-    if (first.pose === 'point' || second.pose === 'point') {
+    if (crossedIndexes(first, second, width, height)) frame.pose = 'cross';
+    else if (first.pose === 'point' || second.pose === 'point') {
       frame.pose = 'point';
       frame.pointHand = first.pose === 'point' ? first : second;
     }
@@ -448,10 +495,7 @@
     else if (first.pose === 'fist' || second.pose === 'fist') {
       frame.pose = 'fist'; frame.panHand = first.pose === 'fist' ? first : second;
     }
-    // Pinching bends the index finger and produces no named pose. Keep
-    // two-hand zoom available through that transition, as with open palms.
-    // Explicit command poses remain excluded; fists/pointing are handled above.
-    else if ([first, second].some(hand => hand.pose && hand.pose !== 'palm')) frame.pose = 'neutral';
+    else frame.pose = 'neutral';
     return frame;
   }
   root.HandGestures = { HandController, handFrame, directionalTarget, mapPointer, proximityTarget, TRACKING_TIMEOUT_MS };

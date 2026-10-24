@@ -640,14 +640,14 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
     <p id="paletteStatus" role="status"></p>
   </div>
 </aside>
-<script src="i18n.js?v=20261024-hand-voice-1"></script>
+<script src="i18n.js?v=20261024-cross-disable-6"></script>
 <script src="icons/catalog.js"></script>
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
 <script src="speech/controller.js?v=20261024-3"></script>
-<script src="gestures/controller.js?v=20261024-hand-pointer-4"></script>
-<script src="gestures/debug.js?v=20261024-hand-pointer-4"></script>
-<script src="gestures/camera.js?v=20261024-hand-pointer-4"></script>
+<script src="gestures/controller.js?v=20261024-cross-disable-6"></script>
+<script src="gestures/debug.js?v=20261024-cross-disable-6"></script>
+<script src="gestures/camera.js?v=20261024-cross-disable-6"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -1786,6 +1786,7 @@ function toggleHand(inputMode = 'worker') {
   if (cameraSession) { stopHand(); return; }
   handMode = inputMode;
   handController = new HandGestures.HandController({
+    disable: stopHand,
     blocked: () => (speech.active && !editing?.handInput) || palette?.focused() || readOnly() || instruction?.state === 'awaiting_confirmation' || (!!editing && !editing.handInput) || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !editing?.handInput && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
     dialog: () => !!deletion || !!editing?.handInput,
     dialogNavigate: step => { if (deletion) navigateDelete(step); },
@@ -1837,11 +1838,11 @@ function toggleHand(inputMode = 'worker') {
   let deviceId; try { deviceId = localStorage.getItem(CAMERA_KEY) || undefined; } catch {}
   session.start(inputMode, deviceId);
 }
-const HAND_COMMANDS = ['palm', 'point', 'add', 'delete', 'pan'];
-const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, neutral: ['palm', 'point', 'add', 'delete', 'pan', 'zoom'],
-  paused: [], panning: ['stop'], zooming: ['spread', 'oneHand'], dialog: ['dialogLeft', 'dialogRight'] };
+const HAND_COMMANDS = ['palm', 'point', 'add', 'delete', 'pan', 'disable'];
+const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, neutral: ['palm', 'point', 'add', 'delete', 'pan', 'zoom', 'disable'],
+  paused: [], panning: ['stop'], zooming: ['spread', 'oneHand'], disableWaiting: ['disable'], dialog: ['dialogLeft', 'dialogRight', 'disable'] };
 const tipItems = tips => tips.map(tip => Object.assign(document.createElement('li'), { textContent: tr('hand.tip.' + tip) }));
-$('#handGuide').replaceChildren(...tipItems(['palm', 'point', 'add', 'delete', 'fist', 'pan', 'zoom']));
+$('#handGuide').replaceChildren(...tipItems(['palm', 'point', 'add', 'delete', 'fist', 'pan', 'zoom', 'disable']));
 $('#handGuideToggle').onclick = () => {
   const open = $('#handGuide').hidden;
   $('#handGuide').hidden = !open;

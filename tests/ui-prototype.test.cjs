@@ -713,7 +713,7 @@ test('camera UI shows each message in one place with tips for the current state'
 test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/history intact', () => {
   const t = setup({ handUI: true }); prepareHand(t);
   t.run(`
-    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
+    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, pose: 'bothFists', distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
     const centerBefore = { x: (W()/2-view.x)/view.s, y: (H()/2-view.y)/view.s };
     const scaleBefore = view.s;
     zoomSample(.4); zoomSample(.4); zoomSample(.4); zoomSample(.5);
@@ -733,7 +733,7 @@ test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/histo
 test('pinching never moves nodes before zooming, and editing blocks zoom', () => {
   const t = setup(); prepareHand(t);
   t.run(`stableHand(.5, .5, .1); handSample(.3, .5, .1);
-    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
+    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, pose: 'bothFists', distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
     zoomSample(.4); zoomSample(.4); zoomSample(.4); zoomSample(.5);`);
   assert.equal(t.run('!gesture && history.length === 0 && JSON.stringify(map) === originalMap'), true);
   t.run(`const zoomBeforeEditing = view.s; editing = { id: 'root' }; zoomSample(.4); zoomSample(.3);`);
@@ -903,7 +903,7 @@ test('Shift+H toggles hand input; plain h and typing in the prompt field do not'
   assert.equal(t.run('cameraSession'), null);
 });
 
-test('two fists stop view movement and never change nodes, selection or history', () => {
+test('two fists with missing palm positions cannot move the view or change nodes, selection or history', () => {
   const t = setup({ handUI: true }); prepareHand(t);
   t.run(`const beforeFists = JSON.stringify(view), beforeSelection = sel;
     for (let i = 0; i < 20; i++) cameraSession.io.frame({ hands: 2, pose: 'bothFists', pointer: { x: .2 + i * .02, y: .3 }, distance: .4 }, handTime += 50);`);
@@ -1535,4 +1535,21 @@ test('palm cursor remains visible without a target, during dialogs and during tw
     palms: [{ x: .3, y: .5 }, { x: .7, y: .5 }] }, handTime += 50);`);
   assert.equal(t.elements.get('#handCursor').hidden, false);
   assert.equal(t.elements.get('#handCursor').style.left, '600px');
+});
+
+test('crossed index fingers stop the camera and clear Hand control until enabled again', () => {
+  const t = setup({ handUI: true }); prepareHand(t);
+  t.run(`const crossSession = cameraSession;
+    const crossSample = () => { crossSession.io.frame({ hands: 2, pose: 'cross' }, handTime); handTime += 50; };
+    crossSample(); crossSample();`);
+  assert.equal(t.run('cameraSession === crossSession'), true);
+  assert.match(t.elements.get('#handHelp').textContent, /人差し指の×/);
+  t.run('for (let i = 0; i < 6; i++) crossSample();');
+  assert.equal(t.run('crossSession.stopped && cameraSession === null && handController === null && hand === null'), true);
+  assert.equal(t.elements.get('#handBtn').attributes['aria-pressed'], 'false');
+  assert.equal(t.elements.get('#cam').hidden, true);
+  assert.equal(t.elements.get('#handCursor').hidden, true);
+  assert.equal(t.run('history.length === 0 && JSON.stringify(map) === originalMap'), true);
+  t.run('toggleHand();');
+  assert.equal(t.run('!!cameraSession && !handController.disabled'), true);
 });
