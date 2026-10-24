@@ -1126,3 +1126,11 @@ test('static feature configuration disables instructions by default', () => {
   assert.equal(context.MindmapFeatures.instructions, false);
 });
 
+test('node menu flips below the selection when it would cover a node above', () => {
+  const t = setup({ renderUI: true });
+  const menuY = () => { t.run(`positionMenu()`); return Number(t.elements.get('#nodeMenu').style.transform.match(/, (-?[\d.]+)px/)[1]); };
+  t.run(`view = { x: 0, y: 0, s: 1 }; Object.assign(map.nodes.a, { x: 600, y: 400 }); Object.assign(map.nodes.a1, { x: 1000, y: 100 }); select('a');`);
+  assert.equal(menuY(), 400 - 25 - 50 - 40);
+  t.run(`Object.assign(map.nodes.a1, { x: 600, y: 300 });`);
+  assert.equal(menuY(), 400 + 25 + 16);
+});

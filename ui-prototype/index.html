@@ -1153,9 +1153,14 @@ function positionMenu() {
   for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
   const el = els.get(sel), half = el.offsetHeight / 2;
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
-  let y = (n.y - half) * view.s + view.y - mh - 40;
-  if (y < 72) y = (n.y + half) * view.s + view.y + 16;
   const x = clamp(n.x * view.s + view.x - mw / 2, 8, W() - mw - 8);
+  const above = (n.y - half) * view.s + view.y - mh - 40, below = (n.y + half) * view.s + view.y + 16;
+  const covers = top => Object.values(map.nodes).some(m => {
+    if (m.id === sel) return false;
+    const { w, h } = size(m), left = (m.x - w / 2) * view.s + view.x, mTop = (m.y - h / 2) * view.s + view.y;
+    return left < x + mw && left + w * view.s > x && mTop < top + mh && mTop + h * view.s > top;
+  });
+  const y = above >= 72 && (!covers(above) || covers(below)) ? above : below;
   menu.style.transform = `translate(${x}px, ${y}px)`;
 }
 
