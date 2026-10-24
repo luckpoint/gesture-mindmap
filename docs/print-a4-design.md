@@ -47,13 +47,13 @@ PrintLayout.fit(bounds, { margin = 10, maxScale = 1.25 } = {})
 - A4は210×297mm、CSSの1mmは96/25.4px。余白10mmで印刷可能域は横向き277×190mm（約1047×718px）、縦向きは190×277mm。
 - 向きは `(x1 - x0) >= (y1 - y0)` なら横向き。
 - `scale = min(width / bw, height / bh, maxScale)`。中央に寄せる `x`, `y` を返す。
-- 外接矩形は `fitAll()` の計算を `mapBounds()` に切り出して共有する。`fitAll()` の挙動は変えない。
+- 外接矩形は `fitAll()` の計算を `mapBounds(tagSpace = 30)` に切り出して共有する。`fitAll()` の挙動は変えない。印刷ではノード上のタグを出さないため `mapBounds(0)` を使い、上下の余白を揃える。
 
 ### 3.3 `beforeprint` / `afterprint`
 
 ```js
 addEventListener('beforeprint', () => {
-  const p = PrintLayout.fit(mapBounds());
+  const p = PrintLayout.fit(mapBounds(0));
   pageStyle.textContent = `@page { size: A4 ${p.orientation}; margin: 10mm }`;
   vp.style.setProperty('--print-w', p.width + 'px');
   vp.style.setProperty('--print-h', p.height + 'px');

@@ -1375,6 +1375,9 @@ test('beforeprint fits the whole map on A4 without touching the view; afterprint
   assert.equal(t.run(`view.x === 5 && view.y === 6 && view.s === 2 && world.style.transform === 'screen' && document.title === 'Plan'`), true);
   assert.equal(t.timers.size, timers);
   assert.deepEqual([...t.storage], stored);
+  const p = t.run('PrintLayout.fit(mapBounds(0))'), b = t.run('mapBounds(0)');
+  assert.ok(Math.abs((b.y0 * p.scale + p.y) - (p.height - (b.y1 * p.scale + p.y))) < 1e-6);
+  assert.equal(t.run(`vp.style['--print-transform']`), `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
   t.windowHandlers.get('afterprint')();
   assert.equal(t.run(`document.title === 'App'`), true);
 });

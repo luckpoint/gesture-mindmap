@@ -1006,12 +1006,12 @@ function animateTo(target) {
   requestAnimationFrame(step);
 }
 function centerOn(pt, s = view.s) { return { x: W() / 2 - pt.x * s, y: H() / 2 - pt.y * s, s }; }
-function mapBounds() {
+function mapBounds(tagSpace = 30) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const n of Object.values(map.nodes)) {
     const { w, h } = size(n);
     x0 = Math.min(x0, n.x - w / 2); x1 = Math.max(x1, n.x + w / 2);
-    y0 = Math.min(y0, n.y - h / 2 - 30); y1 = Math.max(y1, n.y + h / 2);
+    y0 = Math.min(y0, n.y - h / 2 - tagSpace); y1 = Math.max(y1, n.y + h / 2);
   }
   return { x0, y0, x1, y1 };
 }
@@ -1970,7 +1970,7 @@ async function printMap() {
   } finally { printing = false; }
 }
 addEventListener('beforeprint', () => {
-  const p = PrintLayout.fit(mapBounds());
+  const p = PrintLayout.fit(mapBounds(0));
   $('#pageStyle').textContent = `@page { size: A4 ${p.orientation}; margin: 10mm }`;
   vp.style.setProperty('--print-w', p.width + 'px');
   vp.style.setProperty('--print-h', p.height + 'px');
