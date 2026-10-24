@@ -173,6 +173,41 @@ for (const [pose, action] of [['peace', 'add'], ['thumbDown', 'delete']]) {
   });
 }
 
+for (const [pose, action] of [['peace', 'add'], ['thumbDown', 'delete']]) {
+  for (const duringHold of [false, true]) {
+    for (const fistFrames of [1, 2]) test(`${pose} tolerates ${fistFrames} pending pan frames ${duringHold ? 'during' : 'before'} its hold`, () => {
+      const t = setup(); t.stable();
+      if (duringHold) for (let i = 0; i < 6; i++) t.feed(.5, .5, { pose });
+      for (let i = 0; i < fistFrames; i++) t.feed(.5, .5, { pose: 'fist' });
+      assert.equal(t.controller.state.state, 'panWaiting');
+      for (let i = 0; i < 12; i++) t.feed(.5, .5, { pose });
+      assert.deepEqual(t.commands, []);
+      t.feed(.5, .5, { pose });
+      assert.deepEqual(t.commands, [action]);
+      holdPose(t, pose);
+      assert.deepEqual(t.commands, [action]);
+      assert.deepEqual(t.pans, []);
+      t.feed(.5, .5, { pose: 'fist' }); holdPose(t, pose);
+      assert.deepEqual(t.commands, [action], 'one fist frame must not rearm a fired command');
+    });
+  }
+  for (const moving of [false, true]) test(`${pose} requires neutral after a stable ${moving ? 'moving' : 'stationary'} pan`, () => {
+    const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
+    t.stable(.5, .5, { pose: 'fist' });
+    if (moving) {
+      t.feed(.45, .5, { pose: 'fist' });
+      assert.ok(t.pans.length > 0);
+    }
+    holdPose(t, pose); holdPose(t, pose);
+    assert.deepEqual(t.commands, []);
+    assert.equal(t.controller.state.state, 'commandReset');
+    t.lost(); holdPose(t, pose);
+    assert.deepEqual(t.commands, []);
+    t.stable(.5, .5, { pose: 'point' }); holdPose(t, pose);
+    assert.deepEqual(t.commands, [action]);
+  });
+}
+
 for (const cause of ['loss', 'gap', 'identity', 'wrist', 'motion', 'pose', 'clock']) test(`${cause} interrupts a command hold`, () => {
   const t = setup(); t.stable();
   for (let i = 0; i < 10; i++) t.feed(.5, .5, { pose: 'peace' });
@@ -382,7 +417,38 @@ test('straight downward thumb survives mirroring, distance and moderate 3D tilt'
   }
 });
 
-test('CMC and IP bends reject apparent downward thumbs and cannot request deletion', () => {
+test('diagonal downward thumbs reach the side boundary without falling back to fist', () => {
+  for (const degrees of [34, 35, 40, 44, 46, 60, 90]) for (const sign of [-1, 1]) for (const scale of [.5, 1.5]) {
+    const angle = degrees * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle) * sign;
+    const points = downwardThumb().map(p => ({
+      x: 320 + ((p.x - 320) * c - (p.y - 288) * s) * scale,
+      y: 288 + ((p.x - 320) * s + (p.y - 288) * c) * scale, z: p.z * scale,
+    }));
+    const frame = handFrame(geometryResult(points), 640, 480);
+    assert.equal(frame.pose, degrees < 45 ? 'thumbDown' : sign === 1 ? 'thumbRight' : 'thumbLeft');
+    if (degrees < 45) {
+      const t = setup(); holdPose(t, frame.pose, frame);
+      assert.deepEqual(t.commands, ['delete']);
+    }
+  }
+});
+
+test('slightly bent downward thumbs are accepted in image and world geometry, while side gestures stay strict', () => {
+  for (const change of [p => { p[1].x += 90; }, p => { p[3].x += 35; }]) {
+    const points = downwardThumb(); change(points);
+    for (const world of [undefined, points.map(p => ({ x: p.x / 1000, y: p.y / 1000, z: p.z / 1000 }))]) {
+      const frame = handFrame(geometryResult(points, world), 640, 480);
+      assert.equal(frame.pose, 'thumbDown');
+      assert.ok(Math.max(frame.measurements.thumb.mcpBend, frame.measurements.thumb.ipBend) > 40);
+      const t = setup(); holdPose(t, frame.pose, frame);
+      assert.deepEqual(t.commands, ['delete']);
+    }
+    const sideways = points.map(p => ({ x: 320 + p.y - 288, y: 288 - (p.x - 320), z: p.z }));
+    assert.equal(handFrame(geometryResult(sideways), 640, 480).pose, 'fist');
+  }
+});
+
+test('strong CMC and IP bends reject apparent downward thumbs and cannot request deletion', () => {
   for (const change of [p => { p[1].x += 120; }, p => { p[3].x += 55; },
     p => { p[1] = { ...p[2] }; }, p => { p[3].z = 150; }]) {
     const points = downwardThumb(); change(points);

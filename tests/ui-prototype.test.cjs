@@ -841,6 +841,19 @@ test('thumb-down opens confirmation once, palm chooses scope and thumb-right con
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
 
+for (const duringHold of [false, true]) test(`thumb-down opens confirmation after one fist frame ${duringHold ? 'during' : 'before'} its hold`, () => {
+  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  t.run(`sel = 'a';
+    const dialogSample = pose => { cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
+    if (${duringHold}) for (let i = 0; i < 6; i++) dialogSample('thumbDown');
+    dialogSample('fist');
+    for (let i = 0; i < 12; i++) dialogSample('thumbDown');
+  `);
+  assert.equal(t.run(`!deletion && sel === 'a' && JSON.stringify(map) === originalMap`), true);
+  t.run(`dialogSample('thumbDown');`);
+  assert.equal(t.run(`deletion.id === 'a' && $('#deleteDialog').open && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`), true);
+});
+
 test('thumb tilted left cancels the delete confirmation and tilted right confirms it', () => {
   const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
   t.run(`sel = 'b1';

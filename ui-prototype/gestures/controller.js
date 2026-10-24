@@ -65,6 +65,7 @@
       this.identity = null; this.wrist = null; this.lastSwitch = -Infinity;
       this.zoomDistance = null; this.zoomPendingAt = null; this.zoomLastAt = null;
       this.panLastAt = null; this.panPendingAt = null; this.panRaw = null;
+      this.panActive = false;
       this.palmFrame = null;
       this.zoomPalms = null; this.panMode = null; this.dialogPoint = false;
       this.commandPose = null; this.commandAt = null; this.commandPoint = null;
@@ -228,7 +229,9 @@
         this.commandPose = null; this.commandAt = null; s.progress = 0;
         return false;
       }
-      if (s.grab || this.zoomLastAt !== null || this.panLastAt !== null) {
+      // A transient fist during pose recognition has not started a pan yet.
+      // Only a pan that passed the stability wait requires neutral rearming.
+      if (s.grab || this.zoomLastAt !== null || this.panActive) {
         this.commandHeld = true; this.cancel();
       }
       if (this.commandHeld) {
@@ -306,6 +309,7 @@
       if (now - this.panPendingAt < c.stable) {
         this.rebaseDrag(point, now); s.state = 'panWaiting';
       } else {
+        this.panActive = true;
         const x = s.x, y = s.y;
         this.moveDrag(point, now, (nextX, nextY) => this.io.pan(nextX - x, nextY - y));
         s.state = 'panning';
@@ -432,16 +436,19 @@
         folded: length3(tip, geometry[0]) <= length3(pip, geometry[0]) * 1.15 &&
           (!useAngles || (anglesValid && Math.max(pipBend, dipBend) >= 55)) };
     });
-    // Evaluate extension in the selected geometry space, independently of the
-    // screen-space direction. A bent/degenerate CMC chain must not delete.
+    // Measure extension in geometry space and direction in screen space.
     const mcpBend = bendAngle(geometry[1], geometry[2], geometry[3]);
     const ipBend = bendAngle(geometry[2], geometry[3], geometry[4]);
-    const thumbExtended = mcpBend !== null && ipBend !== null && mcpBend <= 40 && ipBend <= 40 &&
-      length3(geometry[1], geometry[4]) > geometrySize * .5;
     const thumbX = (p[4].x - p[2].x) * width, thumbY = (p[4].y - p[2].y) * height;
     const thumbAway = distance(p[4], p[5]) > size * .55;
-    const thumbPointsDown = thumbY > size * .45 && Math.abs(thumbX) < thumbY * .7 &&
+    // Cover diagonal-down thumbs up to the side-pose boundary (45 degrees).
+    const thumbPointsDown = thumbY > size * .45 && Math.abs(thumbX) <= thumbY &&
       (p[4].y - p[3].y) * height > size * .15 && thumbAway;
+    // A natural downward thumb can be slightly bent. Keep the stricter side
+    // gesture limits and reject strongly curled or degenerate thumbs.
+    const thumbExtended = mcpBend !== null && ipBend !== null &&
+      mcpBend <= (thumbPointsDown ? 55 : 40) && ipBend <= (thumbPointsDown ? 50 : 40) &&
+      length3(geometry[1], geometry[4]) > geometrySize * .5;
     // Image x is unmirrored: the user's left is +x.
     const tipX = (p[4].x - p[3].x) * width;
     const thumbSide = Math.abs(thumbX) > size * .45 && Math.abs(thumbY) < Math.abs(thumbX) &&
