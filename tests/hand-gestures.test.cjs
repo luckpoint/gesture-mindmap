@@ -17,7 +17,8 @@ function setup(options = {}) {
     release: () => dragEvents.push(['release']), cancel: () => dragEvents.push(['cancel']),
   }, options);
   const feed = (x = .5, y = .5, extra = {}) => {
-    controller.update({ pointer: { x, y }, wrist: { x: .5, y: .7 }, ratio: .8, identity: 'Left', ...extra }, time);
+    controller.update({ pointer: { x, y }, wrist: { x: .5, y: .7 }, ratio: .8, identity: 'Left', pose: options.navigation && extra.ratio === undefined ? 'point' : null,
+      ...(extra.hands === 2 ? { palms: [{ x: .5 - extra.distance / 2, y: .5 }, { x: .5 + extra.distance / 2, y: .5 }] } : {}), ...extra }, time);
     time += 50;
   };
   const stable = (x = .5, y = .5, extra = {}) => { for (let i = 0; i < 3; i++) feed(x, y, extra); };
@@ -31,25 +32,25 @@ test('requires a stable open hand before initializing the selection', () => {
   const t = setup(); t.stable(.5, .5, { ratio: .1 });
   assert.equal(t.controller.state.initialized, false);
   t.stable(); assert.deepEqual(t.events, ['activate']);
-  assert.equal(t.controller.state.state, 'ready');
+  assert.equal(t.controller.state.state, 'neutral');
 });
 
 for (const [name, x, y, dx, dy] of [
   ['right', .4, .5, 1, 0], ['left', .6, .5, -1, 0],
   ['up', .5, .4, 0, -1], ['down', .5, .6, 0, 1],
-  ['down-left', .6, .6, -1, 1], ['down-right', .4, .6, 1, 1],
-  ['up-left', .6, .4, -1, -1], ['up-right', .4, .4, 1, -1],
+  ['down-left', .61, .6, -1, 0], ['down-right', .39, .6, 1, 0],
+  ['up-left', .6, .39, 0, -1], ['up-right', .4, .39, 0, -1],
 ]) test(`mirrored palm displacement selects ${name} once and holds when stopped`, () => {
-  const t = setup(); t.stable(); t.feed(x, y);
+  const t = setup({ navigation: true }); t.stable(); t.feed(x, y);
   const [move] = t.moves(); assert.ok(move);
-  assert.ok(Math.abs(move.x - dx / Math.hypot(dx, dy)) < 1e-8);
-  assert.ok(Math.abs(move.y - dy / Math.hypot(dx, dy)) < 1e-8);
+  assert.ok(Math.abs(move.x - dx) < 1e-8);
+  assert.ok(Math.abs(move.y - dy) < 1e-8);
   for (let i = 0; i < 30; i++) t.feed(x, y);
   assert.equal(t.moves().length, 1);
 });
 
 test('stationary jitter is ignored but slow deliberate movement accumulates', () => {
-  const t = setup(); t.stable();
+  const t = setup({ navigation: true }); t.stable();
   for (let i = 0; i < 30; i++) t.feed(i % 2 ? .503 : .497);
   assert.equal(t.moves().length, 0);
   for (let i = 1; i <= 14; i++) t.feed(.5 - i * .005);
@@ -57,27 +58,27 @@ test('stationary jitter is ignored but slow deliberate movement accumulates', ()
 });
 
 test('cooldown discards excess motion; a new displacement selects the next node', () => {
-  const t = setup(); t.stable(); t.feed(.4);
+  const t = setup({ navigation: true }); t.stable(); t.feed(.4);
   t.feed(.3); t.feed(.2); t.feed(.1); t.feed(.1); t.feed(.1);
   assert.equal(t.moves().length, 1);
   t.feed(.02); assert.equal(t.moves().length, 2);
 });
 
 test('a large jump emits at most one step and cannot repeat while stationary', () => {
-  const t = setup(); t.stable(); t.feed(.05);
+  const t = setup({ navigation: true }); t.stable(); t.feed(.05);
   for (let i = 0; i < 20; i++) t.feed(.05);
   assert.equal(t.moves().length, 1);
 });
 
 test('pinch freezes direction selection, and reopening resets its baseline', () => {
-  const t = setup(); t.stable(); t.stable(.1, .5, { ratio: .1 });
+  const t = setup({ navigation: true }); t.stable(); t.stable(.1, .5, { ratio: .1 });
   assert.equal(t.moves().length, 0);
   t.stable(.1); t.stable(.1); assert.equal(t.moves().length, 0);
   t.advance(250); t.feed(.1); t.feed(.02); assert.equal(t.moves().length, 1);
 });
 
 for (const cause of ['loss', 'blocked', 'identity', 'wrist', 'gap', 'malformed']) test(`${cause} resets navigation without a recovery jump`, () => {
-  const t = setup(); t.stable(); t.feed(.46);
+  const t = setup({ navigation: true }); t.stable(); t.feed(.46);
   if (cause === 'loss') t.lost();
   if (cause === 'blocked') { t.block(true); t.feed(); t.block(false); }
   if (cause === 'gap') t.advance(1500);
@@ -89,7 +90,7 @@ for (const cause of ['loss', 'blocked', 'identity', 'wrist', 'gap', 'malformed']
 });
 
 test('uncertain handedness permits navigation without repeated resets', () => {
-  const t = setup(); t.stable(.5, .5, { identity: null });
+  const t = setup({ navigation: true }); t.stable(.5, .5, { identity: null });
   t.feed(.4, .5, { identity: null }); assert.equal(t.moves().length, 1);
 });
 
@@ -135,8 +136,8 @@ test('palm coordinates are unchanged by finger flexion', () => {
   assert.notEqual(after.ratio, before.ratio);
 });
 
-for (const interval of [200, 300, 450, 800]) test(`open hand becomes ready with ${interval}ms result intervals`, () => {
-  const t = setup(); t.feed(); t.advance(interval - 50); t.feed();
+for (const interval of [200, 300, 450, 800]) test(`pointing hand becomes ready with ${interval}ms result intervals`, () => {
+  const t = setup({ navigation: true }); t.feed(); t.advance(interval - 50); t.feed();
   assert.equal(t.controller.state.state, 'ready');
   assert.equal(t.moves().length, 0);
   t.advance(interval - 50); t.feed(.4);
@@ -317,9 +318,9 @@ test('two-hand entry cancels node preview, then returning to one hand reacquires
   assert.deepEqual(t.dragEvents.map(e => e[0]), ['begin', 'cancel']);
   t.feed(.1, .5, { ratio: .1 });
   assert.equal(t.controller.state.grab, null);
-  t.stable(.1); assert.equal(t.controller.state.state, 'ready');
+  t.stable(.1); assert.equal(t.controller.state.state, 'neutral');
   assert.equal(t.moves().length, 0);
-  t.feed(.02); assert.equal(t.moves().length, 1);
+  t.stable(.1, .5, { pose: 'point' }); t.feed(.02, .5, { pose: 'point' }); assert.equal(t.moves().length, 1);
 });
 
 for (const cause of ['loss', 'blocked', 'gap', 'jump', 'invalid', 'clock']) test(`two-hand ${cause} resets the zoom baseline`, () => {
@@ -336,100 +337,43 @@ for (const cause of ['loss', 'blocked', 'gap', 'jump', 'invalid', 'clock']) test
   two(baseline + .05); assert.ok(t.zooms[0] < 1);
 });
 
-const pointHand = t => { for (let i = 0; i < 42; i++) t.feed(.5, .5, { pose: 'point' }); };
+test('open palm stays neutral even while moving; a held point never pauses', () => {
+  const t = setup(); t.stable();
+  for (let i = 0; i < 30; i++) t.feed(.1 + i * .02, .5);
+  assert.deepEqual(t.moves(), []); assert.deepEqual(t.pans, []);
+  assert.equal(t.controller.state.state, 'neutral');
+  for (let i = 0; i < 60; i++) t.feed(.5, .5, { pose: 'point' });
+  assert.equal(t.controller.paused, false); assert.deepEqual(t.moves(), []);
+  t.feed(.4, .5, { pose: 'point', ratio: .1 }); assert.equal(t.moves().length, 1);
+});
 
-test('point pause and resume each require two full seconds of stillness', () => {
+for (const pose of ['fist', 'point']) test(`${pose} restarts its baseline after an open palm`, () => {
+  const t = setup(); t.stable(.5, .5, { pose }); t.feed(.4, .5, { pose });
+  t.stable(.8); t.stable(.1, .5, { pose });
+  const count = t.pans.length + t.moves().length;
+  t.feed(.02, .5, { pose }); assert.equal(t.pans.length + t.moves().length, count + 1);
+});
+
+for (const motion of ['one', 'translation', 'opposite', 'missing', 'invalid']) test(`zoom rejects ${motion} palm motion`, () => {
+  const t = setup(); t.stable(.5, .5, { hands: 2, distance: .4 });
+  const palms = motion === 'one' ? [{ x: .3, y: .5 }, { x: .8, y: .5 }]
+    : motion === 'translation' ? [{ x: .4, y: .5 }, { x: .8, y: .5 }]
+    : motion === 'opposite' ? [{ x: .4, y: .5 }, { x: .75, y: .5 }]
+    : motion === 'invalid' ? [{ x: NaN, y: .5 }, { x: .75, y: .5 }] : undefined;
+  t.feed(.5, .5, { hands: 2, distance: .5, palms }); assert.deepEqual(t.zooms, []);
+});
+
+test('zoom follows vertical bilateral motion and detector order changes', () => {
   const t = setup();
-  for (const paused of [true, false]) {
-    for (let i = 0; i < 40; i++) t.feed(.5, .5, { pose: 'point' });
-    assert.equal(t.controller.paused, !paused); // Last sample is at 1950ms.
-    t.feed(.5, .5, { pose: 'point' });
-    assert.equal(t.controller.paused, paused); // Exactly 2000ms.
-    t.stable(.5, .5, { pose: 'fist' });
-  }
+  const feed = distance => t.feed(.5, .5, { hands: 2, distance,
+    palms: [{ x: .5, y: .5 + distance / 2 }, { x: .5, y: .5 - distance / 2 }] });
+  feed(.4); feed(.4); feed(.4); feed(.5);
+  assert.ok(t.zooms[0] < 1);
+  t.feed(.5, .5, { hands: 2, distance: .5, palms: [{ x: .5, y: .25 }, { x: .5, y: .75 }] });
+  assert.equal(t.zooms.length, 1); feed(.4); assert.ok(t.zooms[1] > 1);
 });
 
-for (const speed of [.005, .03]) test(`moving point at ${speed} stays neutral and stopping requires a fresh hold`, () => {
-  const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1 });
-  for (let i = 0; i < 20; i++) {
-    t.feed(.1 + i * speed, .5, { pose: 'point', ratio: .1 });
-    assert.equal(t.controller.paused, false);
-    assert.equal(t.controller.state.state, 'neutral');
-  }
-  assert.deepEqual(t.dragEvents.map(e => e[0]), ['begin', 'cancel']);
-  assert.deepEqual(t.moves(), []); assert.deepEqual(t.zooms, []); assert.deepEqual(t.pans, []);
-  t.stable(.9, .5, { pose: 'point' }); assert.equal(t.controller.paused, false);
-  for (let i = 0; i < 39; i++) t.feed(.9, .5, { pose: 'point' });
-  assert.equal(t.controller.paused, true);
-  t.stable(.9); // Rearm; moving point must not resume either.
-  for (let i = 0; i < 20; i++) t.feed(.1 + i * speed, .5, { pose: 'point' });
-  assert.equal(t.controller.paused, true);
-  pointHand(t); assert.equal(t.controller.paused, false);
-});
-
-test('point hold tolerates small jitter around a fixed position', () => {
-  const t = setup();
-  for (let i = 0; i < 42; i++) t.feed(.5 + (i % 2 ? .003 : -.003), .5, { pose: 'point' });
-  assert.equal(t.controller.paused, true);
-});
-
-for (const cause of ['loss', 'gap', 'clock', 'identity', 'invalid', 'wrist']) test(`point ${cause} requires a fresh stationary hold`, () => {
-  const t = setup(); t.stable(.5, .5, { pose: 'point' });
-  if (cause === 'loss') t.lost();
-  if (cause === 'gap') t.advance(1500);
-  if (cause === 'clock') t.advance(-500);
-  if (cause === 'invalid') t.feed(NaN, .5, { pose: 'point' });
-  const extra = cause === 'identity' ? { identity: 'Right' } : cause === 'wrist' ? { wrist: { x: .6, y: .7 } } : {};
-  t.stable(.5, .5, { pose: 'point', ...extra });
-  assert.equal(t.controller.paused, false);
-  for (let i = 0; i < 39; i++) t.feed(.5, .5, { pose: 'point', ...extra });
-  assert.equal(t.controller.paused, true);
-});
-
-test('two-hand point hold follows the pointing hand even when opposite motion hides it in the midpoint', () => {
-  const t = setup();
-  for (let i = 0; i < 20; i++) {
-    const pointing = poseLandmarks('point').map(p => ({ x: p.x + i * .02, y: p.y }));
-    const other = poseLandmarks('open').map(p => ({ x: p.x - i * .02, y: p.y }));
-    const landmarks = i % 2 ? [other, pointing] : [pointing, other];
-    const frame = handFrame({ landmarks }, 640, 480);
-    t.feed(frame.pointer.x, frame.pointer.y, frame);
-    assert.equal(t.controller.state.state, 'neutral');
-    assert.equal(t.controller.paused, false);
-  }
-});
-
-test('point toggles once per hold; fist rearms it and resume starts without a jump', () => {
-  const t = setup(); t.stable(); pointHand(t);
-  assert.equal(t.controller.state.state, 'paused');
-  pointHand(t); assert.equal(t.controller.paused, true);
-  t.stable(.1, .5, { pose: 'fist', ratio: .1 });
-  assert.equal(t.controller.paused, true);
-  pointHand(t); assert.equal(t.controller.paused, false);
-  t.stable(.1); assert.equal(t.controller.state.state, 'ready');
-  assert.equal(t.moves().length, 0);
-  t.feed(.02); assert.equal(t.moves().length, 1);
-});
-
-test('short pointing noise does not toggle and a brief pose flicker cannot rearm', () => {
-  const t = setup(); t.stable(); t.stable(.5, .5, { pose: 'point' });
-  t.stable(); assert.equal(t.controller.paused, false);
-  pointHand(t); t.feed(.5, .5, { pose: 'fist' }); pointHand(t);
-  assert.equal(t.controller.paused, true);
-});
-
-test('pause survives tracking loss, ordinary input and suppresses pinch and zoom', () => {
-  const t = setup(); t.stable(); pointHand(t);
-  t.lost(); pointHand(t); assert.equal(t.controller.paused, true);
-  t.block(true); t.feed(); t.block(false);
-  t.stable(.1); t.stable(.1, .5, { ratio: .1 });
-  for (const distance of [.4, .4, .4, .5]) t.feed(.5, .5, { hands: 2, distance });
-  assert.equal(t.controller.state.state, 'paused');
-  assert.deepEqual(t.moves(), []); assert.deepEqual(t.dragEvents, []); assert.deepEqual(t.zooms, []);
-  pointHand(t); assert.equal(t.controller.paused, false);
-});
-
-for (const pose of ['fist', 'point']) test(`${pose} cancels a drag preview and cannot navigate or grab`, () => {
+for (const pose of ['fist', 'point']) test(`${pose} cancels a drag preview without moving selection or grabbing on entry`, () => {
   const t = setup(); t.stable(); t.stable(.5, .5, { ratio: .1 });
   t.feed(.4, .5, { ratio: .1 });
   t.stable(.1, .5, { pose, ratio: .1 });
@@ -437,7 +381,7 @@ for (const pose of ['fist', 'point']) test(`${pose} cancels a drag preview and c
   assert.deepEqual(t.dragEvents.map(e => e[0]), ['begin', 'move', 'cancel']);
   assert.equal(t.moves().length, 0);
   if (pose === 'fist') {
-    assert.equal(t.controller.state.state, 'neutral');
+    assert.equal(t.controller.state.state, 'panning');
     t.stable(.1); assert.equal(t.moves().length, 0);
   }
 });
@@ -477,7 +421,7 @@ for (const [pose, action] of [['peace', 'add'], ['thumbDown', 'delete']]) {
     holdPose(t, pose); holdPose(t, pose);
     assert.deepEqual(t.commands, [action]); assert.deepEqual(t.moves(), []);
     t.lost(); holdPose(t, pose); assert.deepEqual(t.commands, [action]);
-    t.stable(.5, .5, { pose: 'fist' }); holdPose(t, pose);
+    t.stable(); holdPose(t, pose);
     assert.deepEqual(t.commands, [action, action]);
   });
 }
@@ -497,7 +441,7 @@ for (const cause of ['loss', 'gap', 'identity', 'wrist', 'motion', 'pose', 'cloc
 test('pause, ordinary input, two hands and drag transitions cannot issue commands', () => {
   for (const cause of ['paused', 'blocked', 'two', 'drag', 'zoom']) {
     const t = setup(); t.stable();
-    if (cause === 'paused') pointHand(t);
+    if (cause === 'paused') t.controller.paused = true;
     if (cause === 'blocked') t.block(true);
     if (cause === 'drag') t.stable(.5, .5, { ratio: .1 });
     if (cause === 'zoom') t.stable(.5, .5, { hands: 2, distance: .4 });
@@ -510,7 +454,7 @@ test('pause, ordinary input, two hands and drag transitions cannot issue command
 test('dialog requires an open hand and a fresh long pinch; never drags or zooms', () => {
   const t = setup(); t.stable(); t.dialog(true);
   holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, []);
-  t.stable(); t.feed(.5, .6);
+  t.stable(.5, .5, { pose: 'point' }); t.feed(.5, .6, { pose: 'point' });
   assert.deepEqual(t.dialogEvents, [1]);
   t.stable(.5, .6, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1]);
   for (let i = 0; i < 12; i++) t.feed(.5, .6, { ratio: .1 });
@@ -518,7 +462,7 @@ test('dialog requires an open hand and a fresh long pinch; never drags or zooms'
   holdPose(t, null, { ratio: .1 }); assert.deepEqual(t.dialogEvents, [1, 'select']);
   holdPose(t, 'peace'); holdPose(t, null, { hands: 2, distance: .5 });
   assert.deepEqual(t.commands, []); assert.deepEqual(t.zooms, []); assert.deepEqual(t.dragEvents, []);
-  pointHand(t); t.stable(); holdPose(t, null, { ratio: .1 });
+  t.controller.paused = true; t.stable(); holdPose(t, null, { ratio: .1 });
   assert.deepEqual(t.dialogEvents, [1, 'select']);
 });
 
@@ -537,15 +481,6 @@ test('landmarks recognize peace and downward thumb separately from point and fis
   assert.equal(handFrame({ landmarks: [down] }, 640, 480).pose, 'fist');
   const both = handFrame({ landmarks: [peace, poseLandmarks('open')] }, 640, 480);
   assert.equal(both.hands, 2); assert.notEqual(both.pose, 'peace');
-});
-
-test('point hold cannot inherit time spent in a command pose', () => {
-  const t = setup(); t.stable();
-  t.stable(.5, .5, { pose: 'point' });
-  t.stable(.5, .5, { pose: 'peace' });
-  t.stable(.5, .5, { pose: 'point' });
-  assert.equal(t.controller.paused, false);
-  pointHand(t); assert.equal(t.controller.paused, true);
 });
 
 const fists = { hands: 2, pose: 'bothFists', distance: .4 };
@@ -587,7 +522,7 @@ test('pan jitter is suppressed and pause prevents all pan movement', () => {
   const t = setup(); t.stable(.5, .5, fists);
   for (let i = 0; i < 60; i++) t.feed(.5 + (i % 2 ? .003 : -.003), .5, fists);
   assert.deepEqual(t.pans, []);
-  pointHand(t); t.stable(.5, .5, fists); t.feed(.4, .4, fists);
+  t.controller.paused = true; t.stable(.5, .5, fists); t.feed(.4, .4, fists);
   assert.equal(t.controller.state.state, 'paused'); assert.deepEqual(t.pans, []);
 });
 
@@ -800,4 +735,35 @@ test('dialog presses the tilted side once after a stable hold, and rearms throug
   assert.deepEqual(t.dialogEvents, ['left', 'right']);
   t.dialog(false); holdPose(t, 'thumbLeft');
   assert.deepEqual(t.dialogEvents, ['left', 'right']); assert.deepEqual(t.moves(), []); assert.deepEqual(t.commands, []);
+});
+for (const mode of ['one', 'mixed', 'both']) test(`${mode} fist pans using its own palm or the two-fist midpoint`, () => {
+  const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
+  const result = offset => handFrame({ landmarks: mode === 'one'
+    ? [poseLandmarks('fist').map(p => ({ x: p.x + offset, y: p.y }))]
+    : [poseLandmarks('fist').map(p => ({ x: p.x - .2 + offset, y: p.y })),
+      poseLandmarks(mode === 'both' ? 'fist' : 'open').map(p => ({ x: p.x + .2 + (mode === 'both' ? offset : 0), y: p.y }))] }, 640, 480);
+  const feed = offset => t.feed(.5, .5, result(offset));
+  feed(0); feed(0); feed(0); feed(-.05);
+  assert.ok(Math.abs(t.pans[0].x - 50) < 1e-8);
+  assert.deepEqual(t.moves(), []); assert.deepEqual(t.zooms, []);
+});
+
+test('switching between one and two fists reacquires without a pan jump', () => {
+  const t = setup({ smoothing: 1, gain: 1, deadzone: 0 });
+  t.stable(.5, .5, { pose: 'fist' }); t.feed(.45, .5, { pose: 'fist' });
+  t.stable(.4, .5, fists); assert.equal(t.pans.length, 1);
+  t.feed(.35, .5, fists); assert.equal(t.pans.length, 2);
+  t.stable(.3, .5, { pose: 'fist' }); assert.equal(t.pans.length, 2);
+  t.feed(.25, .5, { pose: 'fist' }); assert.equal(t.pans.length, 3);
+});
+
+test('two-hand pointing uses the pointing palm instead of the midpoint', () => {
+  const t = setup();
+  const feed = offset => {
+    const frame = handFrame({ landmarks: [poseLandmarks('point').map(p => ({ x: p.x + offset, y: p.y })),
+      poseLandmarks('open').map(p => ({ x: p.x - offset, y: p.y }))] }, 640, 480);
+    t.feed(.5, .5, frame);
+  };
+  feed(0); feed(0); feed(0); feed(-.1);
+  assert.deepEqual(t.moves(), [{ x: 1, y: 0 }]); assert.deepEqual(t.zooms, []);
 });

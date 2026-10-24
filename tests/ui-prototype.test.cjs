@@ -512,11 +512,11 @@ function prepareHand(t) {
     map.nodes.a1.x = 400; map.nodes.a1.y = 0;
     map.nodes.b.x = -200; map.nodes.b.y = 200;
     sel = 'root'; toggleHand(); let handTime = 0;
-    const handSample = (x = .5, y = .5, ratio = .8) => {
-      cameraSession.io.frame({ pointer: { x, y }, wrist: { x: .5, y: .7 }, ratio, identity: 'Left' }, handTime);
+    const handSample = (x = .5, y = .5, ratio = .8, pose = ratio >= .55 ? 'point' : null) => {
+      cameraSession.io.frame({ pointer: { x, y }, wrist: { x: .5, y: .7 }, ratio, pose, identity: 'Left' }, handTime);
       handTime += 50;
     };
-    const stableHand = (x = .5, y = .5, ratio = .8) => { for (let i = 0; i < 3; i++) handSample(x, y, ratio); };
+    const stableHand = (x = .5, y = .5, ratio = .8, pose = ratio >= .55 ? 'point' : null) => { for (let i = 0; i < 3; i++) handSample(x, y, ratio, pose); };
     stableHand(); const originalMap = JSON.stringify(map);
   `);
 }
@@ -531,11 +531,11 @@ test('camera direction changes selection from the current node without changing 
   assert.equal(t.timers.size, 0); assert.equal(t.storage.size, 0);
 });
 
-test('camera down-left selects a diagonal node, no candidate and stopping retain it', () => {
+test('camera diagonal motion resolves to the dominant keyboard direction and stopping retains selection', () => {
   const t = setup(); prepareHand(t);
-  t.run(`handSample(.6, .6); for (let i = 0; i < 6; i++) handSample(.6, .6); handSample(.7, .7);`);
+  t.run(`handSample(.62, .6); for (let i = 0; i < 6; i++) handSample(.62, .6);`);
   assert.equal(t.run('sel'), 'b');
-  t.run(`for (let i = 0; i < 15; i++) handSample(.7, .7);`);
+  t.run(`for (let i = 0; i < 15; i++) handSample(.62, .6);`);
   assert.equal(t.run(`sel === 'b' && JSON.stringify(map) === originalMap && history.length === 0`), true);
 });
 
@@ -721,14 +721,14 @@ test('tracking recovery and manual selection reset the directional baseline', ()
 test('camera UI shows each message in one place with tips for the current state', () => {
   const t = setup({ handUI: true }); prepareHand(t);
   const help = t.elements.get('#handHelp'), msg = t.elements.get('#camMsg'), tips = () => t.elements.get('#handTips').children.map(c => c.textContent).join();
-  assert.match(help.textContent, /指の向きで選択/);
+  assert.match(help.textContent, /人差し指を立てて上下左右/);
   assert.equal(msg.hidden, true);
   assert.equal(msg.textContent, '');
   assert.match(tips(), /つまんで移動.*子を追加.*削除.*マップ移動/);
   assert.equal(t.elements.get('#cam').dataset.state, 'ready');
   assert.equal(t.elements.get('#handCursor').hidden, true);
   t.run('interruptHand(); handSample();');
-  assert.match(help.textContent, /手を開いたまま/);
+  assert.match(help.textContent, /手を少し静止して準備/);
   t.run('handSample(.5, .5, .1);');
   assert.match(help.textContent, /つまんでいます/);
   t.run('cameraSession.io.frame(null, handTime);');
@@ -751,7 +751,7 @@ test('pinch moves the active subtree, freezes directional selection and commits 
   assert.match(t.elements.get('#handHelp').textContent, /ノードを移動中/);
   t.run('handSample(.3, .5, .1);');
   assert.equal(t.run(`sel === 'a' && map.nodes.a.x === 260 && map.nodes.a1.x === 460 && history.length === 0`), true);
-  t.run('stableHand(.2);'); // Finger opening motion must not move the node.
+  t.run('stableHand(.2, .5, .8, null);'); // Finger opening motion must not move the node.
   assert.equal(t.run(`!gesture && !hand.grab && map.nodes.a.x === 260 && history.length === 1`), true);
   t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
   t.run('redo();'); assert.equal(t.run('map.nodes.a.x === 260 && map.nodes.a1.x === 460'), true);
@@ -784,7 +784,7 @@ test('a pending save excludes pinch preview and loss requires reopening before a
 test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/history intact', () => {
   const t = setup({ handUI: true }); prepareHand(t);
   t.run(`
-    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, distance }, handTime); handTime += 50; };
+    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
     const centerBefore = { x: (W()/2-view.x)/view.s, y: (H()/2-view.y)/view.s };
     const scaleBefore = view.s;
     zoomSample(.4); zoomSample(.4); zoomSample(.4); zoomSample(.5);
@@ -804,34 +804,26 @@ test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/histo
 test('second hand reverts a moved node before zooming, and editing blocks zoom', () => {
   const t = setup(); prepareHand(t);
   t.run(`stableHand(.5, .5, .1); handSample(.3, .5, .1);
-    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, distance }, handTime); handTime += 50; };
+    const zoomSample = distance => { cameraSession.io.frame({ hands: 2, distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
     zoomSample(.4); zoomSample(.4); zoomSample(.4); zoomSample(.5);`);
   assert.equal(t.run('!gesture && history.length === 0 && JSON.stringify(map) === originalMap'), true);
   t.run(`const zoomBeforeEditing = view.s; editing = { id: 'root' }; zoomSample(.4); zoomSample(.3);`);
   assert.equal(t.run('view.s === zoomBeforeEditing && hand.state === "blocked"'), true);
 });
 
-test('camera fist and pause toggle cancel previews, retain map and show resumable status', () => {
+test('single fist pans and opening a palm stops while a held point stays active', () => {
   const t = setup({ handUI: true }); prepareHand(t);
   t.run(`
-    const poseSample = pose => { cameraSession.io.frame({ pointer: { x: .1, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .1, pose }, handTime); handTime += 50; };
-    stableHand(.5, .5, .1); handSample(.3, .5, .1);
-    poseSample('fist');
+    const poseSample = (pose, x = .5) => { cameraSession.io.frame({ pointer: { x, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
+    const beforeSinglePan = { ...view };
+    poseSample('fist'); poseSample('fist'); poseSample('fist'); poseSample('fist', .4);
   `);
-  assert.equal(t.run('!gesture && !hand.grab && history.length === 0 && JSON.stringify(map) === originalMap'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /待機中/);
-  t.run(`for (let i = 0; i < 20; i++) {
-    cameraSession.io.frame({ pointer: { x: .1 + i * .02, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .1, pose: 'point' }, handTime);
-    handTime += 50;
-  }`);
-  assert.equal(t.run('hand.state === "neutral" && !handController.paused && !gesture && sel === "root" && history.length === 0 && JSON.stringify(map) === originalMap'), true);
-  assert.match(t.elements.get('#handHelp').textContent, /待機中/);
-  t.run(`for (let i = 0; i < 42; i++) poseSample('point');`);
-  assert.match(t.elements.get('#handHelp').textContent, /一時停止中/);
-  t.run(`stableHand(.1); stableHand(.1, .5, .1);`);
-  assert.equal(t.run('hand.state === "paused" && !gesture && !!cameraSession && JSON.stringify(map) === originalMap'), true);
-  t.run(`for (let i = 0; i < 42; i++) poseSample('point'); stableHand(.1);`);
-  assert.equal(t.run('hand.state === "ready" && sel === "root" && history.length === 0'), true);
+  assert.equal(t.run('view.x > beforeSinglePan.x && view.s === beforeSinglePan.s && history.length === 0 && JSON.stringify(map) === originalMap'), true);
+  assert.match(t.elements.get('#handHelp').textContent, /マップを移動中/);
+  t.run(`const afterSinglePan = { ...view }; for (let i = 0; i < 10; i++) poseSample(null, .2 + i * .03);`);
+  assert.equal(t.run('JSON.stringify(view) === JSON.stringify(afterSinglePan) && hand.state === "neutral"'), true);
+  t.run(`for (let i = 0; i < 60; i++) poseSample('point');`);
+  assert.equal(t.run('hand.state === "ready" && !handController.paused && history.length === 0'), true);
 });
 
 test('single deletion promotes direct children in place, preserves descendants and sibling order, and undoes atomically', () => {
@@ -909,11 +901,11 @@ test('thumb-down opens confirmation once, permits hand choice and fresh pinch co
   `);
   assert.equal(t.run(`deletion.id === 'a' && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`), true);
   t.run(`for (let i = 0; i < 20; i++) dialogSample('thumbDown');
-    for (let i = 0; i < 3; i++) dialogSample(); dialogSample(null, .8, .4);
+    for (let i = 0; i < 3; i++) dialogSample('point'); dialogSample('point', .8, .4);
     for (let i = 0; i < 14; i++) dialogSample(null, .1, .4);`);
   assert.equal(t.run(`deletion.scope === 'branch' && !!map.nodes.a && !gesture`), true);
-  t.run(`for (let i = 0; i < 3; i++) dialogSample(); dialogSample(null, .8, .6);
-    for (let i = 0; i < 6; i++) dialogSample(null, .8, .6); dialogSample(null, .8, .7);
+  t.run(`for (let i = 0; i < 3; i++) dialogSample('point'); dialogSample('point', .8, .6);
+    for (let i = 0; i < 6; i++) dialogSample('point', .8, .6); dialogSample('point', .8, .7);
     for (let i = 0; i < 14; i++) dialogSample(null, .1, .7);`);
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
@@ -925,7 +917,7 @@ test('thumb tilted left cancels the delete confirmation and tilted right confirm
     for (let i = 0; i < 14; i++) dialogSample('thumbDown');
     for (let i = 0; i < 14; i++) dialogSample('thumbLeft');`);
   assert.equal(t.run(`!deletion && !!map.nodes.b1 && history.length === 0`), true);
-  t.run(`for (let i = 0; i < 4; i++) dialogSample('fist'); for (let i = 0; i < 14; i++) dialogSample('thumbDown');
+  t.run(`for (let i = 0; i < 4; i++) dialogSample(null); for (let i = 0; i < 14; i++) dialogSample('thumbDown');
     for (let i = 0; i < 14; i++) dialogSample('thumbRight');`);
   assert.equal(t.run(`!deletion && !map.nodes.b1 && history.length === 1`), true);
 });
@@ -1582,3 +1574,19 @@ test('editing Tab skips unsupported speech and reaches Done; reediting an empty 
   assert.equal(app.run('document.activeElement === $("#nodeSpeechDone")'), true);
   assert.equal(app.run('!!map.nodes[editing.id]'), true);
 });
+
+for (const [key, x, y] of [['ArrowLeft', .6, .5], ['ArrowRight', .4, .5], ['ArrowUp', .5, .4], ['ArrowDown', .5, .6]]) {
+  test(`pointing ${key} follows the keyboard tree ordering from every branch node`, () => {
+    const { t, press } = radialBranch();
+    t.run('toggleHand(); let gestureTime = 0;');
+    for (const id of ['root', 'a', 'math', 'study', 'science']) {
+      const expected = press(key, id);
+      t.run(`sel = '${id}'; handController.cancel();
+        for (let i = 0; i < 3; i++) {
+          cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .1, pose: 'point' }, gestureTime); gestureTime += 50;
+        }
+        cameraSession.io.frame({ pointer: { x: ${x}, y: ${y} }, wrist: { x: .5, y: .7 }, ratio: .1, pose: 'point' }, gestureTime); gestureTime += 50;`);
+      assert.equal(t.run('sel'), expected, id);
+    }
+  });
+}

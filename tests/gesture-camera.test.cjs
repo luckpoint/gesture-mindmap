@@ -29,7 +29,7 @@ function setup(options = {}) {
     requestAnimationFrame: fn => { frames.set(++counter, fn); return counter; }, cancelAnimationFrame: id => frames.delete(id),
     setTimeout: fn => { timers.set(++counter, fn); return counter; }, clearTimeout: id => timers.delete(id),
     setInterval: fn => { intervals.set(++counter, fn); return counter; }, clearInterval: id => intervals.delete(id),
-    HandGestures: { TRACKING_TIMEOUT_MS, handFrame: () => ({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, identity: 'Left' }) },
+    HandGestures: { TRACKING_TIMEOUT_MS, handFrame: () => ({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose: 'point', identity: 'Left' }) },
   });
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/camera.js'), 'utf8'), context);

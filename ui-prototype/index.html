@@ -643,9 +643,9 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
 <script src="speech/controller.js?v=20261024-3"></script>
-<script src="gestures/controller.js?v=20261024-cam-panel-1"></script>
-<script src="gestures/debug.js?v=20261024-cam-panel-1"></script>
-<script src="gestures/camera.js?v=20261024-cam-panel-1"></script>
+<script src="gestures/controller.js?v=20261024-hand-controls-2"></script>
+<script src="gestures/debug.js?v=20261024-hand-controls-2"></script>
+<script src="gestures/camera.js?v=20261024-hand-controls-2"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -1803,11 +1803,8 @@ function toggleHand(inputMode = 'worker') {
       if (deletion) return;
       if (!map.nodes[sel]) select(map.root);
     },
-    navigate: direction => {
-      const origin = map.nodes[sel] ? sel : map.root;
-      const next = HandGestures.directionalTarget(relatives(origin), origin, direction);
-      if (next) { select(next); ensureVisible(map.nodes[next]); }
-    },
+    navigate: direction => navigate(Math.abs(direction.x) >= Math.abs(direction.y)
+      ? (direction.x < 0 ? 'ArrowLeft' : 'ArrowRight') : (direction.y < 0 ? 'ArrowUp' : 'ArrowDown')),
     pan: (dx, dy) => { animId++; view = clampView({ x: view.x + dx, y: view.y + dy, s: view.s }); applyView(); },
     zoom: factor => { animId++; zoomAt(W() / 2, H() / 2, view.s * factor); },
     bounds: () => { const r = vp.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.left + W(), bottom: Math.min(r.bottom, H()) }; },
@@ -1847,10 +1844,10 @@ function toggleHand(inputMode = 'worker') {
   session.start(inputMode, deviceId);
 }
 const HAND_COMMANDS = ['grab', 'add', 'delete', 'pan'];
-const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, pinchWaiting: HAND_COMMANDS, dragging: ['drop'], neutral: ['pause', 'pan'],
-  paused: ['resume'], panning: ['stop'], zooming: ['spread', 'oneHand'], dialog: ['dialogLeft', 'dialogRight'] };
+const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, pinchWaiting: HAND_COMMANDS, dragging: ['drop'], neutral: ['point', 'grab', 'add', 'delete', 'pan', 'zoom'],
+  paused: [], panning: ['stop'], zooming: ['spread', 'oneHand'], dialog: ['dialogLeft', 'dialogRight'] };
 const tipItems = tips => tips.map(tip => Object.assign(document.createElement('li'), { textContent: tr('hand.tip.' + tip) }));
-$('#handGuide').replaceChildren(...tipItems(['point', 'grab', 'add', 'delete', 'fist', 'pan', 'zoom', 'pause']));
+$('#handGuide').replaceChildren(...tipItems(['point', 'grab', 'add', 'delete', 'fist', 'pan', 'zoom']));
 $('#handGuideToggle').onclick = () => {
   const open = $('#handGuide').hidden;
   $('#handGuide').hidden = !open;
