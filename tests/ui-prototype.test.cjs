@@ -8,6 +8,26 @@ const { test } = require('node:test');
 // cover state transitions and import failures, not browser layout or real touch.
 const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+// Keeps maps in memory with the same contract as storage/library.js.
+function memoryLibrary() {
+  const docs = new Map(), clone = v => JSON.parse(JSON.stringify(v)), watchers = new Map();
+  let next = 0, clock = 1;
+  return {
+    docs, watchers, failSave: false, failCreate: false,
+    async create(map) { if (this.failCreate) throw new Error('作成できませんでした'); const id = 'm_' + ++next; docs.set(id, { map: clone(map), updatedAt: ++clock }); return id; },
+    async load(id) { return docs.has(id) ? clone(docs.get(id).map) : null; },
+    async save(id, map) {
+      if (this.failSave) throw new Error('保存できませんでした');
+      if (!docs.has(id)) throw new Error('マップが見つかりません');
+      docs.set(id, { map: clone(map), updatedAt: ++clock });
+      watchers.get(id)?.(clone(map));
+    },
+    async remove(id) { docs.delete(id); },
+    async list() { return [...docs].map(([id, d]) => ({ id, title: d.map.title, updatedAt: d.updatedAt })).sort((a, b) => b.updatedAt - a.updatedAt); },
+    watch(id, fn) { watchers.set(id, fn); return () => watchers.delete(id); },
+    watchList() { return () => {}; },
+  };
+}
 function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
   const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
   let timerId = 0;
@@ -20,6 +40,7 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
       offsetWidth: 120, offsetHeight: 50,
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
       append(...children) { for (const child of children) { this.children.push(child); child.isConnected = true; } },
+      replaceChildren(...children) { this.children = children; },
       prepend(child) { this.children.unshift(child); this.firstChild = child; child.isConnected = true; },
       remove() { this.isConnected = false; },
       handlers: {}, hidden: false, value: '', disabled: false,
@@ -55,7 +76,11 @@ function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
+  for (const file of ['library.js', 'locks.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
   vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
+  context.memoryLibrary = memoryLibrary;
+  vm.runInContext(`library = memoryLibrary(); library.docs.set('m_first', { map: sample(), updatedAt: 1 });
+    mapId = 'm_first'; mapClaim = { editable: true, release() { this.released = true; } };`, context);
   vm.runInContext(`
     ${renderUI ? '' : 'render = () => {};'} fitAll = () => {}; applyView = () => {};
     ${handUI ? '' : 'updateHand = () => {};'} const notices = []; toast = message => notices.push(message);
@@ -85,62 +110,80 @@ test('validation accepts an exported map and rejects malformed data', () => {
   }
 });
 
-test('invalid imports preserve map, selection, history, pending save and storage', () => {
-  const { run, storage, timers } = setup();
-  run(`localStorage.setItem(KEY, JSON.stringify(map));
-    const original = map; sel = 'a'; history.push('undo'); future.push('redo');
-    scheduleSave(); const pendingSave = saveTimer;
-  `);
-  const stored = storage.get('mindmap-proto:v1');
-  assert.throws(() => run(`{ const m = sample(); m.nodes.a.id = 'missing'; importMap(m); }`));
-  assert.equal(run(`map === original && sel === 'a' && history[0] === 'undo' && future[0] === 'redo' && saveTimer === pendingSave`), true);
-  assert.equal(storage.get('mindmap-proto:v1'), stored);
-  assert.equal(timers.size, 1);
-});
-
-test('a failed save preserves the working map and its pending save', () => {
+test('invalid imports add no map and keep the working map, history and pending save', async () => {
   const { run, timers } = setup();
-  run(`const original = map; scheduleSave();
-    localStorage.setItem = () => { throw new Error('quota exceeded'); };
-  `);
-  assert.throws(() => run('importMap(sample())'), /quota exceeded/);
-  assert.equal(run('map === original'), true);
+  run(`const original = map; sel = 'a'; history.push('undo'); future.push('redo'); scheduleSave();`);
+  await assert.rejects(run(`{ const m = sample(); m.nodes.a.id = 'missing'; importMap(m); }`), /形式/);
+  assert.equal(run(`map === original && sel === 'a' && history[0] === 'undo' && future[0] === 'redo' && library.docs.size === 1`), true);
   assert.equal(timers.size, 1);
 });
 
-test('render failure rolls back map, selection, history, view and saved data', () => {
-  const { run, storage, timers } = setup();
-  run(`const original = map; sel = 'a'; history.push('undo'); future.push('redo');
-    localStorage.setItem(KEY, JSON.stringify(map));
-    view = { x: 12, y: 34, s: 1.5 };
-    render = () => { render = () => {}; throw new Error('render failed'); };
-  `);
-  const stored = storage.get('mindmap-proto:v1');
-  assert.throws(() => run(`{ const m = sample(); m.title = 'imported'; importMap(m); }`), /render failed/);
-  assert.equal(run(`map === original && sel === 'a' && history[0] === 'undo' && future[0] === 'redo' && view.x === 12 && view.y === 34 && view.s === 1.5`), true);
-  assert.equal(storage.get('mindmap-proto:v1'), stored);
-  assert.equal(timers.size, 1);
+test('a failed save keeps the working map open and adds no map', async () => {
+  const { run } = setup();
+  run(`const original = map; commit(() => { map.nodes.a.text = '変更'; }); library.failSave = true;`);
+  await assert.rejects(run('importMap(sample())'), /保存できませんでした/);
+  assert.equal(run(`map === original && mapId === 'm_first' && library.docs.size === 1 && $('#save').dataset.state === 'error' && history.length === 1`), true);
 });
 
-test('valid import saves before rendering and resets selection and history', () => {
-  const { run, storage, timers } = setup();
-  run(`history.push('undo'); future.push('redo'); scheduleSave();
-    render = () => { if (JSON.parse(localStorage.getItem(KEY)).title !== 'imported') throw new Error('not saved'); };
-    const imported = sample(); imported.title = 'imported'; importMap(imported);
-  `);
-  assert.equal(run('map === imported && sel === imported.root && history.length === 0 && future.length === 0'), true);
-  assert.equal(JSON.parse(storage.get('mindmap-proto:v1')).title, 'imported');
-  assert.equal(timers.size, 0);
+test('a failed import write reopens the original map and adds nothing', async () => {
+  const { run } = setup();
+  run(`library.failCreate = true;`);
+  await assert.rejects(run('importMap(sample())'), /作成できませんでした/);
+  assert.equal(run(`mapId === 'm_first' && library.docs.size === 1 && mapClaim.editable`), true);
 });
 
-test('import does not replace a map during an active operation', () => {
+test('valid import adds a new map, opens it and keeps the original', async () => {
+  const { run, storage } = setup();
+  run(`commit(() => { map.nodes.a.text = '保存前'; }); const firstClaim = mapClaim;
+    const imported = sample(); imported.title = 'imported';`);
+  await run('importMap(imported)');
+  assert.equal(run(`map.title === 'imported' && mapId !== 'm_first' && sel === map.root && history.length === 0 && future.length === 0 && firstClaim.released`), true);
+  assert.equal(run(`library.docs.size === 2 && library.docs.get('m_first').map.nodes.a.text === '保存前'`), true);
+  assert.equal(storage.get('mindmap:last'), run('mapId'));
+});
+
+test('import and switching do not replace a map during an active operation', async () => {
   for (const state of ['editing', 'gesture', 'mode']) {
-    const { run, storage } = setup();
+    const { run } = setup();
     run(`const original = map; ${state} = {};`);
-    assert.throws(() => run('importMap(sample())'), /操作を終えて/);
-    assert.equal(run('map === original'), true);
-    assert.equal(storage.size, 0);
+    await assert.rejects(run('importMap(sample())'), /操作を終えて/);
+    await assert.rejects(run(`library.create(sample()).then(id => switchMap(id))`), /操作を終えて/);
+    assert.equal(run(`map === original && mapId === 'm_first' && mapClaim.editable`), true);
   }
+});
+
+test('switching saves first, restores each view, clears history and ends a waiting instruction', async () => {
+  const t = setup();
+  t.run(`commit(() => { map.nodes.a.text = '切替前'; }); view = { x: 11, y: 22, s: 1.5 };
+    instruction = { state: 'awaiting_confirmation', text: '' }; $('#instructionDialog').open = true;`);
+  const second = await t.run('library.create(blankMap())');
+  await t.run(`switchMap('${second}')`);
+  assert.equal(t.run(`library.docs.get('m_first').map.nodes.a.text === '切替前' && mapId === '${second}' && history.length === 0 && $('#undo').disabled && instruction === null`), true);
+  assert.match(t.elements.get('#instructionToast').textContent, /マップが変わった/);
+  assert.equal(JSON.parse(t.storage.get('mindmap:view:m_first')).s, 1.5);
+  await t.run(`switchMap('m_first')`);
+  assert.equal(t.run(`mapId === 'm_first' && view.x === 11 && view.y === 22 && view.s === 1.5 && map.nodes.a.text === '切替前'`), true);
+});
+
+test('deleting the open map opens the newest remaining one; the last map becomes the sample', async () => {
+  const t = setup();
+  const other = await t.run(`library.create(blankMap())`);
+  await t.run(`deleteMap('m_first')`);
+  assert.equal(t.run(`mapId === '${other}' && !library.docs.has('m_first')`), true);
+  await t.run(`deleteMap('${other}')`);
+  assert.equal(t.run(`library.docs.size === 1 && map.title === sample().title && mapId !== '${other}'`), true);
+});
+
+test('read-only tabs cannot edit, undo or instruct, and follow saves from the editing tab', async () => {
+  const t = setup();
+  t.run(`commit(() => { map.nodes.a.text = '編集'; }); mapClaim = { editable: false, release() {} }; stopWatch = library.watch(mapId, showRemote); updateAccess();
+    const before = JSON.stringify(map);`);
+  t.run(`startEdit('a'); addChildAndEdit('a'); removeNode('a'); startReparent('a'); undo(); commit(() => { map.nodes.a.text = 'x'; });`);
+  assert.equal(t.run(`JSON.stringify(map) === before && !editing && !deletion && !mode && history.length === 1 && $('#title').readOnly && $('#undo').disabled`), true);
+  t.run(`$('#promptInput').value = '変えて';`); await t.run('sendInstruction()');
+  assert.match(t.elements.get('#instructionToast').textContent, /別のタブで編集中/);
+  t.run(`{ const m = sample(); m.nodes.a.text = '別のタブ'; library.watchers.get(mapId)(m); }`);
+  assert.equal(t.run(`map.nodes.a.text === '別のタブ'`), true);
 });
 
 test('file handler rejects broken JSON and ignores an older async read', async () => {
@@ -193,7 +236,7 @@ test('coincident touch points do not produce nonfinite view coordinates', () => 
   assert.equal(run('Number.isFinite(view.x) && Number.isFinite(view.y) && Number.isFinite(view.s)'), true);
 });
 
-test('tree metadata is reused for movement and refreshed for structural changes and undo', () => {
+test('tree metadata is reused for movement and refreshed for structural changes and undo', async () => {
   const { run } = setup();
   assert.equal(run(`branchColor('a1') === branchColor('a') && depth('a1') === 2`), true);
   run(`const initialTree = treeInfo(); map.nodes.a.x += 10;`);
@@ -206,7 +249,7 @@ test('tree metadata is reused for movement and refreshed for structural changes 
   assert.equal(run(`depth('a1') === 2 && branchColor('a1') !== branchColor('b')`), true);
   run(`removeNode('b'); chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(run(`kids(map.root).map(n => n.id).join(',') === 'a,c' && branchColor('c1') === 'var(--branch-2)'`), true);
-  run(`importMap(sample());`);
+  await run(`importMap(sample())`);
   assert.equal(run(`kids(map.root).length === 3 && branchColor('c1') === 'var(--branch-3)'`), true);
 });
 
@@ -373,7 +416,7 @@ test('a bad later instruction leaves the map and history intact', async () => {
 test('instructions reject edits, undo cycles, imports, and unfinished gestures while selection changes are allowed', async () => {
   for (const action of ["commit(() => { map.nodes.a.text = '変更'; });", "commit(() => { map.nodes.a.text = '変更'; }); undo();", "importMap(sample());", "gesture = { type: 'node' };", "editing = { id: 'a' };"]) {
     const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
-    t.run(action); request.finish(); await request.pending;
+    await t.run(action); request.finish(); await request.pending;
     assert.equal(t.run("map.nodes.b.text"), '図書館に行く', action);
     assert.match(t.elements.get('#instructionToast').textContent, /マップが変わった/);
   }
@@ -550,11 +593,12 @@ for (const cause of ['loss', 'stop', 'undo', 'pointer']) test(`${cause} cancels 
   assert.equal(t.run('!!gesture?.hand'), false);
 });
 
-test('a pending save excludes pinch preview and loss requires reopening before another grab', () => {
+test('a pending save excludes pinch preview and loss requires reopening before another grab', async () => {
   const t = setup(); prepareHand(t);
   t.run(`sel = 'a'; scheduleSave(); stableHand(.5, .5, .1); handSample(.4, .5, .1);`);
   [...t.timers.values()].at(-1)();
-  assert.equal(t.storage.get('mindmap-proto:v1'), t.run('originalMap'));
+  await t.run('flushSave()');
+  assert.equal(JSON.stringify(t.run(`library.docs.get(mapId).map`)), t.run('originalMap'));
   t.run(`cameraSession.io.frame(null, handTime); handTime += 50; stableHand(.1, .5, .1);`);
   assert.equal(t.run('!gesture && !hand.grab && JSON.stringify(map) === originalMap'), true);
   t.run('stableHand(.1); stableHand(.1, .5, .1);');
@@ -642,7 +686,7 @@ test('branch deletion removes all descendants only after confirmation; cancellat
   t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === before'), true);
 });
 
-test('leaf deletion, root protection, stale confirmation and fixed target', () => {
+test('leaf deletion, root protection, stale confirmation and fixed target', async () => {
   const t = setup();
   t.run(`removeNode('root');`); assert.equal(t.run('deletion'), null);
   t.run(`removeNode('a1'); sel = 'b'; confirmDelete();`);
@@ -652,7 +696,7 @@ test('leaf deletion, root protection, stale confirmation and fixed target', () =
   // A queued native close event from the old dialog must not dismiss the refreshed one.
   t.elements.get('#deleteDialog').handlers.close();
   assert.equal(t.run(`!!deletion && $('#deleteDialog').open`), true);
-  assert.throws(() => t.run('importMap(sample());'), /操作を終えて/);
+  await assert.rejects(t.run('importMap(sample())'), /操作を終えて/);
   t.run(`closeDelete();`);
 });
 
@@ -816,7 +860,8 @@ test('adoption after a storage await rejects edits, undo, import, deletion and a
       imageStore.put = () => new Promise(resolve=>saved=resolve);
       const target={nodeId:'a1',mapSessionId,revision};`);
     const pending=t.run(`attachNodeImage(new Blob(['test']),target,'説明')`);
-    t.run(`${change}; const historyAfterChange=history.length; saved({assetId:'sha256:'+'a'.repeat(64),width:1,height:1});`);
+    await t.run(change);
+    t.run(`var historyAfterChange=history.length; saved({assetId:'sha256:'+'a'.repeat(64),width:1,height:1});`);
     await assert.rejects(pending,/保存中/);
     assert.equal(t.run(`!map.nodes.a1?.image && history.length === historyAfterChange`),true);
   }
@@ -899,8 +944,8 @@ test('bundle import retries a missing image even when node and asset IDs are unc
   assert.equal(t.run(`els.get('a').imageState.failed`),true);
   t.run(`const brokenImageState=els.get('a').imageState;
     imageStore.acquire=async()=>{imageReads++;return 'blob:restored';};
-    importMap(serializeMap());`);
-  await Promise.resolve();
+    `);
+  await t.run('importMap(serializeMap())'); await Promise.resolve();
   assert.equal(t.run(`els.get('a').imageState !== brokenImageState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:restored' && releasedImages[0] === restoredImage.assetId && imageReads === 2`),true);
 });
 
@@ -912,9 +957,8 @@ test('bundle restoration ignores a late failure from an earlier image read with 
     imageStore.acquire=()=>new Promise((resolve,reject)=>{failOldRead=reject;});
     map.nodes.a.image=restoredImage; render();
     const pendingState=els.get('a').imageState;
-    imageStore.acquire=async()=> 'blob:repaired';
-    importMap(serializeMap());`);
-  await Promise.resolve();
+    imageStore.acquire=async()=> 'blob:repaired';`);
+  await t.run('importMap(serializeMap())'); await Promise.resolve();
   t.run(`failOldRead(new Error('old missing bytes'));`);
   await Promise.resolve();
   assert.equal(t.run(`els.get('a').imageState !== pendingState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:repaired' && releases.length === 1`),true);

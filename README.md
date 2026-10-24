@@ -1,12 +1,15 @@
 # マインドマップ試作
 
-Node.js 22以上と **Codex CLI 0.163.0** を使います。追加のnpm依存はありません。
+Node.js 22以上と **Codex CLI 0.163.0** を使います。マップの保存にRxDBを使うため、最初に `npm install && npm run setup` で `ui-prototype/vendor/rxdb.js` を生成します（静的配信のときも同梱してください）。
 
 ```sh
 codex --version
 codex login
+npm install && npm run setup
 npm start
 ```
+
+端末内に複数のマップを持てます。左上の「マップ」から作成・切り替え・削除ができ、JSONの読み込みは新しいマップとして追加します。同じマップを別のタブで開くと、そのタブは閲覧専用になります。仕様は [複数マップとRxDB＋OPFS保存](docs/multi-map-storage-design.md) にあります。
 
 表示された `http://127.0.0.1:8787` をMacのブラウザで開きます。別ポートは `PORT=8790 npm start` で指定できます。既存のCLIログインを使い、認証情報をブラウザへ渡しません。CLIの版が異なる場合や起動・認証に失敗した場合も、通常のマップ編集・JSON書き出しは使えます。静的ファイルだけを開いた場合、Codexへの指示は動きません。
 

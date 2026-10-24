@@ -192,6 +192,13 @@ button { font: inherit; color: inherit; }
   display: grid; padding: 6px; min-width: 200px;
 }
 .menu__list .btn { justify-content: flex-start; }
+.maps { left: 0; right: auto; width: min(340px, calc(100vw - 24px)); max-height: 60dvh; overflow: auto; }
+.maps__list { list-style: none; margin: 4px 0 0; padding: 4px 0 0; border-top: 1px solid var(--color-rule); display: grid; gap: 2px; }
+.maps__row { display: flex; align-items: center; gap: 2px; }
+.maps__open { flex: 1; min-width: 0; flex-direction: column; align-items: flex-start !important; gap: 0; padding: 6px 12px; text-align: left; white-space: normal; }
+.maps__open[aria-current="true"] { background: var(--color-accent-soft); }
+.maps__name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maps__meta { color: var(--color-ink-2); font-size: var(--text-xs); font-weight: 400; }
 
 .dock {
   position: fixed; left: calc((100% - var(--side)) / 2); bottom: max(var(--space-md), env(safe-area-inset-bottom));
@@ -334,6 +341,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
   <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/></symbol>
   <symbol id="i-image-child" viewBox="0 0 24 24"><rect x="3" y="7" width="14" height="12" rx="2"/><path d="m17 16-4-4-6 7M20 2v6M17 5h6"/></symbol>
+  <symbol id="i-maps" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol>
   <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v4h4"/></symbol>
   <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/></symbol>
   <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
@@ -352,9 +360,16 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 
 <header class="topbar">
   <div class="cluster panel">
+    <div class="menu">
+      <button class="btn" id="mapsBtn" aria-expanded="false" aria-controls="mapsMenu" disabled><svg class="i"><use href="#i-maps"/></svg><span class="btn__label--wide">マップ</span></button>
+      <div class="menu__list maps panel" id="mapsMenu" hidden>
+        <button class="btn" id="newMapBtn"><svg class="i"><use href="#i-plus"/></svg>新しいマップ</button>
+        <ul class="maps__list" id="mapsList" aria-label="マップの一覧"></ul>
+      </div>
+    </div>
     <input class="title" id="title" aria-label="マップの名前" autocomplete="off" spellcheck="false">
-    <div class="save" id="save" data-state="saved" role="status">
-      <span class="save__dot"></span><span class="save__text" id="saveText">保存済み</span>
+    <div class="save" id="save" data-state="saving" role="status">
+      <span class="save__dot"></span><span class="save__text" id="saveText">読み込み中…</span>
     </div>
     <button class="btn btn--danger" id="saveExport" hidden>書き出す</button>
   </div>
@@ -416,6 +431,15 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
   <div class="delete-dialog__actions">
     <button class="btn" id="deleteCancel" autofocus>キャンセル</button>
     <button class="btn btn--danger" id="deleteConfirm" disabled>削除する</button>
+  </div>
+</dialog>
+
+<dialog class="delete-dialog" id="mapDeleteDialog" aria-labelledby="mapDeleteTitle">
+  <h2 id="mapDeleteTitle"></h2>
+  <p>元に戻せません。必要なら先に書き出してください。</p>
+  <div class="delete-dialog__actions">
+    <button class="btn" id="mapDeleteCancel" autofocus>キャンセル</button>
+    <button class="btn btn--danger" id="mapDeleteConfirm">削除する</button>
   </div>
 </dialog>
 
@@ -513,8 +537,10 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="images/upload.js"></script>
 <script src="instructions/operations.js"></script>
 <script src="instructions/client.js"></script>
+<script src="storage/library.js"></script>
+<script src="storage/locks.js"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden', LAST_KEY = 'mindmap:last', VIEW_KEY = 'mindmap:view:';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
@@ -522,7 +548,8 @@ const els = new Map();
 const W = () => vp.clientWidth || innerWidth;
 const H = () => { const top = $($('#prompt').hidden ? '.dock' : '#prompt').getBoundingClientRect().top; return top > 150 ? top : innerHeight - 200; };
 
-let map = load() || sample();
+let map = sample();
+let library = null, mapId = null, mapClaim = { editable: false, release() {} }, stopWatch = null, switching = false;
 let view = { x: 0, y: 0, s: 1 };
 let sel = map.root, editing = null, mode = null, hand = null, gesture = null;
 let deletion = null;
@@ -531,7 +558,7 @@ let revision = 0, historyToken = 0, mapSessionId = InstructionTransport.id('map_
 let instruction = null, instructionTimer, instructionUndoButton = null, draftVersion = 0;
 const instructionClient = new InstructionTransport.Client();
 const imageStore = new NodeImageStore.Store();
-let saveTimer, toastTimer, hintTimer;
+let saveTimer, saveDirty = false, saveWrite = null, toastTimer, hintTimer, viewTimer;
 
 /* ---------- model ---------- */
 function sample() {
@@ -545,8 +572,12 @@ function sample() {
   return { version: 2, title: '週末のマップ', root: 'root', seq: list.length, nodes };
 }
 function valid(m) { return InstructionOperations.valid(m); }
+function blankMap() {
+  return { version: 2, title: '新しいマップ', root: 'root', seq: 0, nodes: { root: { id: 'root', text: '中心のテーマ', parent: null, x: 0, y: 0, order: 0 } } };
+}
 function serializeMap() { return InstructionOperations.serialize(map); }
-function load() { try { const m = JSON.parse(localStorage.getItem(KEY)); return valid(m) ? NodeImageFormat.migrate(m) : null; } catch { return null; } }
+const readOnly = () => !mapClaim.editable;
+function refuseReadOnly() { if (readOnly()) toast('別のタブで編集中です'); return readOnly(); }
 let treeCache = null;
 function invalidateTree() { treeCache = null; }
 function treeInfo() {
@@ -596,6 +627,7 @@ function pushHistory(snapshot, target = history) {
   if (target.length > 200) target.splice(0, target.length - 200);
 }
 function commit(fn) {
+  if (refuseReadOnly()) return;
   interruptHand();
   pushHistory(JSON.stringify(map));
   future = [];
@@ -604,15 +636,23 @@ function commit(fn) {
 }
 function changed() {
   revision++; historyToken++;
+  endStaleInstruction();
+  render(); scheduleSave(); updateAccess();
+}
+function endStaleInstruction() {
   if (instructionUndoButton) instructionUndoButton.disabled = true;
   if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
   if (instruction?.state === 'awaiting_input' || instruction?.state === 'answering') {
     endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel();
   }
-  render(); scheduleSave(); $('#undo').disabled = !history.length; $('#redo').disabled = !future.length;
+}
+function updateAccess() {
+  $('#title').readOnly = readOnly();
+  $('#undo').disabled = readOnly() || !history.length; $('#redo').disabled = readOnly() || !future.length;
 }
 function restore(from, to) {
   if (deletion) { closeDelete(); return; }
+  if (refuseReadOnly()) return;
   if (gesture?.hand) { interruptHand(); return; }
   if (!from.length) return;
   if (editing) finishEdit();
@@ -624,18 +664,166 @@ function restore(from, to) {
 }
 const undo = () => restore(history, future), redo = () => restore(future, history);
 function scheduleSave() {
-  setSave('saving');
+  saveDirty = true; setSave('saving');
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { if (forceSaveFail) throw 0; localStorage.setItem(KEY, gesture?.hand ? gesture.pre : JSON.stringify(map)); setSave('saved'); }
-    catch { setSave('error'); }
-  }, 500);
+  saveTimer = setTimeout(() => { flushSave().catch(() => {}); }, 500);
+}
+async function flushSave() {
+  clearTimeout(saveTimer); saveTimer = null;
+  while (saveWrite) await saveWrite.catch(() => {});
+  if (!saveDirty) return;
+  saveDirty = false;
+  // A drag in progress is not a committed state; store the map from before it.
+  const id = mapId, snapshot = JSON.parse(gesture?.pre ?? JSON.stringify(map));
+  saveWrite = (async () => {
+    if (!library) throw new Error('このブラウザでは保存できません');
+    if (forceSaveFail) throw new Error('保存できませんでした');
+    await library.save(id, snapshot);
+  })();
+  try { await saveWrite; if (!saveDirty) setSave('saved'); }
+  catch (error) { saveDirty = true; setSave('error'); throw error; }
+  finally { saveWrite = null; }
 }
 function setSave(state) {
+  if (state === 'saved' && readOnly()) state = 'readonly';
   $('#save').dataset.state = state;
-  $('#saveText').textContent = { saving: '保存中…', saved: '保存済み', error: '保存できませんでした' }[state];
+  $('#saveText').textContent = { saving: '保存中…', saved: '保存済み', error: '保存できませんでした', readonly: '別のタブで編集中です' }[state];
   $('#saveExport').hidden = state !== 'error';
   resizeNotices();
+}
+
+/* ---------- maps ---------- */
+function storeView() {
+  clearTimeout(viewTimer);
+  if (mapId) try { localStorage.setItem(VIEW_KEY + mapId, JSON.stringify(view)); } catch {}
+}
+function storedView(id) {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY + id));
+    if ([v.x, v.y, v.s].every(Number.isFinite)) return clampView({ x: v.x, y: v.y, s: clamp(v.s, ZMIN, ZMAX) }, false);
+  } catch {}
+  return null;
+}
+function showMap(id, m, claim) {
+  stopWatch?.(); stopWatch = null;
+  clearTimeout(saveTimer); saveDirty = false;
+  map = m; mapId = id; mapClaim = claim; sel = map.root; history = []; future = []; invalidateTree();
+  mapSessionId = InstructionTransport.id('map_'); revision++; historyToken++;
+  endStaleInstruction();
+  try { localStorage.setItem(LAST_KEY, id); } catch {}
+  if (!claim.editable) stopWatch = library.watch(id, showRemote);
+  $('#title').value = map.title;
+  // A bundle can repair the same asset ID while an earlier read/decode is
+  // still pending. Drop all old states so late failures cannot hide it.
+  for (const el of els.values()) clearNodeImage(el);
+  render();
+  const stored = storedView(id);
+  if (stored) { animId++; view = stored; applyView(); } else fitAll();
+  setSave('saved'); updateAccess(); renderMapList();
+}
+function showRemote(m) {
+  if (!readOnly() || switching) return;
+  if (!m) { mapClaim.release(); mapClaim = { editable: false, release() {} }; toast('このマップは別のタブで削除されました'); void openFallback().catch(failOpen); return; }
+  map = m; invalidateTree(); revision++;
+  if (!map.nodes[sel]) sel = null;
+  $('#title').value = map.title;
+  render();
+}
+async function grantEdit(id) {
+  const m = await library.load(id);
+  if (id !== mapId || !mapClaim.editable || switching) return;
+  stopWatch?.(); stopWatch = null;
+  if (m) { map = m; invalidateTree(); revision++; if (!map.nodes[sel]) sel = map.root; $('#title').value = map.title; render(); }
+  setSave('saved'); updateAccess(); renderMapList();
+  toast('編集できるようになりました');
+}
+async function openMap(id) {
+  const claim = await MapLocks.claim(id, { granted: () => { void grantEdit(id); } });
+  try {
+    const m = await library.load(id);
+    if (!m) throw new Error('マップを読み込めません');
+    showMap(id, m, claim);
+  } catch (error) { claim.release(); throw error; }
+}
+async function openFallback() {
+  const [first] = await library.list();
+  await openMap(first?.id ?? await library.create(sample()));
+}
+function failOpen(error) { console.error(error); toast('マップを開けませんでした'); }
+function busyOperation() { return !!(editing || gesture || mode || deletion || hand?.grab); }
+async function leaveMap() {
+  if (busyOperation()) throw new Error('操作を終えてから切り替えてください');
+  const base = revision;
+  if (!readOnly()) await flushSave();
+  if (saveDirty || revision !== base) throw new Error('マップが変わったため切り替えませんでした');
+  storeView(); stopWatch?.(); stopWatch = null;
+  mapClaim.release(); mapClaim = { editable: false, release() {} };
+}
+async function switchMap(target) {
+  if (!library) throw new Error('このブラウザでは保存できません');
+  if (switching) throw new Error('切り替え中です');
+  switching = true;
+  const previous = mapId;
+  try {
+    await leaveMap();
+    try { await openMap(typeof target === 'function' ? await target() : target); }
+    catch (error) { await openMap(previous).catch(failOpen); throw error; }
+  } finally { switching = false; }
+}
+async function deleteMap(id) {
+  if (id !== mapId) {
+    const claim = await MapLocks.claim(id, { wait: false });
+    if (!claim.editable) throw new Error('別のタブで編集中のマップは削除できません');
+    try { await library.remove(id); } finally { claim.release(); }
+  } else {
+    if (readOnly()) throw new Error('別のタブで編集中のマップは削除できません');
+    if (busyOperation()) throw new Error('操作を終えてから削除してください');
+    if (switching) throw new Error('切り替え中です');
+    switching = true;
+    try {
+      const dirty = saveDirty; clearTimeout(saveTimer); saveDirty = false;
+      while (saveWrite) await saveWrite.catch(() => {});
+      try { await library.remove(id); } catch (error) { if (dirty) scheduleSave(); throw error; }
+      mapClaim.release(); mapClaim = { editable: false, release() {} };
+      await openFallback().catch(failOpen);
+    } finally { switching = false; }
+  }
+  try { localStorage.removeItem(VIEW_KEY + id); } catch {}
+}
+let mapList = [], busyMaps = new Set();
+const editedElsewhere = id => busyMaps.has(id) && (id !== mapId || readOnly());
+function renderMapList() {
+  const list = $('#mapsList');
+  const when = t => new Date(t).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  list.replaceChildren(...mapList.map(m => {
+    const row = Object.assign(document.createElement('li'), { className: 'maps__row' });
+    const open = Object.assign(document.createElement('button'), { className: 'btn maps__open' });
+    open.dataset.open = m.id; open.setAttribute('aria-current', m.id === mapId);
+    const name = Object.assign(document.createElement('span'), { className: 'maps__name', textContent: m.title || '無題のマップ' });
+    const meta = Object.assign(document.createElement('span'), { className: 'maps__meta', textContent: '更新 ' + when(m.updatedAt) + (editedElsewhere(m.id) ? '・編集中（別のタブ）' : '') });
+    open.append(name, meta);
+    const remove = Object.assign(document.createElement('button'), { className: 'btn btn--icon btn--danger', innerHTML: '<svg class="i"><use href="#i-trash"/></svg>' });
+    remove.dataset.remove = m.id; remove.disabled = editedElsewhere(m.id);
+    remove.setAttribute('aria-label', `「${m.title || '無題のマップ'}」を削除`);
+    row.append(open, remove);
+    return row;
+  }));
+}
+async function refreshBusyMaps() {
+  try { busyMaps = await MapLocks.busy(); } catch { busyMaps = new Set(); }
+  renderMapList();
+}
+function toggleMapsMenu(open) {
+  $('#mapsMenu').hidden = !open;
+  $('#mapsBtn').setAttribute('aria-expanded', open);
+  if (open) void refreshBusyMaps();
+}
+let mapDeleting = null;
+function confirmMapDelete(id) {
+  const m = mapList.find(item => item.id === id); if (!m) return;
+  mapDeleting = id;
+  $('#mapDeleteTitle').textContent = `「${m.title || '無題のマップ'}」を削除しますか？`;
+  $('#mapDeleteDialog').showModal();
 }
 
 /* ---------- view ---------- */
@@ -647,6 +835,7 @@ function applyView() {
   vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
   $('#zoomLabel').textContent = Math.round(view.s * 100) + '%';
   positionMenu();
+  clearTimeout(viewTimer); viewTimer = setTimeout(storeView, 500);
 }
 function clampView(v = view, hint = true) {
   const cx = (W() / 2 - v.x) / v.s, cy = (innerHeight / 2 - v.y) / v.s;
@@ -760,7 +949,7 @@ function renderNodeImage(el, ref) {
 async function attachNodeImage(blob, target, alt) {
   // The caller captures the target before any slow decode, resize or storage step.
   const { nodeId, child, mapSessionId: session, revision: baseRevision } = target;
-  const conflict = () => session !== mapSessionId || baseRevision !== revision || !Object.hasOwn(map.nodes, nodeId) || editing || gesture || mode || deletion || hand?.grab;
+  const conflict = () => readOnly() || session !== mapSessionId || baseRevision !== revision || !Object.hasOwn(map.nodes, nodeId) || editing || gesture || mode || deletion || hand?.grab;
   if (conflict()) throw new Error('マップが変わったか操作中のため、画像を追加できません');
   if (typeof alt !== 'string' || alt.length > 4000) throw new Error('画像の説明は4000文字までです');
   const asset = await imageStore.put(blob);
@@ -775,6 +964,7 @@ async function attachNodeImage(blob, target, alt) {
 }
 let imagePick = null;
 function pickImage(nodeId, child) {
+  if (refuseReadOnly()) return;
   imagePick = { nodeId, child };
   $('#imageInput').click();
 }
@@ -889,6 +1079,7 @@ function positionMenu() {
 /* ---------- selection & editing ---------- */
 function select(id) { sel = id; render(); }
 function startEdit(id, isNew = false) {
+  if (refuseReadOnly()) return;
   interruptHand();
   editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
   sel = id;
@@ -926,6 +1117,7 @@ function cancelEdit() {
   finishEdit();
 }
 function addChildAndEdit(pid) {
+  if (refuseReadOnly()) return;
   if (editing) finishEdit();
   if (!map.nodes[pid]) pid = map.root;
   let id;
@@ -940,6 +1132,7 @@ function addSiblingAndEdit() {
 function removeNode(id) {
   if (!map.nodes[id]) return;
   if (id === map.root) { toast('中心ノードは削除できません'); return; }
+  if (refuseReadOnly()) return;
   interruptHand();
   if (editing) finishEdit();
   if (!map.nodes[id]) return;
@@ -1039,6 +1232,7 @@ function nudge(key) {
 
 /* ---------- reparent ---------- */
 function startReparent(id) {
+  if (refuseReadOnly()) return;
   interruptHand();
   if (id === map.root) return;
   mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
@@ -1139,6 +1333,7 @@ async function sendInstruction(retryText) {
   if (instruction) return;
   const text = typeof retryText === 'string' ? retryText : $('#promptInput').value;
   if (!text.trim()) return;
+  if (readOnly()) { instructionToast('別のタブで編集中のため、このタブでは指示できません', [], false, true); return; }
   if (deletion || $('#instructionDialog').open) return;
   if (editing) finishEdit();
   interruptHand();
@@ -1254,7 +1449,7 @@ function toggleHand(inputMode = 'worker') {
   if (cameraSession) { stopHand(); return; }
   handMode = inputMode;
   handController = new HandGestures.HandController({
-    blocked: () => instruction?.state === 'awaiting_confirmation' || !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
+    blocked: () => readOnly() || instruction?.state === 'awaiting_confirmation' || !!editing || !!mode || pts.size > 0 || !!(gesture && !gesture.hand) || (!deletion && !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
     dialog: () => !!deletion,
     dialogNavigate: navigateDelete,
     dialogSelect: selectDelete,
@@ -1407,11 +1602,8 @@ vp.addEventListener('pointerdown', e => {
     else setCandidate(id);
     return;
   }
-  if (id) {
-    beginNodeDrag(id, e.clientX, e.clientY);
-  } else {
-    gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
-  }
+  if (id && !readOnly()) beginNodeDrag(id, e.clientX, e.clientY);
+  else gesture = { type: 'pan', id: id ?? null, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
 });
 vp.addEventListener('pointermove', e => {
   if (mode && e.pointerType === 'mouse') setCandidate(e.target.closest('.node')?.dataset.id || null);
@@ -1448,7 +1640,7 @@ function endPointer(e) {
   if (g.type === 'pinch') { gesture = null; return; }
   if (g.type === 'node') { finishNodeDrag(g); return; }
   gesture = null;
-  if (g.type === 'pan' && !g.moved) select(null);
+  if (g.type === 'pan' && !g.moved) select(g.id);
   else render();
   updateHand();
 }
@@ -1500,6 +1692,7 @@ addEventListener('keydown', e => {
     if (gesture?.hand) { interruptHand(); return; }
     if (mode) endReparent();
     else if (!$('#fileMenu').hidden) toggleFileMenu(false);
+    else if (!$('#mapsMenu').hidden) toggleMapsMenu(false);
     else if (document.activeElement === vp) $('#addChild').focus();
     else vp.focus();
     return;
@@ -1598,55 +1791,9 @@ $('#fileBtn').onclick = () => toggleFileMenu($('#fileMenu').hidden);
 $('#exportBtn').onclick = exportJson;
 $('#saveExport').onclick = exportJson;
 $('#importBtn').onclick = () => { toggleFileMenu(false); $('#fileInput').click(); };
-function importMap(m) {
+async function importMap(m) {
   if (!valid(m) || m.version !== 2) throw new Error('マップの形式が正しくありません');
-  if (editing || gesture || mode || deletion) throw new Error('操作を終えてから読み込んでください');
-  const previous = { map, sel, history, future, view: { ...view }, stored: localStorage.getItem(KEY) };
-  // Save before publishing. A failed write must not replace the working map.
-  if (forceSaveFail) throw new Error('保存できませんでした');
-  localStorage.setItem(KEY, JSON.stringify(m));
-  clearTimeout(saveTimer);
-  try {
-    map = m;
-    sel = map.root;
-    history = [];
-    future = [];
-    $('#title').value = map.title;
-    // A bundle can repair the same asset ID while an earlier read/decode is
-    // still pending. Drop all old states so late failures cannot hide it.
-    for (const el of els.values()) clearNodeImage(el);
-    render();
-    fitAll();
-    $('#undo').disabled = true;
-    $('#redo').disabled = true;
-    setSave('saved');
-    mapSessionId = InstructionTransport.id('map_'); revision++; historyToken++;
-    if (instructionUndoButton) instructionUndoButton.disabled = true;
-    if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', 'マップが変わったため反映しませんでした。もう一度送信してください');
-    if (instruction?.state === 'awaiting_input' || instruction?.state === 'answering') {
-      endInstruction('conflict', 'マップが変わったため質問を終了しました。もう一度指示してください'); instructionClient.cancel();
-    }
-  } catch (error) {
-    map = previous.map;
-    sel = previous.sel;
-    history = previous.history;
-    future = previous.future;
-    view = previous.view;
-    animId++;
-    try {
-      if (previous.stored === null) localStorage.removeItem(KEY);
-      else localStorage.setItem(KEY, previous.stored);
-    } finally {
-      $('#title').value = map.title;
-      render();
-      applyView();
-      // Also resume any save that was pending for the original working map.
-      scheduleSave();
-      $('#undo').disabled = !history.length;
-      $('#redo').disabled = !future.length;
-    }
-    throw error;
-  }
+  await switchMap(() => library.create(m));
 }
 let importRequest = 0;
 $('#fileInput').onchange = async e => {
@@ -1656,15 +1803,34 @@ $('#fileInput').onchange = async e => {
   const request = ++importRequest;
   try {
     if (f.size > NodeImageFormat.MAX_FILE) throw new Error('読み込めるJSONは75MiBまでです');
-    const baseSession = mapSessionId, baseRevision = revision;
     const value = JSON.parse(await f.text());
     if (request !== importRequest) return;
     const m = await NodeImageFormat.importBundle(value, imageStore);
-    if (baseSession !== mapSessionId || baseRevision !== revision) throw new Error('読み込み中にマップが変わりました。もう一度読み込んでください');
     if (request !== importRequest) return;
-    importMap(m);
-    toast('読み込みました');
+    await importMap(m);
+    toast('新しいマップとして読み込みました');
   } catch (error) { if (request === importRequest) toast((error.message || '読み込めませんでした') + '。作業中のマップを維持しています'); }
+};
+$('#mapsBtn').onclick = () => toggleMapsMenu($('#mapsMenu').hidden);
+$('#newMapBtn').onclick = async () => {
+  toggleMapsMenu(false);
+  try { await switchMap(() => library.create(blankMap())); startEdit(map.root); }
+  catch (error) { toast(error.message || '作成できませんでした'); }
+};
+$('#mapsList').onclick = async e => {
+  const open = e.target.closest('[data-open]')?.dataset.open, remove = e.target.closest('[data-remove]')?.dataset.remove;
+  if (remove) { confirmMapDelete(remove); return; }
+  if (!open) return;
+  toggleMapsMenu(false);
+  if (open === mapId) return;
+  try { await switchMap(open); } catch (error) { toast(error.message || '切り替えられませんでした'); }
+};
+$('#mapDeleteCancel').onclick = () => $('#mapDeleteDialog').close();
+$('#mapDeleteDialog').addEventListener('close', () => { mapDeleting = null; });
+$('#mapDeleteConfirm').onclick = async () => {
+  const id = mapDeleting; $('#mapDeleteDialog').close();
+  if (!id) return;
+  try { await deleteMap(id); toast('マップを削除しました'); } catch (error) { toast(error.message || '削除できませんでした'); }
 };
 $('#title').oninput = e => { if (map.title !== e.target.value) commit(() => { map.title = e.target.value; }); };
 $('#title').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) vp.focus(); };
@@ -1690,16 +1856,24 @@ $('#dev').addEventListener('click', e => {
   if (d === 's-error') { forceSaveFail = true; scheduleSave(); }
   if (d === 's-saved') { forceSaveFail = false; scheduleSave(); }
   if (d === 'edge') { animateTo(centerOn({ x: BOUND, y: 0 })); setTimeout(() => { edgeHint('right'); toast('「全体を表示」で戻れます'); }, 300); }
-  if (d === 'reset') { commit(() => { map = sample(); mapSessionId = InstructionTransport.id('map_'); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
+  if (d === 'reset' && !readOnly()) { commit(() => { map = sample(); mapSessionId = InstructionTransport.id('map_'); }); sel = map.root; $('#title').value = map.title; animateTo(centerOn({ x: 0, y: 0 }, 1)); }
 });
 document.addEventListener('pointerdown', e => {
   if (!e.target.closest('#viewport')) interruptHand();
   if (!$('#fileMenu').hidden && !e.target.closest('.menu')) toggleFileMenu(false);
+  if (!$('#mapsMenu').hidden && !e.target.closest('.menu')) toggleMapsMenu(false);
 });
 addEventListener('resize', () => { interruptHand(); clampView(view, false); applyView(); });
 addEventListener('blur', () => { if (gesture?.type === 'node') revertGesture(); pts.clear(); stopHand(); });
-addEventListener('pagehide', () => { stopHand(); for (const el of els.values()) clearNodeImage(el); });
-addEventListener('pageshow', () => render());
+addEventListener('pagehide', () => {
+  stopHand(); for (const el of els.values()) clearNodeImage(el);
+  storeView(); if (!readOnly()) flushSave().catch(() => {});
+  mapClaim.release();
+});
+addEventListener('pageshow', e => {
+  render();
+  if (e?.persisted && library && mapId) void openMap(mapId).catch(failOpen);
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopHand(); });
 
 $('#title').value = map.title;
@@ -1721,6 +1895,22 @@ view = centerOn(map.nodes[map.root], 1);
 view.y -= 20;
 render();
 applyView();
+void (async () => {
+  try {
+    const rxdb = await import('./vendor/rxdb.js');
+    library = await MapLibrary.open({ createRxDatabase: rxdb.createRxDatabase, storage: rxdb.getRxStorageDexie() });
+  } catch (error) {
+    console.error(error);
+    mapClaim = { editable: true, release() {} }; updateAccess(); setSave('error');
+    toast('このブラウザでは保存できません。書き出して保管してください'); return;
+  }
+  try { await library.migrateLegacy(localStorage); } catch (error) { console.error('移行できませんでした', error); }
+  navigator.storage?.persist?.().catch(() => {});
+  let last = null; try { last = localStorage.getItem(LAST_KEY); } catch {}
+  try { if (last && await library.load(last)) await openMap(last); else await openFallback(); } catch (error) { failOpen(error); }
+  library.watchList(list => { mapList = list; if (!$('#mapsMenu').hidden) void refreshBusyMaps(); else renderMapList(); });
+  $('#mapsBtn').disabled = false;
+})();
 </script>
 </body>
 </html>

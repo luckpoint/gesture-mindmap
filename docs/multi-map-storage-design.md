@@ -185,7 +185,7 @@ stateDiagram-v2
 
 | 段階 | 内容 | 完了条件 |
 |---|---|---|
-| 1. RxDBと複数マップ | vendorのビルド、`library.js`・`locks.js`、一覧UI、作成・切り替え・削除、読み込みを新規マップに、localStorageからの移行 | 11章のE2E 1〜8 |
+| 1. RxDBと複数マップ | vendorのビルド、`library.js`・`locks.js`、一覧UI、作成・切り替え・削除、読み込みを新規マップに、localStorageからの移行 | 11章のE2E 1〜8（2026年10月24日、ChromiumでE2E 1〜4・6〜8を確認。5は自動テスト。iPad Safariは未確認） |
 | 2. 画像のOPFS化 | `store.js` のOPFS化、Worker、IndexedDBからの移行、GC | E2E 9〜11 |
 | 3. 履歴の保存 | [編集履歴の永続化](./edit-history-persistence.md)の4〜6章を `history.js` と `history` コレクションで実装 | 同書10章のE2E（7・8はマップごとのロックに読み替える） |
 
