@@ -645,9 +645,9 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="icons/palette.js"></script>
 <script src="features.js"></script>
 <script src="speech/controller.js?v=20261024-3"></script>
-<script src="gestures/controller.js?v=20261024-hand-controls-2"></script>
-<script src="gestures/debug.js?v=20261024-hand-controls-2"></script>
-<script src="gestures/camera.js?v=20261024-hand-controls-2"></script>
+<script src="gestures/controller.js?v=20261024-hand-pointer-4"></script>
+<script src="gestures/debug.js?v=20261024-hand-pointer-4"></script>
+<script src="gestures/camera.js?v=20261024-hand-pointer-4"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -1797,26 +1797,18 @@ function toggleHand(inputMode = 'worker') {
       } else if (deletion) { side === 'left' ? closeDelete() : confirmDelete(); }
     },
     command: action => {
-      if (deletion || editing || mode) return;
+      if (deletion || editing || mode || !map.nodes[sel]) return;
       if (action === 'add') addChildAndEdit(map.nodes[sel] ? sel : map.root, true);
       else if (action === 'delete') removeNode(sel || map.root);
     },
-    activate: () => {
-      if (deletion) return;
-      if (!map.nodes[sel]) select(map.root);
-    },
-    navigate: direction => navigate(Math.abs(direction.x) >= Math.abs(direction.y)
-      ? (direction.x < 0 ? 'ArrowLeft' : 'ArrowRight') : (direction.y < 0 ? 'ArrowUp' : 'ArrowDown')),
+    select: id => { if (sel !== id) select(id); },
+    nodes: () => [...els].filter(([id]) => map.nodes[id]).map(([id, el]) => {
+      const r = el.getBoundingClientRect();
+      return { id, left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    }),
     pan: (dx, dy) => { animId++; view = clampView({ x: view.x + dx, y: view.y + dy, s: view.s }); applyView(); },
     zoom: factor => { animId++; zoomAt(W() / 2, H() / 2, view.s * factor); },
     bounds: () => { const r = vp.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.left + W(), bottom: Math.min(r.bottom, H()) }; },
-    begin: (x, y) => {
-      const id = map.nodes[sel] ? sel : map.root;
-      beginNodeDrag(id, x, y, true); return id;
-    },
-    move: (x, y) => { if (gesture?.hand) moveNodeDrag(gesture, x, y); },
-    release: () => { if (gesture?.hand) finishNodeDrag(gesture); },
-    cancel: () => { if (gesture?.hand) revertGesture(); },
     paint: state => {
       hand = state;
       const key = [state.state, state.hover, state.grab].join(':');
@@ -1845,11 +1837,11 @@ function toggleHand(inputMode = 'worker') {
   let deviceId; try { deviceId = localStorage.getItem(CAMERA_KEY) || undefined; } catch {}
   session.start(inputMode, deviceId);
 }
-const HAND_COMMANDS = ['grab', 'add', 'delete', 'pan'];
-const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, pinchWaiting: HAND_COMMANDS, dragging: ['drop'], neutral: ['point', 'grab', 'add', 'delete', 'pan', 'zoom'],
+const HAND_COMMANDS = ['palm', 'point', 'add', 'delete', 'pan'];
+const HAND_TIPS = { ready: HAND_COMMANDS, waiting: HAND_COMMANDS, neutral: ['palm', 'point', 'add', 'delete', 'pan', 'zoom'],
   paused: [], panning: ['stop'], zooming: ['spread', 'oneHand'], dialog: ['dialogLeft', 'dialogRight'] };
 const tipItems = tips => tips.map(tip => Object.assign(document.createElement('li'), { textContent: tr('hand.tip.' + tip) }));
-$('#handGuide').replaceChildren(...tipItems(['point', 'grab', 'add', 'delete', 'fist', 'pan', 'zoom']));
+$('#handGuide').replaceChildren(...tipItems(['palm', 'point', 'add', 'delete', 'fist', 'pan', 'zoom']));
 $('#handGuideToggle').onclick = () => {
   const open = $('#handGuide').hidden;
   $('#handGuide').hidden = !open;
@@ -1857,7 +1849,11 @@ $('#handGuideToggle').onclick = () => {
 };
 function updateHand() {
   if (!hand) return;
-  $('#handCursor').hidden = true;
+  const cursor = $('#handCursor');
+  cursor.hidden = !!camStatus || !hand.pointerVisible;
+  cursor.style.left = (hand.pointer?.x ?? hand.x) + 'px'; cursor.style.top = (hand.pointer?.y ?? hand.y) + 'px';
+  cursor.dataset.state = hand.hover ? 'hover' : 'ready';
+  $('#handLabel').textContent = hand.hover ? map.nodes[hand.hover]?.text || '' : '';
   const message = tr('hand.' + hand.state), unseen = !!camStatus || hand.state === 'nohand' || hand.state === 'lost';
   const tips = unseen ? [] : editing?.handInput ? ['voiceDone', 'voiceCancel'] : HAND_TIPS[hand.state] || [];
   $('#cam').dataset.state = camStatus ? 'starting' : hand.state;

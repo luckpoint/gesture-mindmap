@@ -29,7 +29,7 @@ function setup(options = {}) {
     requestAnimationFrame: fn => { frames.set(++counter, fn); return counter; }, cancelAnimationFrame: id => frames.delete(id),
     setTimeout: fn => { timers.set(++counter, fn); return counter; }, clearTimeout: id => timers.delete(id),
     setInterval: fn => { intervals.set(++counter, fn); return counter; }, clearInterval: id => intervals.delete(id),
-    HandGestures: { TRACKING_TIMEOUT_MS, handFrame: () => ({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose: 'point', identity: 'Left' }) },
+    HandGestures: { TRACKING_TIMEOUT_MS, handFrame: () => ({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose: 'palm', identity: 'Left' }) },
   });
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/camera.js'), 'utf8'), context);
@@ -163,7 +163,7 @@ for (const throws of [false, true]) test(`worker closes the transferred image wh
 
 test('300ms worker results survive the watchdog and arm directional navigation', async () => {
   const t = setup();
-  const controller = new HandController({ blocked: () => false, activate() {}, navigate() {}, paint() {} });
+  const controller = new HandController({ blocked: () => false, nodes: () => [], select() {}, bounds: () => ({ left: 0, top: 0, right: 1000, bottom: 800 }), paint() {} });
   t.session.io.frame = (frame, at) => controller.update(frame, at);
   await t.session.start();
   const watch = [...t.intervals.values()][0];
