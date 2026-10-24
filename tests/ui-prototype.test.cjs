@@ -866,6 +866,22 @@ test('bundle import retries a missing image even when node and asset IDs are unc
   assert.equal(t.run(`els.get('a').imageState !== brokenImageState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:restored' && releasedImages[0] === restoredImage.assetId && imageReads === 2`),true);
 });
 
+test('bundle restoration ignores a late failure from an earlier image read with the same ID', async () => {
+  const t=setup({renderUI:true});
+  t.run(`const restoredImage={assetId:'sha256:'+'a'.repeat(64),alt:'復元する画像',width:1,height:1};
+    let failOldRead; const releases=[];
+    imageStore.release=id=>releases.push(id);
+    imageStore.acquire=()=>new Promise((resolve,reject)=>{failOldRead=reject;});
+    map.nodes.a.image=restoredImage; render();
+    const pendingState=els.get('a').imageState;
+    imageStore.acquire=async()=> 'blob:repaired';
+    importMap(serializeMap());`);
+  await Promise.resolve();
+  t.run(`failOldRead(new Error('old missing bytes'));`);
+  await Promise.resolve();
+  assert.equal(t.run(`els.get('a').imageState !== pendingState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:repaired' && releases.length === 1`),true);
+});
+
 test('image-first DOM keeps editing the text; cached URLs release on removal, replacement and pagehide', async () => {
   const t=setup({renderUI:true});
   t.run(`const released=[];imageStore.release=id=>released.push(id); imageStore.acquire=async id=>'blob:'+id;

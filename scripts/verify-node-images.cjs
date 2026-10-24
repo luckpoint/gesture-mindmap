@@ -84,6 +84,24 @@ const { chromium } = require('playwright');
       const wrong=new Blob([a.blob],{type:'image/jpeg'});
       try {await imageStore.put(wrong);return false;}catch {return urls[0]===urls[1];}
     }),true);
+    // Restoring a verified bundle also repairs corrupt bytes under the same ID.
+    await other.evaluate(async () => {
+      const id=map.nodes.a.image.assetId,asset=await imageStore.get(id),db=await imageStore.open();
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction('assets','readwrite');
+        tx.objectStore('assets').put({...asset,blob:new Blob(['corrupt'],{type:'image/png'})});
+        tx.oncomplete=resolve;tx.onerror=tx.onabort=reject;
+      });
+    });
+    await other.reload();await other.waitForLoadState('networkidle');
+    await other.waitForFunction(()=>document.querySelector('[data-id=a] .node__image span')?.textContent==='画像を読み込めません');
+    await other.locator('#fileInput').setInputFiles({name:'repair-images.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bundle))});
+    await other.waitForFunction(()=>document.querySelector('[data-id=a] img')?.naturalWidth===32);
+    await other.waitForFunction(()=>document.querySelector('[data-id=root] img')?.naturalWidth===32);
+    assert.equal(await other.evaluate(async expectedData => {
+      const assets=(await NodeImageFormat.exportBundle(serializeMap(),imageStore)).assets;
+      return Object.keys(assets).length===1 && assets[map.nodes.a.image.assetId].data===expectedData;
+    },Object.values(bundle.assets)[0].data),true);
     // Broken local asset still leaves text editable inside a fixed frame.
     await other.evaluate(async () => {
       const db=await imageStore.open();await new Promise((r,j)=>{const tx=db.transaction('assets','readwrite');tx.objectStore('assets').clear();tx.oncomplete=r;tx.onerror=j;});
@@ -99,7 +117,7 @@ const { chromium } = require('playwright');
     await other.waitForFunction(()=>document.querySelector('[data-id=root] img')?.naturalWidth===32);
     assert.equal(await other.locator('[data-id=a] .node__image span').isVisible(),false);
     assert.deepEqual(errors,[]);
-    console.log('Browser checks passed: IndexedDB, reload, portable JSON, validation failures, editing, Undo/Redo, tablet layout, missing assets and bundle recovery.');
+    console.log('Browser checks passed: IndexedDB, reload, portable JSON, validation failures, editing, Undo/Redo, tablet layout, missing/corrupt assets and bundle recovery.');
   } finally {
     await browser?.close(); service.close();server.closeAllConnections();await new Promise(r=>server.close(r));
   }

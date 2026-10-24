@@ -74,3 +74,36 @@ test('URL cache shares one URL and revokes it after the last DOM reference, incl
   const pending=store.acquire(a.assetId);store.release(a.assetId);await pending;assert.equal(store.urls.size,0);
   store.get=async()=>null;await assert.rejects(store.acquire(a.assetId),/読み込めません/);store.release(a.assetId);
 });
+
+test('verified writes repair corrupt existing bytes, deduplicate IDs and count replacement capacity', async t => {
+  const {Store}=require('../ui-prototype/images/store.js');
+  const old=global.createImageBitmap;global.createImageBitmap=async()=>({width:1,height:1,close(){}});t.after(()=>{global.createImageBitmap=old;});
+  const a=await verify(png), store=new Store();
+  const corrupt=new Blob(['corrupt local bytes'],{type:'image/png'});
+  const records=new Map([[a.assetId,{...a,blob:corrupt}]]);
+  let writes=0,aborted=false;
+  // Minimal transaction adapter: stage writes and publish only on completion.
+  store.open=async()=>({transaction(){
+    const staged=new Map(records),tx={
+      abort(){aborted=true;queueMicrotask(()=>tx.onabort());},
+      objectStore(){return {
+        getAll(){const req={};queueMicrotask(()=>{
+          req.result=[...records.values()];req.onsuccess();
+          if(!aborted) queueMicrotask(()=>{records.clear();for(const [id,a] of staged)records.set(id,a);tx.oncomplete();});
+        });return req;},
+        put(a){writes++;staged.set(a.assetId,a);},
+      };},
+    };return tx;
+  }});
+  await store.putMany([a,a]);
+  assert.equal(writes,1);assert.equal(records.size,1);
+  assert.equal(await records.get(a.assetId).blob.text(),await png.text());
+  // Replacing oversized corruption with the verified original fits the limit.
+  records.set(a.assetId,{...a,blob:{size:F.MAX_TOTAL+1}});
+  await store.putMany([a]);assert.equal(aborted,false);
+  // A genuinely full store still rejects the transaction without writing.
+  records.set(id,{assetId:id,blob:{size:F.MAX_TOTAL}});
+  const before=writes;
+  await assert.rejects(store.putMany([a]),/50MiB/);
+  assert.equal(writes,before);assert.equal(records.get(a.assetId).blob,png);
+});

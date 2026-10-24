@@ -87,9 +87,14 @@
         const req = table.getAll();
         req.onsuccess = () => {
           const existing = new Map(req.result.map(a => [a.assetId, a]));
-          for (const a of verified) if (!existing.has(a.assetId)) existing.set(a.assetId, a);
+          // Count the verified replacement bytes, including when an existing
+          // record is corrupt. The content hash still identifies one asset.
+          const incoming = new Map(verified.map(a => [a.assetId, a]));
+          for (const [id, a] of incoming) existing.set(id, a);
           if ([...existing.values()].reduce((sum, a) => sum + a.blob.size, 0) > F.MAX_TOTAL) { capacity = true; tx.abort(); return; }
-          for (const a of verified) if (!req.result.some(old => old.assetId === a.assetId)) table.put(a);
+          // Rewriting validated bytes lets a portable bundle repair local
+          // corruption without changing references or adding another asset.
+          for (const a of incoming.values()) table.put(a);
         };
         tx.oncomplete = () => resolve();
         tx.onerror = tx.onabort = () => reject(new Error(capacity ? '画像の総容量は50MiBまでです。画像込みで書き出してください' : '画像を保存できません。ブラウザの空き容量を確認してください'));
