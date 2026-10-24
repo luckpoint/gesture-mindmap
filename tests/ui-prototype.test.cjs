@@ -8,8 +8,8 @@ const { test } = require('node:test');
 // cover state transitions and import failures, not browser layout or real touch.
 const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
-function setup({ renderUI = false, handUI = false } = {}) {
-  const elements = new Map(), storage = new Map(), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
+function setup({ renderUI = false, handUI = false, stored = {} } = {}) {
+  const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
   let timerId = 0;
   const frames = new Map(), intervals = new Map();
   function element(key) {
@@ -879,4 +879,29 @@ test('image-first DOM keeps editing the text; cached URLs release on removal, re
   t.run(`removeNodeImage('a');`);assert.equal(t.run('released.length'),2);
   t.run(`undo();`);t.windowHandlers.get('pagehide')();assert.equal(t.run('released.length'),3);
   t.windowHandlers.get('pageshow')();assert.equal(t.run(`!!els.get('a').imageState`),true);
+});
+
+test('instruction field toggles from the dock and remembers its state', () => {
+  const t = setup();
+  t.elements.get('#promptHide').onclick();
+  assert.equal(t.run(`$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'false'`), true);
+  assert.equal(t.storage.get('mindmap-proto:prompt-hidden'), '1');
+  t.elements.get('#promptToggle').onclick();
+  assert.equal(t.run(`!$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'true' && document.activeElement === $('#promptInput')`), true);
+  assert.equal(t.storage.get('mindmap-proto:prompt-hidden'), '');
+  t.elements.get('#promptToggle').onclick();
+  assert.equal(t.run(`$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'false'`), true);
+
+  const reloaded = setup({ stored: { 'mindmap-proto:prompt-hidden': '1' } });
+  assert.equal(reloaded.run(`$('#prompt').hidden`), true);
+});
+
+test('cmd K and a Codex question reopen a hidden instruction field', async () => {
+  const t = setup();
+  t.run('setPromptHidden(true)');
+  t.windowHandlers.get('keydown')({ key: 'k', metaKey: true, preventDefault() {}, target: t.context.document.body });
+  assert.equal(t.run(`!$('#prompt').hidden && document.activeElement === $('#promptInput')`), true);
+  mockQuestions(t); t.run('setPromptHidden(true)');
+  t.run(`conversationState('awaiting_input', {questionId:'q1', message:'対象は？'});`);
+  assert.equal(t.run(`!$('#prompt').hidden`), true);
 });

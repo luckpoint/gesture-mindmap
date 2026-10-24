@@ -184,7 +184,7 @@ button { font: inherit; color: inherit; }
 .dock {
   position: fixed; left: calc((100% - var(--side)) / 2); bottom: max(var(--space-md), env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  display: flex; gap: 4px; padding: 6px;
+  display: flex; gap: 4px; padding: 6px; z-index: 5;
 }
 .dock__btn { flex-direction: column; gap: 2px; min-height: 60px; min-width: 84px; padding: 6px 12px; font-size: var(--text-xs); border-radius: var(--radius-md); }
 .dock__btn .i { width: 24px; height: 24px; }
@@ -256,7 +256,9 @@ button { font: inherit; color: inherit; }
 
 /* ---------- instruction field ---------- */
 .prompt { position: fixed; left: 50%; bottom: calc(var(--kb, 0px) + 100px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); padding: 12px; z-index: 4; }
-.prompt__target { margin: 0 4px 8px; font-size: var(--text-xs); color: var(--color-ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.prompt__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.prompt__head .btn--icon { min-height: 32px; min-width: 32px; margin: -6px -6px -6px 0; }
+.prompt__target { flex: 1; min-width: 0; margin: 0 4px; font-size: var(--text-xs); color: var(--color-ink-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .prompt__form { display: flex; align-items: end; gap: 8px; }
 .prompt__input { flex: 1; min-width: 0; min-height: 46px; max-height: 94px; resize: none; overflow-y: auto; padding: 10px 12px; border: 2px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); color: var(--color-ink); font: 16px/24px var(--font-ui); }
 .prompt__input:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 1px; }
@@ -422,6 +424,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 
 <nav class="dock panel" aria-label="おもな操作">
   <button class="btn dock__btn" id="addChild"><svg class="i"><use href="#i-child"/></svg>子を追加</button>
+  <button class="btn dock__btn" id="promptToggle" aria-expanded="true" aria-controls="prompt" title="指示欄（⌘K）"><svg class="i"><use href="#i-send"/></svg>指示欄</button>
   <button class="btn dock__btn" id="handBtn" aria-pressed="false" title="手で操作（⇧H）"><svg class="i"><use href="#i-hand"/></svg>手で操作</button>
   <button class="btn dock__btn" id="fitBtn" title="全体を表示（⇧1）"><svg class="i"><use href="#i-fit"/></svg>全体を表示</button>
 </nav>
@@ -446,8 +449,11 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 </figure>
 <div class="hand-cursor" id="handCursor" hidden><span class="hand-cursor__label" id="handLabel"></span></div>
 
-<section class="prompt panel" aria-label="マップへの指示">
-  <p class="prompt__target" id="promptTarget"></p>
+<section class="prompt panel" id="prompt" aria-label="マップへの指示">
+  <div class="prompt__head">
+    <p class="prompt__target" id="promptTarget"></p>
+    <button class="btn btn--icon btn--quiet" id="promptHide" aria-label="指示欄を隠す" title="指示欄を隠す"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
   <p class="prompt__question" id="promptQuestion" role="status" aria-live="polite" hidden></p>
   <form class="prompt__form" id="promptForm">
     <textarea class="prompt__input" id="promptInput" rows="1" maxlength="4000" aria-label="マップへの指示" placeholder="マップへの指示を入力" aria-describedby="promptQuestion promptNote promptConnection"></textarea>
@@ -485,13 +491,13 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="instructions/operations.js"></script>
 <script src="instructions/client.js"></script>
 <script>
-const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CAMERA_KEY = 'mindmap-proto:camera';
+const BOUND = 8000, ZMIN = 0.25, ZMAX = 2, KEY = 'mindmap-proto:v1', CAMERA_KEY = 'mindmap-proto:camera', PROMPT_KEY = 'mindmap-proto:prompt-hidden';
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const vp = $('#viewport'), world = $('#world'), edgesEl = $('#edges'), nodesEl = $('#nodes');
 const els = new Map();
 const W = () => vp.clientWidth || innerWidth;
-const H = () => { const top = $('.prompt').getBoundingClientRect().top; return top > 150 ? top : innerHeight - 200; };
+const H = () => { const top = $($('#prompt').hidden ? '.dock' : '#prompt').getBoundingClientRect().top; return top > 150 ? top : innerHeight - 200; };
 
 let map = load() || sample();
 let view = { x: 0, y: 0, s: 1 };
@@ -1008,6 +1014,12 @@ function confirmReparent() {
 }
 
 /* ---------- instructions ---------- */
+function setPromptHidden(hidden) {
+  $('#prompt').hidden = hidden;
+  $('#promptToggle').setAttribute('aria-expanded', !hidden);
+  try { localStorage.setItem(PROMPT_KEY, hidden ? '1' : ''); } catch {}
+  resizePrompt();
+}
 function resizePrompt() {
   const input = $('#promptInput'); input.style.height = 'auto'; input.style.height = Math.min(94, Math.max(46, input.scrollHeight || 46)) + 'px';
   document.body.style.setProperty('--prompt-height', $('.prompt').offsetHeight + 'px');
@@ -1096,7 +1108,7 @@ async function sendInstruction(retryText) {
         if (draftVersion === run.sentDraftVersion && field.value === run.sentText) { field.value = ''; draftVersion++; }
         run.state = state; run.questionId = data.questionId;
         $('#promptQuestion').textContent = data.message; $('#promptQuestion').hidden = false;
-        field.placeholder = '質問への回答を入力'; field.setAttribute('aria-label', 'Codexへの回答');
+        field.placeholder = '質問への回答を入力'; field.setAttribute('aria-label', 'Codexへの回答'); setPromptHidden(false);
         $('#promptSend').textContent = '回答'; $('#promptSend').disabled = false;
         instructionToast('回答を待っています', [{ label: '中止', run: cancelInstruction }]); resizePrompt();
       } else if (state === 'thinking') {
@@ -1422,7 +1434,7 @@ addEventListener('keydown', e => {
     return;
   }
   const mod = e.metaKey || e.ctrlKey, k = e.key;
-  if (mod && k.toLowerCase() === 'k' && !e.isComposing) { e.preventDefault(); if (editing) finishEdit(); $('#promptInput').focus(); return; }
+  if (mod && k.toLowerCase() === 'k' && !e.isComposing) { e.preventDefault(); if (editing) finishEdit(); setPromptHidden(false); $('#promptInput').focus(); return; }
   if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); zoomAt(W() / 2, innerHeight / 2, view.s * 1.25); return; }
   if (mod && k === '-') { e.preventDefault(); zoomAt(W() / 2, innerHeight / 2, view.s / 1.25); return; }
@@ -1604,6 +1616,12 @@ $('#devBtn').onclick = () => {
   $('#dev').hidden = !open;
   $('#devBtn').setAttribute('aria-expanded', open);
 };
+$('#promptToggle').onclick = () => {
+  setPromptHidden(!$('#prompt').hidden);
+  if (!$('#prompt').hidden) $('#promptInput').focus();
+};
+$('#promptHide').onclick = () => { setPromptHidden(true); vp.focus(); };
+try { if (localStorage.getItem(PROMPT_KEY)) setPromptHidden(true); } catch {}
 $('#camToggle').onclick = () => {
   const c = $('#cam').classList.toggle('is-collapsed');
   $('#camToggle').textContent = c ? '表示' : '隠す';
