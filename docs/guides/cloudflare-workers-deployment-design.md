@@ -4,7 +4,7 @@
 
 > 2026年10月25日実装更新：現在の配信先は `dist/`。`npm run build:static` で資産準備とminify、`build:deploy` で準備済み資産から再生成・検証する。HTML・インラインJS/CSSは `@minify-html/node`、外部JS/CSSはesbuildを使用。vendor・MediaPipeは変更せずコピーする。両環境のdeployコマンドは必ず生成・検証を先に実行する。以下の初期調査中の `ui-prototype/` 配信案より、現行の `wrangler.jsonc` とnpmスクリプトを優先する。
 
-調査日：2026年10月24日。状態：提案。対象：現在の `lp-mindmap`。今回は調査・設計のみで、公開・Cloudflare設定変更・依存追加は行っていない。
+調査日：2026年10月24日。状態：提案。対象：現在の `gesture-mindmap`。今回は調査・設計のみで、公開・Cloudflare設定変更・依存追加は行っていない。
 
 ## 1. 提案
 

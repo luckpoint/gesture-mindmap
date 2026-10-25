@@ -189,7 +189,7 @@ const { chromium } = require('playwright');
       };
     });
     assert.equal(performanceResult.nodes, 2048);
-    await page.screenshot({ path: '/tmp/lp-mindmap-security-2048.png' });
+    await page.screenshot({ path: '/tmp/gesture-mindmap-security-2048.png' });
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ authenticated, privacy, performance: performanceResult }, null, 2));
   } finally {
