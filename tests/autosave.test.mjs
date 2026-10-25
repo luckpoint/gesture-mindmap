@@ -1,6 +1,6 @@
-const assert = require('node:assert/strict');
-const { test } = require('node:test');
-const { create } = require('../ui-prototype/core/autosave.js');
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { create } from '../ui-prototype/core/autosave.js';
 
 function deferred() {
   let resolve, reject;

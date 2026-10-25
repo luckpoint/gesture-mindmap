@@ -1,13 +1,10 @@
-const { readFileSync } = require('node:fs');
-const { join } = require('node:path');
-const vm = require('node:vm');
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+import { create } from '../../ui-prototype/app/browser.js';
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-// Load an explicit application boundary; index.html is checked separately.
-// Unit tests for core/ require those modules without a DOM or this shared scope.
-const { coreScripts, appScripts: appPaths } = require('./app-scripts.cjs');
-const appScripts = [...coreScripts, ...appPaths.filter(path => path !== 'app/main.js')].map(path =>
-  readFileSync(join(__dirname, '../../ui-prototype', path), 'utf8'),
-);
 // Keeps maps in memory with the same contract as storage/library.js.
 function memoryLibrary() {
   const docs = new Map(),
@@ -71,7 +68,6 @@ function setup({
   lang = 'ja',
   paletteUI = false,
   compact = false,
-  moduleRuntime = null,
 } = {}) {
   const elements = new Map(),
     storage = new Map(Object.entries(stored)),
@@ -233,16 +229,7 @@ function setup({
   if (paletteUI)
     for (const file of ['catalog.js', 'palette.js'])
       vm.runInContext(readFileSync(join(__dirname, '../../ui-prototype/icons', file), 'utf8'), context);
-  if (moduleRuntime) {
-    for (const name of Object.keys(moduleRuntime).filter(
-      name =>
-        name.startsWith('MindmapApp') ||
-        ['MapTree', 'MapOperationPolicy', 'MapEditHistory', 'MapAutosave'].includes(name),
-    )) {
-      context[name] = moduleRuntime[name];
-    }
-  } else for (const script of appScripts) vm.runInContext(script, context);
-  const app = vm.runInContext('MindmapAppBrowser.create(globalThis)', context);
+  const app = create(context);
   // Compatibility names exist only in the test adapter. Production modules
   // receive their context and connected operation API directly.
   const expose = (object, name, target = name) =>
@@ -293,4 +280,4 @@ function setup({
   };
 }
 
-module.exports = { setup, memoryLibrary };
+export { setup, memoryLibrary };

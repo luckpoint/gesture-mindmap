@@ -1,9 +1,12 @@
-const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const { join } = require('node:path');
-const vm = require('node:vm');
-const { test } = require('node:test');
-const { setup } = require('./helpers/ui-app.cjs');
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import vm from 'node:vm';
+import { test } from 'node:test';
+import { setup } from './helpers/ui-app.mjs';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 test('validation accepts an exported map and rejects malformed data', () => {
   const { run } = setup();

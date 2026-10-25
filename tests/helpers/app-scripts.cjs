@@ -1,5 +1,5 @@
-// Explicit boundaries for integration tests. A separate test checks index.html
-// against these paths so a production script cannot silently escape coverage.
+// Expected application module boundary. app-modules.test.mjs checks the
+// entrypoint import graph against these paths; array order has no runtime role.
 const coreScripts = ['core/operation-policy.js', 'core/tree.js', 'core/history.js', 'core/autosave.js'];
 const appScripts = [
   'app/context.js',

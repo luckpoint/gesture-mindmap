@@ -79,6 +79,10 @@ test('deployment build minifies code, preserves assets and removes stale output'
   const source = tree({
     ...base,
     'index.html': html,
+    'app/package.json': JSON.stringify({ type: 'module' }),
+    'core/package.json': JSON.stringify({ type: 'module' }),
+    'core/value.js': 'export const value = 42;',
+    'app/main.js': "import { value } from '../core/value.js'; export const answer = () => value;",
     'classic.js': 'var sharedValue = 42; function getSharedValue() { return sharedValue; }',
     'style.css': 'body { color: red; }\n',
     'worker.js': 'self.onmessage = function (event) { self.postMessage(event.data); };',
@@ -109,6 +113,9 @@ test('deployment build minifies code, preserves assets and removes stale output'
   const context = {};
   runInNewContext(readFileSync(join(output, 'classic.js'), 'utf8'), context);
   assert.equal(context.getSharedValue(), 42);
+  const { pathToFileURL } = require('node:url');
+  const module = await import(pathToFileURL(join(output, 'app/main.js')).href);
+  assert.equal(module.answer(), 42);
   const worker = {
     self: {
       postMessage: value => {

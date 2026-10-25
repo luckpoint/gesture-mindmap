@@ -1,15 +1,12 @@
-const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const { join } = require('node:path');
-const vm = require('node:vm');
-const { test } = require('node:test');
-const Context = require('../ui-prototype/app/context.js');
-const History = require('../ui-prototype/app/history.js');
-const Persistence = require('../ui-prototype/app/persistence.js');
-const history = require('../ui-prototype/core/history.js');
-const diffs = require('../ui-prototype/storage/history.js');
-const autosave = require('../ui-prototype/core/autosave.js');
-const imageFormat = require('../ui-prototype/images/format.js');
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import * as Context from '../ui-prototype/app/context.js';
+import * as History from '../ui-prototype/app/history.js';
+import * as Persistence from '../ui-prototype/app/persistence.js';
+import * as history from '../ui-prototype/core/history.js';
+import diffs from '../ui-prototype/storage/history.js';
+import * as autosave from '../ui-prototype/core/autosave.js';
+import imageFormat from '../ui-prototype/images/format.js';
 
 const clone = value => JSON.parse(JSON.stringify(value));
 function setup(id) {
@@ -74,22 +71,6 @@ const edit = (app, text, options) =>
   app.operations.commit(() => {
     app.state.map.nodes.root.text = text;
   }, options);
-
-for (const paths of [
-  ['context.js', 'history.js', 'persistence.js'],
-  ['persistence.js', 'history.js', 'context.js'],
-]) {
-  test(`app factories evaluate without DOM, services or shared state (${paths[0]} first)`, () => {
-    const sandbox = vm.createContext({});
-    for (const path of paths) {
-      vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/app', path), 'utf8'), sandbox);
-    }
-    for (const name of ['MindmapAppContext', 'MindmapAppHistory', 'MindmapAppPersistence']) {
-      assert.equal(typeof sandbox[name].create, 'function');
-    }
-    assert.equal(sandbox.state, undefined);
-  });
-}
 
 test('two app contexts isolate editing, undo/redo, UI, save destinations and timer queues', async () => {
   const a = setup('a'),

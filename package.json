@@ -8,7 +8,7 @@
   "scripts": {
     "setup": "node scripts/build-vendor.mjs",
     "start": "node server/index.mjs",
-    "test": "node --test tests/*.test.cjs",
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
     "verify:assets": "node scripts/verify-assets.mjs",
     "build:static": "npm run setup && python3 scripts/setup-gesture-assets.py && npm run build:deploy",
     "dev:cf": "npm run build:deploy && wrangler dev --env staging",

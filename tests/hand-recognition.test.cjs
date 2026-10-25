@@ -44,14 +44,15 @@ test('recognition leaves inputs untouched and options do not leak between calls'
   assert.deepEqual(handFrame(result, 640, 480), baseline);
 });
 
-test('HTML script order wires real recognition into camera samples', () => {
+test('entrypoint services wire real recognition into camera samples', () => {
   let sample;
   const context = vm.createContext({
     I18n: { t: key => key },
     performance: { now: () => 100 },
     requestAnimationFrame() {},
   });
-  const scripts = [...source('index.html').matchAll(/<script src="(gestures\/[^"]+)"/g)].map(m => m[1]);
+  const scripts = [...source('app/main.js').matchAll(/import '\.\.\/(gestures\/[^']+)'/g)].map(m => m[1]);
+  assert.equal(scripts.length, 4);
   for (const script of scripts) vm.runInContext(source(script), context);
   const controller = new context.HandGestures.HandController({ paint() {} });
   const session = new context.CameraSession({

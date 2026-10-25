@@ -1,13 +1,17 @@
-const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
-const { join } = require('node:path');
-const vm = require('node:vm');
-const { test } = require('node:test');
-const { coreScripts, appScripts } = require('./helpers/app-scripts.cjs');
-const Tree = require('../ui-prototype/core/tree.js');
-const Policy = require('../ui-prototype/core/operation-policy.js');
-const History = require('../ui-prototype/core/history.js');
-const diffs = require('../ui-prototype/storage/history.js');
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { build } from 'esbuild';
+import { test } from 'node:test';
+import { coreScripts, appScripts } from './helpers/app-scripts.cjs';
+import * as Tree from '../ui-prototype/core/tree.js';
+import * as Policy from '../ui-prototype/core/operation-policy.js';
+import * as History from '../ui-prototype/core/history.js';
+import diffs from '../ui-prototype/storage/history.js';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 const source = path => readFileSync(join(__dirname, '../ui-prototype', path), 'utf8');
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -36,24 +40,44 @@ function edit(store, before, text) {
   return after;
 }
 
-test('production core/app scripts match the explicit integration boundary', () => {
-  const paths = [...source('index.html').matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)]
-    .map(m => m[1])
+test('HTML uses one module entrypoint whose imports cover every core/app module', async () => {
+  const tags = [...source('index.html').matchAll(/<script\b([^>]*)>/g)];
+  assert.equal(tags.length, 1);
+  assert.match(tags[0][1], /type="module"/);
+  assert.match(tags[0][1], /src="app\/main.js"/);
+  const { metafile } = await build({
+    entryPoints: [join(__dirname, '../ui-prototype/app/main.js')],
+    bundle: true,
+    write: false,
+    metafile: true,
+    external: ['../vendor/rxdb.js'],
+  });
+  const paths = Object.keys(metafile.inputs)
+    .map(path => path.split('ui-prototype/')[1])
     .filter(path => /^(core|app)\//.test(path));
-  assert.deepEqual(paths, [...coreScripts, ...appScripts]);
+  assert.deepEqual(paths.sort(), [...coreScripts, ...appScripts].sort());
 });
 
+function importWithoutEnvironment(paths) {
+  execFileSync(process.execPath, [
+    '--input-type=module',
+    '-e',
+    `
+    import assert from 'node:assert/strict';
+    const before = Object.keys(globalThis);
+    for (const path of ${JSON.stringify(paths)}) {
+      const api = await import(new URL(path, ${JSON.stringify(new URL('../ui-prototype/', import.meta.url).href)}));
+      assert.equal(typeof api.create, path === 'core/operation-policy.js' ? 'undefined' : 'function');
+    }
+    assert.deepEqual(Object.keys(globalThis), before);
+    assert.equal(globalThis.document, undefined);
+    assert.equal(globalThis.state, undefined);
+  `,
+  ]);
+}
 for (const paths of [coreScripts, [...coreScripts].reverse()]) {
-  test(`core modules load without DOM or application state (${paths[0]} first)`, () => {
-    const context = vm.createContext({});
-    for (const path of paths) vm.runInContext(source(path), context);
-    assert.equal(context.state, undefined);
-    assert.equal(context.treeCache, undefined);
-    assert.equal(context.unsaved, undefined);
-    assert.equal(context.MapEditHistory.HISTORY_LIMIT, History.HISTORY_LIMIT);
-    assert.equal(typeof context.MapAutosave.create, 'function');
-    assert.deepEqual([...context.MapTree.create().subtree(map(), 'a')], ['a', 'c']);
-    assert.equal(context.MapOperationPolicy.canLeaveMap({ editing: true }), false);
+  test(`core modules import without DOM, state or global exports (${paths[0]} first)`, () => {
+    importWithoutEnvironment(paths);
   });
 }
 
@@ -181,15 +205,7 @@ test('history limits and verified log loading keep monotonic sequence numbers', 
 
 const factories = appScripts.filter(path => path !== 'app/main.js');
 for (const paths of [factories, [...factories].reverse()]) {
-  test(`all screen factories evaluate without DOM or services (${paths[0]} first)`, () => {
-    const sandbox = vm.createContext({});
-    for (const path of paths) vm.runInContext(source(path), sandbox);
-    assert.equal(sandbox.state, undefined);
-    assert.equal(sandbox.appContext, undefined);
-    assert.equal(sandbox.operations, undefined);
-    assert.equal(Object.keys(sandbox).length, factories.length);
-    for (const path of paths) {
-      assert.equal(typeof require(join(__dirname, '../ui-prototype', path)).create, 'function', path);
-    }
+  test(`all screen factories import without DOM, services or global exports (${paths[0]} first)`, () => {
+    importWithoutEnvironment(paths);
   });
 }

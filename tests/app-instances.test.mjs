@@ -1,13 +1,10 @@
-const assert = require('node:assert/strict');
-const { test } = require('node:test');
-const { setup } = require('./helpers/ui-app.cjs');
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { setup } from './helpers/ui-app.mjs';
 
 function pair(options = {}) {
   const a = setup({ renderUI: true, ...options });
-  const b = setup({ renderUI: true, ...options, moduleRuntime: a.context });
-  assert.equal(a.context.MindmapAppBootstrap, b.context.MindmapAppBootstrap);
-  assert.equal(a.context.MindmapAppEditing, b.context.MindmapAppEditing);
-  assert.equal(a.context.MindmapAppInstructions, b.context.MindmapAppInstructions);
+  const b = setup({ renderUI: true, ...options });
   assert.notEqual(a.app.context.services.instructionClient, b.app.context.services.instructionClient);
   assert.notEqual(a.app.context.services.imageStore, b.app.context.services.imageStore);
   return [a, b];
