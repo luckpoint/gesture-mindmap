@@ -15,6 +15,38 @@ const map = () => ({
   },
 });
 const proposal = operations => ({ status: 'ok', message: '', operations });
+test('shared reparenting preserves the subtree and coordinates and leaves an unchanged parent untouched', () => {
+  const m = map(),
+    before = structuredClone(m);
+  O.reparentNode(m, 'a', 'c');
+  assert.deepEqual(m, {
+    ...before,
+    seq: 4,
+    nodes: { ...before.nodes, a: { ...before.nodes.a, parent: 'c', order: 4 } },
+  });
+  const moved = structuredClone(m);
+  O.reparentNode(m, 'a', 'c');
+  assert.deepEqual(m, moved);
+});
+test('shared mutations reject invalid targets, cycles, root changes and deletion scopes without changing the map', () => {
+  const mutations = [
+    m => O.reparentNode(m, 'missing', 'a'),
+    m => O.reparentNode(m, 'a', 'missing'),
+    m => O.reparentNode(m, 'a', 'a'),
+    m => O.reparentNode(m, 'a', 'b'),
+    m => O.reparentNode(m, 'root', 'c'),
+    m => O.deleteNode(m, 'missing', 'single'),
+    m => O.deleteNode(m, 'root', 'single'),
+    m => O.deleteNode(m, 'root', 'subtree'),
+    m => O.deleteNode(m, 'a', 'branch'),
+  ];
+  for (const mutate of mutations) {
+    const m = map(),
+      before = structuredClone(m);
+    assert.throws(() => mutate(m));
+    assert.deepEqual(m, before);
+  }
+});
 test('copy preparation maps temporary IDs in order and never mutates the original', () => {
   const m = map(),
     original = JSON.stringify(m);

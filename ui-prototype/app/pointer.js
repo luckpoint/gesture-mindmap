@@ -56,16 +56,16 @@ function swapTarget(g, x, y) {
 function finishNodeDrag(g) {
   state.gesture = null;
   if (state.hand) state.hand.grab = null;
-  if (g.swap) {
-    for (const [id, p] of g.orig) Object.assign(state.map.nodes[id], p);
-    InstructionOperations.swap(state.map, g.id, g.swap);
-    record(g.pre);
-    changed();
-    toast(tr('swap.done'), tr('common.undo'), undo);
-  } else if (JSON.stringify(state.map) !== g.pre) {
-    record(g.pre);
-    changed();
-  } else render();
+  const applied = commit(
+    () => {
+      if (g.swap) {
+        for (const [id, p] of g.orig) Object.assign(state.map.nodes[id], p);
+        InstructionOperations.swap(state.map, g.id, g.swap);
+      }
+    },
+    { before: g.pre },
+  );
+  if (applied && g.swap) toast(tr('swap.done'), tr('common.undo'), undo);
   updateHand();
 }
 function revertGesture() {

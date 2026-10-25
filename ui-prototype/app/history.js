@@ -22,25 +22,39 @@ function record(before) {
   unsaved.set(entry.seq, entry);
   if (state.history.length > HISTORY_LIMIT) forget(state.history.splice(0, state.history.length - HISTORY_LIMIT));
 }
-function commit(fn) {
-  if (refuseReadOnly()) return false;
+function restoreMap(before) {
+  state.map = JSON.parse(before);
+  invalidateTree();
+  if (!Object.hasOwn(state.map.nodes, state.selectedId)) state.selectedId = state.map.root;
+  $('#title').value = state.map.title;
+}
+// A preview is validated but does not enter history or trigger persistence.
+// Its final commit supplies the snapshot from before the preview began.
+function commit(fn, { before, preview = false } = {}) {
+  if (refuseReadOnly()) {
+    if (before !== undefined) {
+      restoreMap(before);
+      render();
+    }
+    return false;
+  }
   interruptHand();
-  const before = JSON.stringify(state.map);
+  if (state.editing && before === undefined && !preview) finishEdit();
+  before ??= JSON.stringify(state.map);
   try {
     fn();
     const error = NodeImageFormat.mapError(state.map);
     if (error) throw new Error(error);
   } catch (error) {
-    state.map = JSON.parse(before);
-    invalidateTree();
-    if (!Object.hasOwn(state.map.nodes, state.selectedId)) state.selectedId = state.map.root;
-    $('#title').value = state.map.title;
+    restoreMap(before);
     toast(error.message);
     render();
     return false;
   }
-  record(before);
-  changed();
+  if (!preview && JSON.stringify(state.map) !== before) {
+    record(before);
+    changed();
+  } else render();
   return true;
 }
 function changed() {
@@ -75,8 +89,11 @@ function restore(from, to) {
     interruptHand();
     return;
   }
-  if (!from.length) return;
+  const isUndo = from === state.history;
   if (state.editing) finishEdit();
+  from = isUndo ? state.history : state.future;
+  to = isUndo ? state.future : state.history;
+  if (!from.length) return;
   const entry = from.pop();
   state.map = MapHistory.apply(state.map, entry, from === state.history ? 'before' : 'after');
   to.push(entry);
@@ -100,9 +117,9 @@ async function flushSave() {
   while (saveWrite) await saveWrite.catch(() => {});
   if (!saveDirty) return;
   saveDirty = false;
-  // A drag in progress is not a committed state; store the map from before it.
+  // Persist only committed state while a node addition or drag is previewed.
   const id = state.mapId,
-    snapshot = JSON.parse(state.gesture?.pre ?? JSON.stringify(state.map));
+    snapshot = JSON.parse(state.editing?.before ?? state.gesture?.pre ?? JSON.stringify(state.map));
   const changes = { cursor: cursor(), put: [...unsaved.values()], drop: [...dropped] };
   unsaved = new Map();
   dropped = new Set();

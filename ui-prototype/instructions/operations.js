@@ -41,6 +41,31 @@
       }
     return out;
   }
+  // Model mutations shared by manual edits and instruction preparation.
+  // Callers own history, validation of the resulting map, and UI updates.
+  function reparentNode(m, id, parent) {
+    if (!own(m.nodes, id) || !own(m.nodes, parent)) fail(tr('ops.missingNode'));
+    if (id === m.root || subtree(m, id).has(parent)) fail(tr('ops.badReparent'));
+    const n = m.nodes[id];
+    if (n.parent === parent) return;
+    n.parent = parent;
+    n.order = ++m.seq;
+  }
+  function deleteNode(m, id, scope) {
+    if (!own(m.nodes, id)) fail(tr('ops.missingNode'));
+    if (id === m.root) fail(tr('delete.root'));
+    if (!['single', 'subtree'].includes(scope)) fail(tr('ops.badScope'));
+    const n = m.nodes[id],
+      removed = [...(scope === 'subtree' ? subtree(m, id) : [id])].map(key => m.nodes[key]);
+    if (scope === 'single') {
+      const promoted = children(m, id),
+        siblings = children(m, n.parent).flatMap(s => (s.id === id ? promoted : [s]));
+      for (const child of promoted) child.parent = n.parent;
+      for (const child of siblings) child.order = ++m.seq;
+    }
+    for (const node of removed) delete m.nodes[node.id];
+    return removed;
+  }
   const estimate = n => (n.image ? { w: 208, h: 160 } : { w: Math.min(260, n.text.length * 18 + 40), h: 52 });
   function place(m, pid, w = 160, size = estimate) {
     const p = m.nodes[pid];
@@ -193,33 +218,21 @@
           focus.push(id);
         }
         if (op.type === 'reparent_node') {
-          const parent = resolve(op.parentId);
-          if (id === m.root || subtree(m, id).has(parent)) fail(tr('ops.badReparent'));
-          if (n.parent !== parent) {
-            n.parent = parent;
-            n.order = ++m.seq;
-          }
+          reparentNode(m, id, resolve(op.parentId));
         }
         if (op.type === 'swap_nodes') {
           swap(m, id, resolve(op.otherId));
           focus.push(id);
         }
         if (op.type === 'delete_node') {
-          if (id === m.root) fail(tr('delete.root'));
-          const ids = op.scope === 'subtree' ? [...subtree(m, id)] : [id];
+          const removed = deleteNode(m, id, op.scope);
           deletions.push({
             name: n.text,
             scope: op.scope,
-            count: ids.length,
-            names: ids.map(key => m.nodes[key].text),
+            count: removed.length,
+            names: removed.map(node => node.text),
           });
           focus.push(n.parent);
-          if (op.scope === 'single') {
-            const siblings = children(m, n.parent).flatMap(s => (s.id === id ? children(m, id) : [s]));
-            for (const child of children(m, id)) child.parent = n.parent;
-            for (const child of siblings) child.order = ++m.seq;
-          }
-          for (const key of ids) delete m.nodes[key];
         }
       }
       if (!valid(m)) fail(tr('ops.badResult'));
@@ -295,6 +308,8 @@
     serialize,
     place,
     addNode,
+    reparentNode,
+    deleteNode,
     swap,
     validateProposal,
     prepare,

@@ -1252,6 +1252,43 @@ test('single fist pans and opening a hand or pointing stops the view', () => {
   assert.equal(t.run('state.hand.state === "neutral" && !handController.paused && state.history.length === 0'), true);
 });
 
+test('manual deletions and reparenting match instruction preparation and each undo as one change', () => {
+  const cases = [
+    {
+      operation: { type: 'delete_node', nodeId: 'a', scope: 'single' },
+      edit: "removeNode('a'); chooseDeleteScope('single'); confirmDelete();",
+    },
+    {
+      operation: { type: 'delete_node', nodeId: 'a', scope: 'subtree' },
+      edit: "removeNode('a'); chooseDeleteScope('branch'); confirmDelete();",
+    },
+    {
+      operation: { type: 'reparent_node', nodeId: 'a', parentId: 'b1' },
+      edit: "startReparent('a'); setCandidate('b1'); confirmReparent();",
+    },
+  ];
+  for (const { operation, edit } of cases) {
+    const { run } = setup();
+    run(`
+      addNode('a', 'second child', { x: 450, y: 20 });
+      addNode('a1', 'grandchild', { x: 600, y: -200 });
+      const before = serializeMap();
+      const expected = InstructionOperations.prepare(before, ${JSON.stringify({
+        status: 'ok',
+        message: '',
+        operations: [operation],
+      })}).map;
+      ${edit}
+    `);
+    assert.equal(run('MapHistory.same(state.map, expected) && valid(state.map)'), true);
+    assert.equal(run('state.history.length'), 1);
+    run('undo();');
+    assert.equal(run('MapHistory.same(state.map, before)'), true);
+    run('redo();');
+    assert.equal(run('MapHistory.same(state.map, expected)'), true);
+  }
+});
+
 test('single deletion promotes direct children in place, preserves descendants and sibling order, and undoes atomically', () => {
   const t = setup({ renderUI: true });
   t.run(`render(); let d, secondChild; commit(() => { d = addNode('a1', '孫', { x: 600, y: -200 }); secondChild = addNode('a', '二つ目', { x: 500, y: 20 }); });
@@ -2633,4 +2670,95 @@ test('depth and title limits keep the previous map and history unchanged', () =>
     true,
   );
   assert.match(t.run('notices.at(-1)'), /1,000/);
+});
+
+test('new-node previews preserve redo and pending saves until confirmation', async () => {
+  const t = setup({ renderUI: true });
+  t.run(`commit(() => { state.map.nodes.a.text = 'saved edit'; });
+    commit(() => { state.map.nodes.b.text = 'redo edit'; }); undo();
+    const committed = JSON.stringify(state.map), token = state.historyToken;
+    addChildAndEdit('a'); const newId = state.editing.id;`);
+  assert.equal(t.run(`state.history.length === 1 && state.future.length === 1 && state.historyToken === token`), true);
+  await t.run('flushSave()');
+  assert.equal(t.run(`JSON.stringify(state.library.docs.get('m_first').map) === committed`), true);
+  t.run('cancelEdit();');
+  assert.equal(
+    t.run(
+      `JSON.stringify(state.map) === committed && state.future.length === 1 && state.historyToken === token && !saveDirty`,
+    ),
+    true,
+  );
+  t.run(`addChildAndEdit('a'); const confirmedId = state.editing.id;
+    nodeEls.get(confirmedId).nodeText.textContent = 'confirmed'; finishEdit();`);
+  assert.equal(
+    t.run(`state.history.length === 2 && state.future.length === 0 && state.historyToken === token + 1`),
+    true,
+  );
+  t.run('undo();');
+  assert.equal(t.run(`JSON.stringify(state.map) === committed`), true);
+  t.run('redo();');
+  assert.equal(t.run(`state.map.nodes[confirmedId].text === 'confirmed'`), true);
+});
+
+test('Undo confirms a first new-node edit before undoing it, and Redo rejects a stale branch', () => {
+  const t = setup({ renderUI: true });
+  t.run(`const original = JSON.stringify(state.map); addChildAndEdit('a');
+    nodeEls.get(state.editing.id).nodeText.textContent = 'first'; undo();`);
+  assert.equal(
+    t.run(
+      `JSON.stringify(state.map) === original && state.history.length === 0 && state.future.length === 1 && !state.editing`,
+    ),
+    true,
+  );
+  t.run(`addChildAndEdit('b'); const replacement = state.editing.id;
+    nodeEls.get(replacement).nodeText.textContent = 'replacement'; redo();`);
+  assert.equal(
+    t.run(
+      `state.history.length === 1 && state.future.length === 0 && state.map.nodes[replacement].text === 'replacement'`,
+    ),
+    true,
+  );
+});
+
+test('drag validation and read-only rejection restore the preview without registering history', () => {
+  for (const fail of ['invalid', 'readonly', 'swap']) {
+    const t = setup({ renderUI: true });
+    t.run(`const original = JSON.stringify(state.map), token = state.historyToken;
+      beginNodeDrag('a', 0, 0); const drag = state.gesture;
+      moveNodeDrag(drag, 40, 30);`);
+    if (fail === 'invalid') t.run(`state.map.nodes.a.x = NaN;`);
+    if (fail === 'readonly') t.run(`state.mapClaim.editable = false;`);
+    if (fail === 'swap') t.run(`drag.swap = 'missing';`);
+    t.run('finishNodeDrag(drag);');
+    assert.equal(
+      t.run(
+        `JSON.stringify(state.map) === original && state.history.length === 0 && state.historyToken === token && !saveDirty && !state.gesture`,
+      ),
+      true,
+      fail,
+    );
+  }
+});
+
+test('saving during a drag stores committed positions and confirmation saves one undoable move', async () => {
+  const t = setup({ renderUI: true });
+  t.run(`commit(() => { state.map.title = 'pending'; }); const original = JSON.stringify(state.map);
+    beginNodeDrag('a', 0, 0); const drag = state.gesture; moveNodeDrag(drag, 40, 30);`);
+  await t.run('flushSave()');
+  assert.equal(t.run(`JSON.stringify(state.library.docs.get('m_first').map) === original`), true);
+  t.run('finishNodeDrag(drag);');
+  await t.run('flushSave()');
+  assert.equal(t.run(`state.history.length === 2 && state.library.docs.get('m_first').map.nodes.a.x === 350`), true);
+  t.run('undo();');
+  assert.equal(t.run(`JSON.stringify(state.map) === original`), true);
+});
+
+test('another committed change settles a new-node preview before recording its own history', () => {
+  const t = setup({ renderUI: true });
+  t.run(`const original = JSON.stringify(state.map); addChildAndEdit('a', true);
+    nodeEls.get(state.editing.id).nodeText.textContent = 'new child';
+    commit(() => { state.map.title = 'other change'; });`);
+  assert.equal(t.run(`!state.editing && state.history.length === 2 && state.map.title === 'other change'`), true);
+  t.run('undo(); undo();');
+  assert.equal(t.run(`JSON.stringify(state.map) === original`), true);
 });

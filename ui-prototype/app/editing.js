@@ -27,35 +27,21 @@ function startEdit(id, isNew = false, atEnd = false) {
 function finishEdit() {
   if (!state.editing) return;
   speech.abort();
-  const { id, isNew, orig, pid } = state.editing;
+  const { id, isNew, orig, pid, before } = state.editing;
   state.editing = null;
   updateSpeech();
   const t = nodeEls.get(id)?.nodeText;
-  let text = (t?.textContent || '').trim();
-  if (text) {
-    const candidate = serializeMap();
-    candidate.nodes[id].text = text;
-    const error = NodeImageFormat.mapError(candidate);
-    if (error) {
-      toast(error);
-      text = orig;
-      if (t) t.textContent = orig;
-    }
-  }
+  const text = (t?.textContent || '').trim();
   if (t) t.contentEditable = 'false';
   if (isNew) {
-    // The add was recorded with empty text; fold the typed text into it, or drop it.
-    const added = state.history.pop();
-    forget([added]);
-    const before = MapHistory.apply(state.map, added, 'before');
-    if (!text) {
-      state.map = before;
-      state.selectedId = pid;
-    } else {
-      state.map.nodes[id].text = text;
-      record(JSON.stringify(before));
-    }
-    changed();
+    if (!text) state.selectedId = pid;
+    commit(
+      () => {
+        if (text) state.map.nodes[id].text = text;
+        else restoreMap(before);
+      },
+      { before },
+    );
   } else if (text && text !== orig) {
     commit(() => {
       state.map.nodes[id].text = text;
@@ -65,6 +51,7 @@ function finishEdit() {
     render();
   }
 }
+
 function cancelEdit() {
   if (!state.editing) return;
   nodeEls.get(state.editing.id).nodeText.textContent = state.editing.isNew ? '' : state.editing.orig;
@@ -74,15 +61,20 @@ function addChildAndEdit(pid, handInput = false) {
   if (refuseReadOnly()) return;
   if (state.editing) finishEdit();
   if (!state.map.nodes[pid]) pid = state.map.root;
+  const before = JSON.stringify(state.map);
   let id;
   if (
-    !commit(() => {
-      id = addNode(pid, '');
-    })
+    !commit(
+      () => {
+        id = addNode(pid, '');
+      },
+      { preview: true },
+    )
   )
     return;
   ensureVisible(state.map.nodes[id]);
   startEdit(id, true);
+  state.editing.before = before;
   if (handInput) {
     state.editing.handInput = true;
     updateSpeech();
@@ -177,13 +169,7 @@ function confirmDelete() {
   }
   closeDelete();
   commit(() => {
-    if (d.scope === 'branch') for (const id of d.ids) delete state.map.nodes[id];
-    else {
-      const siblings = childrenOf(d.parent).flatMap(n => (n.id === d.id ? d.children : [n.id]));
-      for (const id of d.children) state.map.nodes[id].parent = d.parent;
-      delete state.map.nodes[d.id];
-      for (const id of siblings) state.map.nodes[id].order = ++state.map.seq;
-    }
+    InstructionOperations.deleteNode(state.map, d.id, d.scope === 'branch' ? 'subtree' : 'single');
     invalidateTree();
     state.selectedId = d.parent;
   });
@@ -318,8 +304,7 @@ function confirmReparent() {
   endReparent();
   if (!candidate || state.map.nodes[id].parent === candidate) return;
   commit(() => {
-    state.map.nodes[id].parent = candidate;
-    state.map.nodes[id].order = ++state.map.seq;
+    InstructionOperations.reparentNode(state.map, id, candidate);
     invalidateTree();
   });
   state.selectedId = id;
