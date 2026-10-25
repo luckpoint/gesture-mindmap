@@ -1,3 +1,35 @@
 .DS_Store
 *.map
 *.download
+
+# Never publish local secrets, including example environment files.
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+credentials.*.json
+service-account*.json
+
+# Keep local tools, data exports, and working files out of public assets.
+.git/
+.wrangler/
+node_modules/
+exports/
+backups/
+*.bak
+*.backup
+*.old
+*.orig
+*.tmp
+*.swp
+*~
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
