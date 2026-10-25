@@ -103,50 +103,14 @@ function restore(from, to) {
 }
 const undo = () => restore(state.history, state.future),
   redo = () => restore(state.future, state.history);
-function scheduleSave() {
-  saveDirty = true;
-  setSave('saving');
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    flushSave().catch(() => {});
-  }, 500);
-}
-async function flushSave() {
-  clearTimeout(saveTimer);
-  saveTimer = null;
-  while (saveWrite) await saveWrite.catch(() => {});
-  if (!saveDirty) return;
-  saveDirty = false;
-  // Persist only committed state while a node addition or drag is previewed.
-  const id = state.mapId,
-    snapshot = JSON.parse(state.editing?.before ?? state.gesture?.pre ?? JSON.stringify(state.map));
+// Persistence consumes pending diffs without owning the undo/redo stacks.
+function takeHistoryChanges() {
   const changes = { cursor: cursor(), put: [...unsaved.values()], drop: [...dropped] };
   unsaved = new Map();
   dropped = new Set();
-  saveWrite = (async () => {
-    if (!state.library) throw new Error(tr('save.unsupported'));
-    if (forceSaveFail) throw new Error(tr('save.error'));
-    await state.library.save(id, snapshot, changes);
-  })();
-  try {
-    await saveWrite;
-    if (!saveDirty) setSave('saved');
-  } catch (error) {
-    if (state.mapId === id) {
-      for (const e of changes.put) if (!dropped.has(e.seq)) unsaved.set(e.seq, e);
-      for (const seq of changes.drop) dropped.add(seq);
-    }
-    saveDirty = true;
-    setSave('error');
-    throw error;
-  } finally {
-    saveWrite = null;
-  }
+  return changes;
 }
-function setSave(status) {
-  if (status === 'saved' && readOnly()) status = 'readonly';
-  $('#save').dataset.state = status;
-  $('#saveText').textContent = tr('save.' + status);
-  $('#saveExport').hidden = status !== 'error';
-  resizeNotices();
+function retryHistoryChanges(changes) {
+  for (const e of changes.put) if (!dropped.has(e.seq)) unsaved.set(e.seq, e);
+  for (const seq of changes.drop) dropped.add(seq);
 }

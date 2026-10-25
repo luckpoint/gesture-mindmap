@@ -690,6 +690,62 @@ test('an empty new node leaves no history entry, and a failed save keeps entries
   );
 });
 
+for (const branch of [false, true]) {
+  test(`failed in-flight saves merge later history changes (${branch ? 'replacement branch' : 'additional edit'})`, async () => {
+    const t = setup();
+    t.run(`const saveNormally = state.library.save;
+      let rejectWrite;
+      state.library.save = () => new Promise((resolve, reject) => { rejectWrite = reject; });
+      commit(() => { state.map.nodes.a.text = 'first'; });`);
+    const saving = t.run('flushSave()');
+    await t.run('Promise.resolve()');
+    if (branch) t.run('undo();');
+    t.run(`commit(() => { state.map.nodes.b.text = 'second'; }); rejectWrite(new Error('offline'));`);
+    await assert.rejects(saving, /offline/);
+    assert.equal(t.run(`autosave.dirty && $('#save').dataset.state === 'error' && !$('#saveExport').hidden`), true);
+    t.run('state.library.save = saveNormally;');
+    await t.run('flushSave()');
+    assert.equal(t.run(`JSON.stringify(state.library.docs.get('m_first').map) === JSON.stringify(state.map)`), true);
+    assert.equal(t.run(`state.library.docs.get('m_first').log.has(1)`), !branch);
+    assert.equal(t.run(`state.library.docs.get('m_first').log.has(2)`), true);
+    assert.equal(t.run(`state.library.docs.get('m_first').cursor`), 2);
+    assert.equal(t.run(`!autosave.dirty && $('#save').dataset.state === 'saved' && $('#saveExport').hidden`), true);
+    await t.run(`switchMap(async () => state.library.create(blankMap()))`);
+    await t.run(`switchMap('m_first')`);
+    assert.equal(t.run('state.history.length'), branch ? 1 : 2);
+    t.run('undo();');
+    assert.equal(t.run(`state.map.nodes.b.text === sample().nodes.b.text`), true);
+    assert.equal(t.run(`state.map.nodes.a.text === 'first'`), !branch);
+  });
+}
+
+test('a failed deletion reschedules history recovered from a failed in-flight save', async () => {
+  const t = setup();
+  t.run(`const saveNormally = state.library.save;
+    let rejectWrite;
+    state.library.save = () => new Promise((resolve, reject) => { rejectWrite = reject; });
+    state.library.remove = async () => { throw new Error('cannot delete'); };
+    commit(() => { state.map.title = 'keep this edit'; });`);
+  const saving = t.run('flushSave()');
+  await t.run('Promise.resolve()');
+  const deleting = t.run(`deleteMap('m_first')`);
+  t.run(`rejectWrite(new Error('offline'));`);
+  await assert.rejects(saving, /offline/);
+  await assert.rejects(deleting, /cannot delete/);
+  assert.equal(
+    t.run(`state.mapId === 'm_first' && autosave.dirty && state.mapClaim.editable && !state.switching`),
+    true,
+  );
+  t.run('state.library.save = saveNormally;');
+  await t.run('flushSave()');
+  assert.equal(
+    t.run(
+      `state.library.docs.get('m_first').map.title === 'keep this edit' && state.library.docs.get('m_first').log.has(1)`,
+    ),
+    true,
+  );
+});
+
 test('drag coalesces events and only updates the moved subtree and incident edges', () => {
   const { run, elements, frames, flushFrame } = setup({ renderUI: true });
   run(`render(); const untouchedEdge = edgeEls.get('b1');
@@ -999,7 +1055,7 @@ test('Shift Left returns from every right-branch sibling to its actual parent wi
     assert.equal(t.run('state.selectedId'), id === 'a' ? 'root' : 'a');
   }
   assert.equal(
-    t.run('JSON.stringify(state.map) === beforeParentNavigation && state.history.length === 0 && !saveDirty'),
+    t.run('JSON.stringify(state.map) === beforeParentNavigation && state.history.length === 0 && !autosave.dirty'),
     true,
   );
   assert.equal(press('ArrowLeft', 'math'), 'a');
@@ -1051,7 +1107,7 @@ test('right branch enters the first child and walks siblings with Up/Down', () =
   assert.equal(press('ArrowLeft', 'a'), 'root');
   assert.equal(
     t.run(
-      'JSON.stringify(state.map) === beforeNavigation && state.history.length === 0 && state.future.length === 0 && !saveDirty',
+      'JSON.stringify(state.map) === beforeNavigation && state.history.length === 0 && state.future.length === 0 && !autosave.dirty',
     ),
     true,
   );
@@ -2697,7 +2753,9 @@ test('node limits reject new children and image children atomically without reco
   );
   t.run(`addChildAndEdit('root');`);
   assert.equal(
-    t.run(`JSON.stringify(state.map)===beforeLimit && state.history.length===0 && state.editing===null && !saveDirty`),
+    t.run(
+      `JSON.stringify(state.map)===beforeLimit && state.history.length===0 && state.editing===null && !autosave.dirty`,
+    ),
     true,
   );
   assert.match(t.run('notices.at(-1)'), /2,048/);
@@ -2705,14 +2763,14 @@ test('node limits reject new children and image children atomically without reco
   await t.run(
     `attachNodeImage(new Blob(['test']),{nodeId:'root',child:true,mapSessionId: state.mapSessionId,revision: state.revision},'image')`,
   );
-  assert.equal(t.run(`JSON.stringify(state.map)===beforeLimit && state.history.length===0 && !saveDirty`), true);
+  assert.equal(t.run(`JSON.stringify(state.map)===beforeLimit && state.history.length===0 && !autosave.dirty`), true);
 });
 test('oversized text cannot be saved by either existing-node edits or new-node edits', () => {
   const t = setup({ renderUI: true });
   t.run(
     `const beforeLimit=JSON.stringify(state.map);startEdit('a');nodeEls.get('a').nodeText.textContent='x'.repeat(4001);finishEdit();`,
   );
-  assert.equal(t.run(`JSON.stringify(state.map)===beforeLimit && state.history.length===0 && !saveDirty`), true);
+  assert.equal(t.run(`JSON.stringify(state.map)===beforeLimit && state.history.length===0 && !autosave.dirty`), true);
   t.run(`addChildAndEdit('root');nodeEls.get(state.editing.id).nodeText.textContent='x'.repeat(4001);finishEdit();`);
   assert.equal(t.run(`JSON.stringify(state.map)===beforeLimit && state.history.length===0`), true);
   assert.match(t.run('notices.at(-1)'), /4,000/);
@@ -2724,14 +2782,16 @@ test('depth and title limits keep the previous map and history unchanged', () =>
     `state.map=blankMap();state.map.seq=64;for(let i=1;i<=64;i++)state.map.nodes['d'+i]={id:'d'+i,text:'n',parent:i===1?'root':'d'+(i-1),x:0,y:0,order:i};invalidateTree();const beforeDepth=JSON.stringify(state.map);addChildAndEdit('d64');`,
   );
   assert.equal(
-    t.run(`JSON.stringify(state.map)===beforeDepth && state.history.length===0 && state.editing===null && !saveDirty`),
+    t.run(
+      `JSON.stringify(state.map)===beforeDepth && state.history.length===0 && state.editing===null && !autosave.dirty`,
+    ),
     true,
   );
   assert.match(t.run('notices.at(-1)'), /64/);
   t.run(`$('#title').oninput({target:{value:'x'.repeat(1001)}});`);
   assert.equal(
     t.run(
-      `JSON.stringify(state.map)===beforeDepth && state.history.length===0 && $('#title').value===state.map.title && !saveDirty`,
+      `JSON.stringify(state.map)===beforeDepth && state.history.length===0 && $('#title').value===state.map.title && !autosave.dirty`,
     ),
     true,
   );
@@ -2750,7 +2810,7 @@ test('new-node previews preserve redo and pending saves until confirmation', asy
   t.run('cancelEdit();');
   assert.equal(
     t.run(
-      `JSON.stringify(state.map) === committed && state.future.length === 1 && state.historyToken === token && !saveDirty`,
+      `JSON.stringify(state.map) === committed && state.future.length === 1 && state.historyToken === token && !autosave.dirty`,
     ),
     true,
   );
@@ -2798,7 +2858,7 @@ test('drag validation and read-only rejection restore the preview without regist
     t.run('finishNodeDrag(drag);');
     assert.equal(
       t.run(
-        `JSON.stringify(state.map) === original && state.history.length === 0 && state.historyToken === token && !saveDirty && !state.gesture`,
+        `JSON.stringify(state.map) === original && state.history.length === 0 && state.historyToken === token && !autosave.dirty && !state.gesture`,
       ),
       true,
       fail,

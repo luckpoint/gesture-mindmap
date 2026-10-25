@@ -265,7 +265,7 @@ $('#dev').addEventListener('click', e => {
   const d = e.target.closest('[data-dev]')?.dataset.dev;
   if (!d) return;
   if (d === 's-saving') {
-    clearTimeout(saveTimer);
+    autosave.cancelTimer();
     setSave('saving');
   }
   if (d === 's-error') {

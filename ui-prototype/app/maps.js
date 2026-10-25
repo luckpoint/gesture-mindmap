@@ -24,8 +24,7 @@ function showMap(id, m, claim, log = { cursor: 0, entries: [] }) {
   speech.abort();
   stopWatch?.();
   stopWatch = null;
-  clearTimeout(saveTimer);
-  saveDirty = false;
+  autosave.reset();
   state.map = m;
   state.mapId = id;
   state.mapClaim = claim;
@@ -117,7 +116,7 @@ async function leaveMap() {
   if (!OperationPolicy.canLeaveMap(operationState())) throw new Error(tr('maps.finishBeforeSwitch'));
   const base = state.revision;
   if (!readOnly()) await flushSave();
-  if (saveDirty || state.revision !== base) throw new Error(tr('maps.changedNoSwitch'));
+  if (autosave.dirty || state.revision !== base) throw new Error(tr('maps.changedNoSwitch'));
   storeView();
   stopWatch?.();
   stopWatch = null;
@@ -156,10 +155,7 @@ async function deleteMap(id) {
     if (state.switching) throw new Error(tr('maps.switching'));
     state.switching = true;
     try {
-      const dirty = saveDirty;
-      clearTimeout(saveTimer);
-      saveDirty = false;
-      while (saveWrite) await saveWrite.catch(() => {});
+      const dirty = await autosave.suspend();
       try {
         await state.library.remove(id);
       } catch (error) {

@@ -51,12 +51,7 @@ let palette = null,
   instructionUndoButton = null;
 const instructionClient = instructionsEnabled ? new InstructionTransport.Client() : null;
 const imageStore = new NodeImageStore.Store();
-let saveTimer,
-  saveDirty = false,
-  saveWrite = null,
-  toastTimer,
-  hintTimer,
-  viewTimer;
+let toastTimer, hintTimer, viewTimer;
 
 /* ---------- model ---------- */
 function sample() {
