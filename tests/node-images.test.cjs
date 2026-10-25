@@ -7,6 +7,7 @@ const { verify } = require('../ui-prototype/images/store.js');
 const id = 'sha256:' + 'a'.repeat(64);
 const ref = {assetId:id,alt:'画像',width:1,height:1};
 const map = () => ({version:2,title:'map',root:'root',seq:0,nodes:{root:{id:'root',text:'中心',parent:null,x:0,y:0,order:0}}});
+const trustedPixels = { sanitize: async blob => blob };
 const png = new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')], {type:'image/png'});
 test('v1 migrates without mutating its source; unknown versions and v1 image refs are rejected', () => {
   const old=map(); old.version=1;
@@ -29,7 +30,7 @@ test('bundles deduplicate referenced assets, and import verifies all images befo
   const m=map();m.nodes.root.image=ref;m.seq=1;m.nodes.child={...m.nodes.root,id:'child',parent:'root',order:1};
   const calls=[];
   const store={get:async()=>({blob:png,mime:'image/png'}),verify:async(blob,expected)=>{calls.push(expected);return {...expected,blob};},putMany:async a=>calls.push(a)};
-  const bundle=await F.exportBundle(m,store);assert.equal(Object.keys(bundle.assets).length,1);
+  const bundle=await F.exportBundle(m,store,trustedPixels);assert.equal(Object.keys(bundle.assets).length,1);
   const restored=await F.importBundle(bundle,store);assert.deepEqual(restored,m);assert.equal(calls.at(-1).length,1);
   await assert.rejects(F.exportBundle(m,{get:async()=>null}),/読み込めません/);
   await assert.rejects(F.importBundle(m,store),/bundle/);
@@ -103,7 +104,7 @@ test('verified writes repair corrupt existing bytes, deduplicate IDs and count r
   const stored=await store.get(a.assetId);
   assert.equal(stored.blob.type,'image/png');assert.equal(stored.mime,'image/png');
   const m=map();m.nodes.root.image={assetId:a.assetId,alt:'画像',width:1,height:1};
-  assert.equal((await F.exportBundle(m,store)).assets[a.assetId].mime,'image/png');assert.equal(await stored.blob.text(),await png.text());
+  assert.equal((await F.exportBundle(m,store,trustedPixels)).assets[a.assetId].mime,'image/png');assert.equal(await stored.blob.text(),await png.text());
   // Replacing oversized corruption with the verified original fits the limit.
   fs.files.set(hex(a.assetId),{size:F.MAX_TOTAL+1,lastModified:0});
   await store.putMany([a]);assert.equal(fs.writes(),2);
@@ -148,7 +149,7 @@ test('GC removes only unreferenced files older than 24 hours', async () => {
   assert.deepEqual([...fs.files.keys()].sort(),['a'.repeat(64),'b'.repeat(64)]);
 });
 
-test('uploads keep small supported files, shrink large or unsupported ones to JPEG, and name nodes from files', async t => {
+test('uploads always re-encode pixels, preserve transparency, shrink images, and name nodes from files', async t => {
   const U=require('../ui-prototype/images/upload.js');
   const old={bitmap:global.createImageBitmap,canvas:global.OffscreenCanvas};
   t.after(()=>{global.createImageBitmap=old.bitmap;global.OffscreenCanvas=old.canvas;});
@@ -157,12 +158,44 @@ test('uploads keep small supported files, shrink large or unsupported ones to JP
   global.OffscreenCanvas=class{constructor(w,h){this.width=w;this.height=h;}
     getContext(){return {fillRect(){},drawImage:(b,x,y,w,h)=>{drawn=[w,h];}};}
     async convertToBlob(o){return new Blob(['j'],{type:o.type});}};
-  assert.equal(await U.prepare(png),png);
+  assert.notEqual(await U.prepare(png),png); assert.deepEqual(drawn,[100,50]);
   size=[4000,3000];const big=await U.prepare(png);
-  assert.equal(big.type,'image/jpeg');assert.deepEqual(drawn,[2048,1536]);
-  size=[10,10];assert.equal((await U.prepare(new Blob(['h'],{type:'image/heic'}))).type,'image/jpeg');assert.deepEqual(drawn,[10,10]);
-  size=[10,10];assert.equal((await U.prepare(new Blob([new Uint8Array(U.KEEP_BYTES+1)],{type:'image/png'}))).type,'image/jpeg');
+  assert.equal(big.type,'image/png');assert.deepEqual(drawn,[2048,1536]);
+  size=[10,10];assert.equal((await U.prepare(new Blob(['h'],{type:'image/heic'}))).type,'image/png');assert.deepEqual(drawn,[10,10]);
+  size=[10,10];assert.equal((await U.prepare(new Blob([new Uint8Array(2*1024*1024+1)],{type:'image/png'}))).type,'image/png');
   await assert.rejects(U.prepare(new Blob(['x'],{type:'broken'})),/デコード/);
   await assert.rejects(U.prepare(new Blob([])),/50MiB/);
   assert.equal(U.name({name:'旅行 写真.JPG'}),'旅行 写真');assert.equal(U.name({name:'.png'}),'画像');assert.equal(U.name(new Blob([])),'画像');
+});
+
+test('export strips legacy image metadata, remaps hashes and keeps the saved map untouched',async t=>{
+  const old={bitmap:global.createImageBitmap,canvas:global.OffscreenCanvas};
+  t.after(()=>{global.createImageBitmap=old.bitmap;global.OffscreenCanvas=old.canvas;});
+  let closed=0;
+  global.createImageBitmap=async()=>({width:1,height:1,close(){closed++;}});
+  global.OffscreenCanvas=class {
+    getContext(){return {drawImage(){},fillRect(){}};}
+    async convertToBlob({type}){assert.equal(type,'image/png');return png;}
+  };
+  // The original bytes stand in for an existing stored image with ancillary metadata.
+  const legacy=new Blob([await png.arrayBuffer(),'PRIVATE_AUTHOR_GPS'],{type:'image/png'});
+  const a=await verify(legacy),m=map();m.nodes.root.image={assetId:a.assetId,alt:'photo',width:1,height:1};
+  const original=JSON.stringify(m),store={get:async()=>a,verify};
+  const bundle=await F.exportBundle(m,store),cleanId=bundle.map.nodes.root.image.assetId;
+  assert.notEqual(cleanId,a.assetId);assert.equal(cleanId,(await verify(png)).assetId);
+  assert.equal(Buffer.from(bundle.assets[cleanId].data,'base64').includes(Buffer.from('PRIVATE_AUTHOR_GPS')),false);
+  assert.equal(JSON.stringify(m),original);assert.equal(await a.blob.text(),await legacy.text());
+  let restored=[];
+  const roundtrip=await F.importBundle(bundle,{verify,putMany:async assets=>{restored=assets;}});
+  assert.equal(roundtrip.nodes.root.image.assetId,restored[0].assetId);assert.ok(closed>=4);
+});
+
+test('privacy re-encoding closes its bitmap even when encoding fails',async t=>{
+  const P=require('../ui-prototype/images/privacy.js');
+  const old={bitmap:global.createImageBitmap,canvas:global.OffscreenCanvas};
+  t.after(()=>{global.createImageBitmap=old.bitmap;global.OffscreenCanvas=old.canvas;});
+  let closed=false;
+  global.createImageBitmap=async()=>({width:1,height:1,close(){closed=true;}});
+  global.OffscreenCanvas=class {getContext(){return {drawImage(){}};}async convertToBlob(){throw Error('encode failed');}};
+  await assert.rejects(P.clean(png),/encode failed/);assert.equal(closed,true);
 });

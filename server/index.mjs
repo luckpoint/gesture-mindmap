@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile, realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, extname, sep } from 'node:path';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { CodexClient } from './codex-client.mjs';
 import { InstructionService, ServiceError } from './instruction-service.mjs';
 
@@ -27,15 +28,35 @@ function body(req) {
 export function createRelay(client, service, { instructions = false } = {}) {
   instructions = instructions === true;
   service = instructions ? (service || new InstructionService(client)) : null;
+  const token = randomBytes(32).toString('hex');
   const server = createServer(async (req, res) => {
     try {
+      // Validate against the listening socket, never a forwarded or caller-selected host.
+      const port = req.socket.localPort;
+      const host = req.headers.host?.toLowerCase();
+      const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
+      if (port === 80) ['127.0.0.1', 'localhost', '[::1]'].forEach(h => hosts.add(h));
+      if (!hosts.has(host)) throw new ServiceError('許可されていないホストです', 403);
+      const origin = `http://${host}`;
+      if ((req.headers.origin && req.headers.origin !== origin) ||
+          (req.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(req.headers['sec-fetch-site']))) {
+        throw new ServiceError('同じサイトから接続してください', 403);
+      }
+      const cookieName = `mindmap_relay_${port}`;
       const url = new URL(req.url, 'http://localhost');
       if (['GET', 'HEAD'].includes(req.method) && url.pathname === '/features.js') {
-        res.writeHead(200, { 'Content-Type': types['.js'], 'Cache-Control': 'no-store' });
+        res.writeHead(200, { 'Content-Type': types['.js'], 'Cache-Control': 'no-store',
+          ...(instructions ? { 'Set-Cookie': `${cookieName}=${token}; HttpOnly; SameSite=Strict; Path=/api/` } : {}) });
         res.end(req.method === 'HEAD' ? undefined : `globalThis.MindmapFeatures = Object.freeze({ instructions: ${instructions} });`); return;
       }
       if (!instructions && (url.pathname === '/api/codex' || url.pathname.startsWith('/api/codex/') || url.pathname === '/api/instructions' || url.pathname.startsWith('/api/instructions/'))) {
         json(res, 404, { message: 'APIが見つかりません' }); return;
+      }
+      if (url.pathname.startsWith('/api/')) {
+        const supplied = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith(cookieName + '='))?.slice(cookieName.length + 1) || '';
+        if (Buffer.byteLength(supplied) !== token.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(token))) throw new ServiceError('アプリを再読み込みしてください', 401);
+        if (req.method === 'POST' && (url.pathname === '/api/instructions' || url.pathname.endsWith('/answer')) &&
+            req.headers['content-type']?.split(';')[0].trim().toLowerCase() !== 'application/json') throw new ServiceError('application/jsonで送信してください', 415);
       }
       if (req.method === 'GET' && url.pathname === '/api/codex/status') { json(res, 200, await client.status()); return; }
       if (req.method === 'POST' && url.pathname === '/api/instructions') {

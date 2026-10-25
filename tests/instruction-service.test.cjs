@@ -140,22 +140,25 @@ test('stdio client waits for initialization and rejects server-initiated request
 test('HTTP relay serves only the UI and validates bodies and client ownership', async t=>{
   const {client,service}=await setup(t); const {createRelay}=await import('../server/index.mjs'); const {server}=createRelay(client,service,{instructions:true});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve)); t.after(()=>{server.closeAllConnections();server.close();}); const base='http://127.0.0.1:'+server.address().port;
-  const config=await fetch(base+'/features.js'); assert.match(await config.text(),/instructions: true/);
-  assert.equal((await fetch(base+'/api/codex/status')).status,200);
-  const ui=await fetch(base+'/'); assert.equal(ui.status,200); assert.match(await ui.text(),/promptInput/);
-  assert.equal((await fetch(base+'/server/codex-client.mjs')).status,404);
-  assert.equal((await fetch(base+'/api/instructions',{method:'POST',body:'{'})).status,400);
-  assert.equal((await fetch(base+'/api/instructions',{method:'POST',body:JSON.stringify({...input(),selectedNodeId:'missing'})})).status,400);
-  assert.equal((await fetch(base+'/api/instructions',{method:'POST',body:'x'.repeat(1024*1024+1)})).status,413);
-  const post=await fetch(base+'/api/instructions',{method:'POST',body:JSON.stringify(input())}); assert.equal(post.status,202);
+  const bootstrap=await fetch(base+'/features.js');
+  const cookie=bootstrap.headers.get('set-cookie').split(';')[0];
+  const relayFetch=(url,init={})=>fetch(url,{...init,headers:{Cookie:cookie,...(init.body?{'Content-Type':'application/json'}:{}),...init.headers}});
+  const config=await relayFetch(base+'/features.js'); assert.match(await config.text(),/instructions: true/);
+  assert.equal((await relayFetch(base+'/api/codex/status')).status,200);
+  const ui=await relayFetch(base+'/'); assert.equal(ui.status,200); assert.match(await ui.text(),/promptInput/);
+  assert.equal((await relayFetch(base+'/server/codex-client.mjs')).status,404);
+  assert.equal((await relayFetch(base+'/api/instructions',{method:'POST',body:'{'})).status,400);
+  assert.equal((await relayFetch(base+'/api/instructions',{method:'POST',body:JSON.stringify({...input(),selectedNodeId:'missing'})})).status,400);
+  assert.equal((await relayFetch(base+'/api/instructions',{method:'POST',body:'x'.repeat(1024*1024+1)})).status,413);
+  const post=await relayFetch(base+'/api/instructions',{method:'POST',body:JSON.stringify(input())}); assert.equal(post.status,202);
   const run=service.get('req_1','tab_1'); client.result(run,'completed',JSON.stringify(question));
   const reply=answer(run);
-  assert.equal((await fetch(base+'/api/instructions/req_1/answer?clientSessionId=wrong',{method:'POST',body:JSON.stringify(reply)})).status,404);
-  assert.equal((await fetch(base+'/api/instructions/req_1/answer?clientSessionId=tab_1',{method:'POST',body:JSON.stringify(reply)})).status,202);
-  assert.equal((await fetch(base+'/api/instructions/req_1/answer?clientSessionId=tab_1',{method:'POST',body:JSON.stringify(reply)})).status,202);
+  assert.equal((await relayFetch(base+'/api/instructions/req_1/answer?clientSessionId=wrong',{method:'POST',body:JSON.stringify(reply)})).status,404);
+  assert.equal((await relayFetch(base+'/api/instructions/req_1/answer?clientSessionId=tab_1',{method:'POST',body:JSON.stringify(reply)})).status,202);
+  assert.equal((await relayFetch(base+'/api/instructions/req_1/answer?clientSessionId=tab_1',{method:'POST',body:JSON.stringify(reply)})).status,202);
   assert.equal(client.calls.filter(c=>c.method==='turn/start').length,2);
-  assert.equal((await fetch(base+'/api/instructions/req_1/cancel?clientSessionId=wrong',{method:'POST'})).status,404);
-  assert.equal((await fetch(base+'/api/instructions/req_1/cancel?clientSessionId=tab_1',{method:'POST'})).status,200);
+  assert.equal((await relayFetch(base+'/api/instructions/req_1/cancel?clientSessionId=wrong',{method:'POST'})).status,404);
+  assert.equal((await relayFetch(base+'/api/instructions/req_1/cancel?clientSessionId=tab_1',{method:'POST'})).status,200);
 });
 
 test('image profile enables only image generation and RPC diagnostics never retain upstream secret text', async t => {
@@ -221,4 +224,63 @@ test('relay serves the legal pages linked from the landing footer', async t => {
     assert.equal(page.status,200,href);
     assert.match(await page.text(),/© 2026 Luckpoint Factory/);
   }
+});
+
+test('relay rejects foreign origins, rebinding hosts, missing/stale authentication and non-JSON requests before generation', async t => {
+  const {client,service}=await setup(t);
+  const {createRelay}=await import('../server/index.mjs');
+  const {server}=createRelay(client,service,{instructions:true});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{server.closeAllConnections();server.close();});
+  const base='http://127.0.0.1:'+server.address().port;
+  const boot=await fetch(base+'/features.js');
+  const setCookie=boot.headers.get('set-cookie'), cookie=setCookie.split(';')[0];
+  assert.match(setCookie,/HttpOnly/);assert.match(setCookie,/SameSite=Strict/);assert.match(setCookie,/Path=\/api\//);
+  assert.equal(boot.headers.get('cache-control'),'no-store');
+  assert.equal((await fetch(base+'/api/codex/status')).status,401);
+  const post=(headers={})=>{
+    const opts={method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json',...headers}};
+    if (headers.Host) return new Promise((resolve,reject)=>{
+      const req=require('node:http').request(base+'/api/instructions',opts,res=>{res.resume();res.on('end',()=>resolve({status:res.statusCode}));});
+      req.on('error',reject);req.end(JSON.stringify(input()));
+    });
+    return fetch(base+'/api/instructions',{...opts,body:JSON.stringify(input())});
+  };
+  for (const headers of [
+    {Origin:'https://attacker.invalid'}, {Origin:'null'},
+    {Host:'attacker.invalid'}, {Host:'localhost.attacker.invalid:'+server.address().port},
+    {'Sec-Fetch-Site':'cross-site'}, {'Sec-Fetch-Site':'same-site'},
+  ]) assert.equal((await post(headers)).status,403,JSON.stringify(headers));
+  assert.equal((await post({Cookie:cookie.replace(/=.+/,'=wrong')})).status,401);
+  assert.equal((await post({'Content-Type':'text/plain'})).status,415);
+  assert.equal((await post({'Content-Type':''})).status,415);
+  assert.equal((await fetch(base+'/features.js',{headers:{Origin:'https://attacker.invalid'}})).status,403);
+  const deniedSSE=await fetch(base+'/api/instructions/req_1/events?clientSessionId=tab_1');
+  assert.equal(deniedSSE.status,401);
+  assert.equal(client.calls.length,0);
+  assert.equal((await post({Origin:base,'Sec-Fetch-Site':'same-origin'})).status,202);
+  await tick();assert.equal(client.calls.filter(c=>c.method==='turn/start').length,1);
+  const run=service.get('req_1','tab_1');client.result(run);
+  const stream=await fetch(base+'/api/instructions/req_1/events?clientSessionId=tab_1',{headers:{Cookie:cookie}});
+  assert.equal(stream.status,200);const reader=stream.body.getReader();
+  assert.match(new TextDecoder().decode((await reader.read()).value),/"state":"result"/);await reader.cancel();
+  // A separate relay must not accept the previous relay's startup token, even under its own cookie name.
+  const other=createRelay(client,service,{instructions:true}).server;
+  await new Promise(resolve=>other.listen(0,'127.0.0.1',resolve));t.after(()=>{other.closeAllConnections();other.close();});
+  const otherBase='http://127.0.0.1:'+other.address().port;
+  const otherBoot=await fetch(otherBase+'/features.js');const otherName=otherBoot.headers.get('set-cookie').split('=')[0];
+  assert.equal((await fetch(otherBase+'/api/codex/status',{headers:{Cookie:otherName+'='+cookie.split('=')[1]}})).status,401);
+});
+
+test('global admission limits cannot be bypassed by inventing client IDs or replaying submissions', async t => {
+  const {client,service}=await setup(t,{maxConcurrent:2,startsPerMinute:3,maxRuns:10});
+  const first=service.submit(input());const second=service.submit(input('req_2','tab_2'));await tick();
+  assert.equal(service.submit(input()),first);
+  assert.throws(()=>service.submit(input('req_3','tab_3')),e=>e.status===429);
+  client.result(first);await tick();
+  const third=service.submit(input('req_3','tab_3'));await tick();client.result(second);client.result(third);await tick();
+  assert.throws(()=>service.submit(input('req_4','tab_4')),e=>e.status===429);
+  assert.equal(service.starts.length,3);
+  const retained=await setup(t,{maxRuns:1});const run=retained.service.submit(input());await tick();retained.client.result(run);await tick();
+  assert.throws(()=>retained.service.submit(input('req_2','tab_2')),e=>e.status===429);
 });

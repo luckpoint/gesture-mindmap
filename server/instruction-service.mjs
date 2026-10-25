@@ -14,8 +14,10 @@ needs_inputのmessageには回答できる具体的な質問を書いてくだ�
 
 export class ServiceError extends Error { constructor(message, status = 400) { super(message); this.status = status; } }
 export class InstructionService {
-  constructor(client, { executionTimeout = 120000, inputTimeout = 600000, grace = 5000, retention = 300000 } = {}) {
-    Object.assign(this, { client, executionTimeout, inputTimeout, grace, retention });
+  constructor(client, { executionTimeout = 120000, inputTimeout = 600000, grace = 5000, retention = 300000,
+    maxConcurrent = 4, maxRuns = 64, startsPerMinute = 12 } = {}) {
+    Object.assign(this, { client, executionTimeout, inputTimeout, grace, retention, maxConcurrent, maxRuns, startsPerMinute });
+    this.starts = [];
     this.runs = new Map(); this.clients = new Map();
     this.onNotification = (method, params) => this.notification(method, params);
     this.onFailure = () => { this.clients.clear(); for (const run of this.runs.values()) { run.turnEnded = true; run.resolveEnded?.(); if (!run.done) this.finish(run, 'failed', { message: 'Codexとの接続が停止しました' }); } };
@@ -29,6 +31,12 @@ export class InstructionService {
       return old;
     }
     if (this.clients.has(input.clientSessionId)) throw new ServiceError('このタブでは既に実行中です', 409);
+    const now = Date.now();
+    this.starts = this.starts.filter(at => now - at < 60000);
+    if (this.clients.size >= this.maxConcurrent || this.runs.size >= this.maxRuns || this.starts.length >= this.startsPerMinute) {
+      throw new ServiceError('実行数の上限です。しばらく待ってから再実行してください', 429);
+    }
+    this.starts.push(now);
     const run = { input: JSON.parse(JSON.stringify(input)), state: 'thinking', listeners: new Set(), messages: new Map(), answers: new Map(), questionSeq: 0, early: [], done: false, executing: true };
     this.runs.set(input.requestId, run); this.clients.set(input.clientSessionId, run);
     run.timer = setTimeout(() => this.cancel(run, 'Codexの応答がタイムアウトしました'), this.executionTimeout);

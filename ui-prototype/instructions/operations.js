@@ -38,6 +38,7 @@
   }
   function addNode(m, pid, text, pos, size = estimate) {
     if (!own(m.nodes, pid)) fail(tr('ops.missingParent'));
+    if (Object.keys(m.nodes).length >= ImageFormat.MAX_NODES) fail(tr('map.nodeLimit'));
     let id; do { id = 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); } while (own(m.nodes, id));
     pos ||= place(m, pid, Math.max(160, estimate({ text }).w), size);
     m.nodes[id] = { id, text, parent: pid, x: Math.round(pos.x), y: Math.round(pos.y), order: ++m.seq }; return id;

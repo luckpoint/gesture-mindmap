@@ -659,6 +659,7 @@ body.keyboard-open .prompt { bottom: calc(var(--kb, 0px) + 12px + env(safe-area-
 <script src="gestures/controller.js?v=20261025-ipad-canvas"></script>
 <script src="gestures/debug.js?v=20261025-ipad-canvas"></script>
 <script src="gestures/camera.js?v=20261025-ipad-canvas"></script>
+<script src="images/privacy.js"></script>
 <script src="images/format.js"></script>
 <script src="images/store.js"></script>
 <script src="images/upload.js"></script>
@@ -766,12 +767,22 @@ function record(before) {
   if (history.length > HISTORY_LIMIT) forget(history.splice(0, history.length - HISTORY_LIMIT));
 }
 function commit(fn) {
-  if (refuseReadOnly()) return;
+  if (refuseReadOnly()) return false;
   interruptHand();
   const before = JSON.stringify(map);
-  fn();
+  try {
+    fn();
+    const error = NodeImageFormat.mapError(map);
+    if (error) throw new Error(error);
+  } catch (error) {
+    map = JSON.parse(before); invalidateTree();
+    if (!Object.hasOwn(map.nodes, sel)) sel = map.root;
+    $('#title').value = map.title;
+    toast(error.message); render(); return false;
+  }
   record(before);
   changed();
+  return true;
 }
 function changed() {
   revision++; historyToken++;
@@ -1155,10 +1166,10 @@ async function attachNodeImage(blob, target, alt) {
   const asset = await imageStore.put(blob);
   if (conflict()) throw new Error(tr('image.conflictSaved'));
   let id = nodeId;
-  commit(() => {
+  if (!commit(() => {
     if (child) id = addNode(nodeId, alt, place(nodeId, 208));
     map.nodes[id].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height };
-  });
+  })) return;
   if (child) { select(id); ensureVisible(map.nodes[id]); }
   toast(tr('image.added'));
 }
@@ -1408,7 +1419,12 @@ function finishEdit() {
   const { id, isNew, orig, pid } = editing;
   editing = null; updateSpeech();
   const t = els.get(id)?.nodeText;
-  const text = (t?.textContent || '').trim();
+  let text = (t?.textContent || '').trim();
+  if (text) {
+    const candidate = serializeMap(); candidate.nodes[id].text = text;
+    const error = NodeImageFormat.mapError(candidate);
+    if (error) { toast(error); text = orig; if (t) t.textContent = orig; }
+  }
   if (t) t.contentEditable = 'false';
   if (isNew) {
     // The add was recorded with empty text; fold the typed text into it, or drop it.
@@ -1434,7 +1450,7 @@ function addChildAndEdit(pid, handInput = false) {
   if (editing) finishEdit();
   if (!map.nodes[pid]) pid = map.root;
   let id;
-  commit(() => { id = addNode(pid, ''); });
+  if (!commit(() => { id = addNode(pid, ''); })) return;
   ensureVisible(map.nodes[id]);
   startEdit(id, true);
   if (handInput) {

@@ -85,7 +85,7 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/debug.js'), 'utf8'), context);
-  for (const file of ['format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
+  for (const file of ['privacy.js', 'format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
   for (const file of ['library.js', 'locks.js', 'history.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/print.js'), 'utf8'), context);
@@ -548,7 +548,7 @@ function prepareHand(t) {
 function radialBranch() {
   const t = setup();
   t.run(`Object.assign(map.nodes.root, { x: 527, y: 455 }); Object.assign(map.nodes.a, { x: 926, y: 438 });
-    for (const [id, x, y] of [['math', 777, 306], ['study', 918, 238], ['social', 1064, 294], ['japanese', 1127, 437], ['science', 1054, 585]]) map.nodes[id] = { id, text: id, parent: 'a', x, y };
+    for (const [id, x, y] of [['math', 777, 306], ['study', 918, 238], ['social', 1064, 294], ['japanese', 1127, 437], ['science', 1054, 585]]) map.nodes[id] = { id, text: id, parent: 'a', x, y, order: ++map.seq };
     delete map.nodes.a1; invalidateTree();`);
   const press = (key, from) => { if (from) t.run(`select('${from}')`); t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} }); return t.run('sel'); };
   return { t, press };
@@ -1677,4 +1677,32 @@ test('the current hand pose is shown large and cleared when the hand is lost', (
   t.run("handSample(.5, .5, .8, 'peace');"); assert.equal(pose(), '✌️ ピース');
   t.run("cameraSession.io.frame({ pointer: { x: .5, y: .5 }, ratio: .4, pose: 'neutral', hands: 2 }, handTime);"); assert.equal(pose(), '❔ 判定なし');
   t.run('cameraSession.io.frame(null, handTime);'); assert.equal(pose(), '');
+});
+
+test('node limits reject new children and image children atomically without recording edits',async()=>{
+  const t=setup();
+  t.run(`map=blankMap();map.seq=2048;for(let i=1;i<2048;i++)map.nodes['limit'+i]={id:'limit'+i,text:'n',parent:'root',x:0,y:0,order:i};invalidateTree();const beforeLimit=JSON.stringify(map);`);
+  t.run(`addChildAndEdit('root');`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && editing===null && !saveDirty`),true);
+  assert.match(t.run('notices.at(-1)'),/2,048/);
+  t.run(`imageStore.put=async()=>({assetId:'sha256:'+'a'.repeat(64),width:1,height:1});`);
+  await t.run(`attachNodeImage(new Blob(['test']),{nodeId:'root',child:true,mapSessionId,revision},'image')`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && !saveDirty`),true);
+});
+test('oversized text cannot be saved by either existing-node edits or new-node edits',()=>{
+  const t=setup({renderUI:true});t.run(`const beforeLimit=JSON.stringify(map);startEdit('a');els.get('a').nodeText.textContent='x'.repeat(4001);finishEdit();`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && !saveDirty`),true);
+  t.run(`addChildAndEdit('root');els.get(editing.id).nodeText.textContent='x'.repeat(4001);finishEdit();`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0`),true);
+  assert.match(t.run('notices.at(-1)'),/4,000/);
+});
+
+test('depth and title limits keep the previous map and history unchanged',()=>{
+  const t=setup();
+  t.run(`map=blankMap();map.seq=64;for(let i=1;i<=64;i++)map.nodes['d'+i]={id:'d'+i,text:'n',parent:i===1?'root':'d'+(i-1),x:0,y:0,order:i};invalidateTree();const beforeDepth=JSON.stringify(map);addChildAndEdit('d64');`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeDepth && history.length===0 && editing===null && !saveDirty`),true);
+  assert.match(t.run('notices.at(-1)'),/64/);
+  t.run(`$('#title').oninput({target:{value:'x'.repeat(1001)}});`);
+  assert.equal(t.run(`JSON.stringify(map)===beforeDepth && history.length===0 && $('#title').value===map.title && !saveDirty`),true);
+  assert.match(t.run('notices.at(-1)'),/1,000/);
 });
