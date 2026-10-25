@@ -42,7 +42,7 @@
         this.io.status(tr('cam.preparing'));
         this.mode = mode;
         if (mode === 'worker') {
-          this.worker = new Worker('gestures/hand-worker.js?v=20261025-ipad-canvas');
+          this.worker = new Worker('gestures/hand-worker.js');
           await new Promise((resolve, reject) => {
             this.rejectInit = reject;
             this.initTimer = setTimeout(() => reject(new Error(tr('cam.initTimeout'))), 30000);
@@ -111,7 +111,6 @@
             displayMs: performance.now() - sentAt,
             hands: result.landmarks?.length || 0,
             frameValid: !!sample,
-            revision: '20261025-ipad-canvas',
           });
       });
       this.busy = false;

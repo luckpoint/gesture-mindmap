@@ -370,7 +370,7 @@
     'dev.fallback': 'Try at a low rate (5 fps)',
     'dev.unmeasured': 'Not measured',
     'dev.metrics': m =>
-      `${m.mode} / detected ${m.hands} hand${s(m.hands)} / coordinates ${m.frameValid ? 'valid' : 'none'} / inference ${m.inferenceMs.toFixed(1)}ms / capture→display ${m.displayMs.toFixed(1)}ms / ${m.revision}`,
+      `${m.mode} / detected ${m.hands} hand${s(m.hands)} / coordinates ${m.frameValid ? 'valid' : 'none'} / inference ${m.inferenceMs.toFixed(1)}ms / capture→display ${m.displayMs.toFixed(1)}ms`,
     'dev.save': 'Saving',
     'dev.canvas': 'Canvas',
     'dev.edge': 'Go to the edge',
@@ -740,7 +740,7 @@
     'dev.fallback': '低頻度で試す（5fps）',
     'dev.unmeasured': '未計測',
     'dev.metrics': m =>
-      `${m.mode} / 検出 ${m.hands}手 / 座標 ${m.frameValid ? '有効' : 'なし'} / 推論 ${m.inferenceMs.toFixed(1)}ms / フレーム取得→表示 ${m.displayMs.toFixed(1)}ms / ${m.revision}`,
+      `${m.mode} / 検出 ${m.hands}手 / 座標 ${m.frameValid ? '有効' : 'なし'} / 推論 ${m.inferenceMs.toFixed(1)}ms / フレーム取得→表示 ${m.displayMs.toFixed(1)}ms`,
     'dev.save': '保存',
     'dev.canvas': 'キャンバス',
     'dev.edge': '端まで移動',

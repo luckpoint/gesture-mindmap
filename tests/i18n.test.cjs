@@ -11,7 +11,7 @@ const { en, ja } = I18n.messages;
 const ARGS = {
   'delete.previewReconnect': ['Parent', ['a', 'b']],
   'instruction.previewItem': ['Name', 'Scope', 2, ['a', 'b']],
-  'dev.metrics': [{ mode: 'worker', hands: 2, frameValid: true, inferenceMs: 1, displayMs: 2, revision: 'r' }],
+  'dev.metrics': [{ mode: 'worker', hands: 2, frameValid: true, inferenceMs: 1, displayMs: 2 }],
   'ops.summary': [{ added: 1, updated: 2, reparented: 0, moved: 1, deleted: 3 }],
 };
 const render = (dict, key) =>

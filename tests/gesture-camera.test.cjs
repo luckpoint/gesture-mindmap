@@ -206,7 +206,6 @@ test('only one frame is in flight, and inference/display timings are separate', 
   assert.equal(metric.inferenceMs, 17);
   assert.equal(metric.hands, 0);
   assert.equal(metric.frameValid, true); // This test injects a valid frame adapter.
-  assert.equal(new URL(t.workers[0].url, 'http://localhost/').searchParams.get('v'), metric.revision);
   assert.equal(metric.displayMs, 100);
   assert.equal(t.events.filter(e => e[0] === 'frame').length, 1);
   t.session.stop();
@@ -360,17 +359,9 @@ test('300ms worker results survive the watchdog and arm directional navigation',
   t.session.stop();
 });
 
-test('HTML and camera worker use the same revision to avoid mixing cached code', async () => {
-  const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8');
-  const scripts = [...html.matchAll(/<script src="(gestures\/[^" ]+)"/g)].map(m => new URL(m[1], 'http://localhost/'));
-  assert.equal(scripts.length, 3);
-  const revisions = scripts.map(url => url.searchParams.get('v'));
-  assert.ok(revisions[0]);
-  assert.ok(revisions.every(v => v === revisions[0]));
-  const t = setup();
-  await t.session.start();
-  assert.equal(new URL(t.workers[0].url, 'http://localhost/').searchParams.get('v'), revisions[0]);
-  t.session.stop();
+test('static assets are revalidated so cached code cannot mix with new code', () => {
+  const headers = readFileSync(join(__dirname, '../ui-prototype/_headers'), 'utf8');
+  assert.match(headers, /Cache-Control: .*max-age=0, must-revalidate/);
 });
 
 test('debug receives raw results and clears on tracking timeout and stop', async () => {
