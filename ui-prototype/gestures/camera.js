@@ -99,7 +99,7 @@
     result(result, inferenceMs) {
       if (this.closed) return;
       this.lastResult = performance.now();
-      const sample = root.HandGestures.handFrame(result, this.video.videoWidth, this.video.videoHeight);
+      const sample = root.HandRecognition.handFrame(result, this.video.videoWidth, this.video.videoHeight);
       this.io.frame(sample, this.lastResult);
       this.io.debug?.(result, this.video.videoWidth, this.video.videoHeight);
       const sentAt = this.sentAt;

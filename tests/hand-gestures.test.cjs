@@ -2,11 +2,11 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const {
   HandController,
-  handFrame,
   directionalTarget,
   mapPointer,
   proximityTarget,
 } = require('../ui-prototype/gestures/controller.js');
+const { handFrame } = require('../ui-prototype/gestures/recognition.js');
 
 function setup(options = {}) {
   const events = [],

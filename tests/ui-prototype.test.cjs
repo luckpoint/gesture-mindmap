@@ -223,8 +223,8 @@ function setup({
   // Skip only the initial screen draw; all production handlers are registered.
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/speech/controller.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
-  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
-  vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/debug.js'), 'utf8'), context);
+  for (const file of ['recognition.js', 'controller.js', 'debug.js'])
+    vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures', file), 'utf8'), context);
   for (const file of ['privacy.js', 'format.js', 'store.js', 'upload.js'])
     vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
   for (const file of ['operations.js', 'client.js'])

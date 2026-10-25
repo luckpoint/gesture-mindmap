@@ -10,7 +10,7 @@
 - ピンチの開閉には別々の閾値と安定待ちを使用し、移動には平滑化とデッドゾーンを適用している。
 - 奥行きの `z` と `worldLandmarks` は操作判定に使用していない。
 
-対象コード：[controller.js](../../ui-prototype/gestures/controller.js) の `singleHandFrame` と `HandController`。
+対象コード：[recognition.js](../../ui-prototype/gestures/recognition.js) の `singleHandFrame` と [controller.js](../../ui-prototype/gestures/controller.js) の `HandController`（2026年10月25日に認識計算を分離）。
 
 ## 改善候補（優先順）
 
@@ -49,14 +49,14 @@
 
 ### 個別比較と判定値
 
-`HandGestures.handFrame(result, width, height, options)` の第4引数で各補強を無効化できる。通常のカメラ処理はすべて有効。
+`HandRecognition.handFrame(result, width, height, options)` の第4引数で各補強を無効化できる。通常のカメラ処理はすべて有効。
 
 ```js
-const current = HandGestures.handFrame(result, width, height);
-const withoutAngles = HandGestures.handFrame(result, width, height, { jointAngles: false });
-const withoutDepth = HandGestures.handFrame(result, width, height, { depthPinch: false });
-const withoutMedian = HandGestures.handFrame(result, width, height, { stableHandSize: false });
-const previous = HandGestures.handFrame(result, width, height, {
+const current = HandRecognition.handFrame(result, width, height);
+const withoutAngles = HandRecognition.handFrame(result, width, height, { jointAngles: false });
+const withoutDepth = HandRecognition.handFrame(result, width, height, { depthPinch: false });
+const withoutMedian = HandRecognition.handFrame(result, width, height, { stableHandSize: false });
+const previous = HandRecognition.handFrame(result, width, height, {
   jointAngles: false, depthPinch: false, stableHandSize: false,
 });
 ```
@@ -84,8 +84,8 @@ const previous = HandGestures.handFrame(result, width, height, {
 ### 個別比較
 
 ```js
-const current = HandGestures.handFrame(result, width, height);
-const withoutThumbExtension = HandGestures.handFrame(result, width, height, { thumbExtension: false });
+const current = HandRecognition.handFrame(result, width, height);
+const withoutThumbExtension = HandRecognition.handFrame(result, width, height, { thumbExtension: false });
 ```
 
 `measurements.thumb` に `mcpBend`・`ipBend`（度、算出不能は `null`）、`extended`・`pointsDown` を追加。`thumbExtension: false` は従来の親指下向き条件だけで比較するためのオプションで、通常のカメラ処理では補強が有効。

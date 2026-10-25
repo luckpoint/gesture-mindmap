@@ -121,7 +121,7 @@
       ctx.font = 'bold 10px monospace';
       const values = [];
       result.landmarks.forEach((points, index) => {
-        const frame = root.HandGestures.handFrame(
+        const frame = root.HandRecognition.handFrame(
           {
             landmarks: [points],
             worldLandmarks: [result.worldLandmarks?.[index]],

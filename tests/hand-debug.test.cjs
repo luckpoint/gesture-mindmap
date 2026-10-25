@@ -1,9 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { HandDebugOverlay, HandShapeView, previewPoint, fitPoints } = require('../ui-prototype/gestures/debug.js');
-const { handFrame } = require('../ui-prototype/gestures/controller.js');
+const { handFrame } = require('../ui-prototype/gestures/recognition.js');
 global.I18n = { t: key => key };
-global.HandGestures = { handFrame };
+global.HandRecognition = { handFrame };
 
 function setup() {
   const labels = [],

@@ -87,6 +87,8 @@ function setup(options = {}) {
     clearInterval: id => intervals.delete(id),
     HandGestures: {
       TRACKING_TIMEOUT_MS,
+    },
+    HandRecognition: {
       handFrame: () => ({
         pointer: { x: 0.5, y: 0.5 },
         wrist: { x: 0.5, y: 0.7 },
