@@ -10,7 +10,7 @@
 - ピンチの開閉には別々の閾値と安定待ちを使用し、移動には平滑化とデッドゾーンを適用している。
 - 奥行きの `z` と `worldLandmarks` は操作判定に使用していない。
 
-対象コード：[controller.js](../ui-prototype/gestures/controller.js) の `singleHandFrame` と `HandController`。
+対象コード：[controller.js](../../ui-prototype/gestures/controller.js) の `singleHandFrame` と `HandController`。
 
 ## 改善候補（優先順）
 
@@ -32,7 +32,7 @@
 - 実装時は骨格・判定値を観測できる状態を用意し、各候補を個別に比較する。誤発火、未認識、操作遅延を確認し、既存の安定待ち・開閉ヒステリシス・追跡復帰時のリセットを維持する。
 - 回帰検証には、斜め・横向きの手、指先の前後の重なり、中間姿勢、近距離／遠距離、左右反転、片手／両手の切り替えを含める。
 
-関連：[検知候補](hand-tracking-candidates.md)、[検証記録](gesture-validation.md)。
+関連：[検知候補](hand-tracking-candidates.md)、[検証記録](../guides/gesture-validation.md)。
 
 参考：[MediaPipe Hand Landmarker公式仕様](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/web_js)。番号の照合には、この会話でユーザーが共有した公式図を使用した。
 

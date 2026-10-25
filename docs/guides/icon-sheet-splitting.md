@@ -42,7 +42,7 @@ y = ys[r] + 5
 
 ## 再実行
 
-保存したスクリプトは [split-daily-icons.swift](scripts/split-daily-icons.swift)。macOSとSwiftの実行環境（Xcode Command Line Tools等）が必要で、追加ライブラリは不要。リポジトリのルートで実行する。
+保存したスクリプトは [split-daily-icons.swift](../scripts/split-daily-icons.swift)。macOSとSwiftの実行環境（Xcode Command Line Tools等）が必要で、追加ライブラリは不要。リポジトリのルートで実行する。
 
 ```sh
 swift docs/scripts/split-daily-icons.swift \
@@ -102,7 +102,7 @@ PY
 
 ## 人のアイコン72種の分割
 
-同日、`Downloads/Cute Character Icon Catalog Grid.png`（1055×1491 px）を6列×12行に分割した。人物画像に合わせて座標と名前を設定した専用スクリプトは [split-character-icons.swift](scripts/split-character-icons.swift)。元画像を直接切り出し、拡大・縮小せず128×112 pxの白いキャンバスに中央配置する。タイトル・罫線・日本語ラベルは除外する。
+同日、`Downloads/Cute Character Icon Catalog Grid.png`（1055×1491 px）を6列×12行に分割した。人物画像に合わせて座標と名前を設定した専用スクリプトは [split-character-icons.swift](../scripts/split-character-icons.swift)。元画像を直接切り出し、拡大・縮小せず128×112 pxの白いキャンバスに中央配置する。タイトル・罫線・日本語ラベルは除外する。
 
 ```sh
 swift docs/scripts/split-character-icons.swift \

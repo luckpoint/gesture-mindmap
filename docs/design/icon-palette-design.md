@@ -22,7 +22,7 @@
 | 画像表示 | 既存の画像カードは192×144px。選択／編集中にノード文字を重ねて表示 |
 | レイアウト | `--side` があり、キャンバスやツール類の右側余白に利用できる。現時点は0px |
 
-根拠：`ui-prototype/index.html`、`images/{store,format,upload}.js`、[ノード画像設計](node-images-design.md)、[複数マップ保存設計](multi-map-storage-design.md)、[素材の分割記録](icon-sheet-splitting.md)。寸法・枚数・容量は指定フォルダ内のPNG全144枚を確認した値。
+根拠：`ui-prototype/index.html`、`images/{store,format,upload}.js`、[ノード画像設計](node-images-design.md)、[複数マップ保存設計](multi-map-storage-design.md)、[素材の分割記録](../guides/icon-sheet-splitting.md)。寸法・枚数・容量は指定フォルダ内のPNG全144枚を確認した値。
 
 ## 3. メニューと開閉
 

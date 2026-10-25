@@ -1,12 +1,12 @@
 # 複数マップとRxDB＋OPFS保存 設計
 
-2026年10月24日 作成。対象：試作版 `ui-prototype/`。関連：[編集履歴の永続化](./edit-history-persistence.md)、[ノードへの画像追加](./node-images-design.md)。
+2026年10月24日 作成。対象：試作版 `ui-prototype/`。関連：[編集履歴の永続化](edit-history-persistence.md)、[ノードへの画像追加](node-images-design.md)。
 
 ## 1. 目的と範囲
 
 - 端末内に複数のマップを持ち、一覧から作成・切り替え・削除できるようにする。
 - マップの保存先を localStorage からRxDBへ移す。画像本体の保存先は IndexedDB からOPFSへ移す。
-- 将来のHTTP同期（[編集履歴の永続化](./edit-history-persistence.md)12章）を、データの形を変えずに追加できるようにする。
+- 将来のHTTP同期（[編集履歴の永続化](edit-history-persistence.md)12章）を、データの形を変えずに追加できるようにする。
 
 範囲外：同期の実装、複数端末での同時編集、マップのフォルダ分け・検索、ゴミ箱。
 
@@ -79,7 +79,7 @@ scripts/build-vendor.mjs esbuildでvendor/rxdb.jsを作る
 - `id`・`cursor`・`createdAt`・`updatedAt` はJSON書き出しに含めない。書き出しは今の `serialize` の形のまま。
 - 削除はRxDBの `remove()` を使う。同期のときにも削除として届く。
 
-**`history`**：[編集履歴の永続化](./edit-history-persistence.md)4章の形のまま（段階3）。マップを削除したら、そのマップの履歴も消す。
+**`history`**：[編集履歴の永続化](edit-history-persistence.md)4章の形のまま（段階3）。マップを削除したら、そのマップの履歴も消す。
 
 ### localStorage（端末ごとの小さな設定）
 
@@ -187,7 +187,7 @@ stateDiagram-v2
 |---|---|---|
 | 1. RxDBと複数マップ | vendorのビルド、`library.js`・`locks.js`、一覧UI、作成・切り替え・削除、読み込みを新規マップに、localStorageからの移行 | 11章のE2E 1〜8（2026年10月24日、ChromiumでE2E 1〜4・6〜8を確認。5は自動テスト。iPad Safariは未確認） |
 | 2. 画像のOPFS化 | `store.js` のOPFS化、Worker、IndexedDBからの移行、GC | E2E 9〜11（2026年10月24日、Chromiumで確認。iPad Safariの9は未確認） |
-| 3. 履歴の保存 | [編集履歴の永続化](./edit-history-persistence.md)の4〜6章を `history.js` と `history` コレクションで実装 | 同書10章のE2E（7・8はマップごとのロックに読み替える）（2026年10月24日、Chromiumで1〜10を確認。上限は1000件） |
+| 3. 履歴の保存 | [編集履歴の永続化](edit-history-persistence.md)の4〜6章を `history.js` と `history` コレクションで実装 | 同書10章のE2E（7・8はマップごとのロックに読み替える）（2026年10月24日、Chromiumで1〜10を確認。上限は1000件） |
 
 段階ごとにコミットし、READMEと関連設計書の記述を更新する。
 
