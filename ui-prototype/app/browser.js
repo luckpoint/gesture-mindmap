@@ -46,6 +46,7 @@ function create(environment) {
   };
   Object.assign(services, {
     instructionsEnabled: environment.MindmapFeatures?.instructions === true,
+    debugEnabled: environment.location?.hostname !== 'mindmap.luckpoint.jp',
     history: MapEditHistory,
     diffs: environment.MapHistory,
     autosave: MapAutosave,

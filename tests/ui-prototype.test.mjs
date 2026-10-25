@@ -1836,6 +1836,18 @@ test('disabled instructions hide controls, ignore saved visibility, shortcut and
   assert.equal(t.run('state.map.nodes.root.text'), '通常編集');
 });
 
+test('debug menu is hidden only on the production host', () => {
+  for (const [hostname, hidden] of [
+    ['mindmap.luckpoint.jp', true],
+    ['mindmap-stg.luckpoint.jp', false],
+    ['127.0.0.1', false],
+  ]) {
+    const t = setup({ hostname });
+    for (const id of ['#devBtn', '#devMenuSeparator', '#devMenuBtn'])
+      assert.equal(t.elements.get(id).hidden, hidden, `${hostname} ${id}`);
+  }
+});
+
 test('static feature configuration disables instructions by default', () => {
   const context = vm.createContext({});
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/features.js'), 'utf8'), context);

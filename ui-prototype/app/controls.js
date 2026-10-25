@@ -265,6 +265,7 @@ function create(context, operations) {
     operations.$('#promptToggle').hidden = !services.instructionsEnabled;
     operations.$('#promptShortcutKey').hidden = !services.instructionsEnabled;
     operations.$('#promptShortcutHelp').hidden = !services.instructionsEnabled;
+    for (const id of ['#devBtn', '#devMenuSeparator', '#devMenuBtn']) operations.$(id).hidden = !services.debugEnabled;
     try {
       ui.promptHidden ||= !!environment.localStorage.getItem(operations.PROMPT_KEY);
     } catch {}

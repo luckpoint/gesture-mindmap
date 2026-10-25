@@ -68,6 +68,7 @@ function setup({
   lang = 'ja',
   paletteUI = false,
   compact = false,
+  hostname = '127.0.0.1',
 } = {}) {
   const elements = new Map(),
     storage = new Map(Object.entries(stored)),
@@ -165,6 +166,7 @@ function setup({
   }
   const context = vm.createContext({
     MindmapFeatures: { instructions },
+    location: { hostname },
     navigator: { languages: [lang] },
     console,
     TextEncoder,
