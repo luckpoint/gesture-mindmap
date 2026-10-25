@@ -207,6 +207,7 @@ export class InstructionService {
     }
   }
   notification(method, params) {
+    if (!params?.threadId) return;
     const run = [...this.runs.values()].find(r => r.threadId === params?.threadId);
     if (!run) return;
     if (!run.turnId && run.startingTurn) {

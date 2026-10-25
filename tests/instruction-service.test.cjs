@@ -291,8 +291,7 @@ test('process failure fails active runs and frees client slots', async t => {
   assert.equal(run.state, 'failed');
   assert.equal(service.clients.size, 0);
 });
-test('stdio client waits for initialization and rejects server-initiated requests', async t => {
-  const { CodexClient } = await import('../server/codex-client.mjs');
+function fakeCodexProcess() {
   const proc = new EventEmitter();
   proc.stdin = new PassThrough();
   proc.stdout = new PassThrough();
@@ -320,6 +319,11 @@ test('stdio client waits for initialization and rejects server-initiated request
       }
     }
   });
+  return { proc, sent };
+}
+test('stdio client waits for initialization and rejects server-initiated requests', async t => {
+  const { CodexClient } = await import('../server/codex-client.mjs');
+  const { proc, sent } = fakeCodexProcess();
   const c = new CodexClient({ spawnProcess: () => proc, checkVersion: false });
   t.after(() => c.close());
   await c.start();
@@ -331,6 +335,34 @@ test('stdio client waits for initialization and rejects server-initiated request
   assert.equal(proc.killed, true);
   assert.equal(c.available, false);
   assert.equal(sent.at(-1).error.code, -32601);
+});
+test('notifications without a thread ID never reach runs still waiting for a thread', async t => {
+  const { client, service } = await setup(t);
+  client.override = method => (method === 'thread/start' ? new Promise(() => {}) : undefined);
+  const run = service.submit(input());
+  await tick();
+  client.emit('notification', 'account/updated', undefined);
+  client.emit('notification', 'account/updated', {});
+  assert.equal(run.state, 'thinking');
+});
+test('stdio client survives notification listener errors but stops on invalid JSON', async t => {
+  const { CodexClient } = await import('../server/codex-client.mjs');
+  const { proc } = fakeCodexProcess();
+  const c = new CodexClient({ spawnProcess: () => proc, checkVersion: false });
+  t.after(() => c.close());
+  await c.start();
+  c.on('notification', () => {
+    throw new Error('listener bug');
+  });
+  t.mock.method(console, 'error', () => {});
+  proc.stdout.write(JSON.stringify({ method: 'account/updated' }) + '\n');
+  await tick();
+  assert.equal(c.available, true);
+  assert.equal(proc.killed, undefined);
+  proc.stdout.write('not json\n');
+  await tick();
+  assert.equal(c.available, false);
+  assert.equal(proc.killed, true);
 });
 test('HTTP relay serves only the UI and validates bodies and client ownership', async t => {
   const { client, service } = await setup(t);

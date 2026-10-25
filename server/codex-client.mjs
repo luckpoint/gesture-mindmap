@@ -65,11 +65,18 @@ export class CodexClient extends EventEmitter {
     this.proc.once('exit', () => this.fail(new Error('CODEX_STOPPED')));
     this.lines = createInterface({ input: this.proc.stdout });
     this.lines.on('line', line => {
+      let message;
       try {
-        this.receive(JSON.parse(line));
+        message = JSON.parse(line);
       } catch {
         this.fail(new Error('INVALID_PROTOCOL'));
         this.proc.kill();
+        return;
+      }
+      try {
+        this.receive(message);
+      } catch (error) {
+        console.error('Codexの通知を処理できませんでした', error);
       }
     });
     await this.rpc('initialize', { clientInfo: { name: 'mindmap_prompt', title: 'Mindmap', version: '0.1.0' } });
