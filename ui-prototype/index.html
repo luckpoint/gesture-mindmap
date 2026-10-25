@@ -1917,30 +1917,32 @@
         return Math.max(80, Math.min(viewportEl.clientHeight || innerHeight, top > 150 ? top : innerHeight - 120));
       };
 
-      let palette = null;
-      let map = sample();
-      let library = null,
-        mapId = null,
-        mapClaim = { editable: false, release() {} },
+      const state = {
+        map: sample(),
+        view: { x: 0, y: 0, s: 1 },
+        selectedId: 'root',
+        editing: null,
+        mode: null,
+        hand: null,
+        gesture: null,
+        deletion: null,
+        library: null,
+        mapId: null,
+        mapClaim: { editable: false, release() {} },
+        switching: false,
+        history: [],
+        future: [],
+        revision: 0,
+        historyToken: 0,
+        mapSessionId: InstructionTransport.id('map_'),
+        instruction: null,
+        draftVersion: 0,
+      };
+      let palette = null,
         stopWatch = null,
-        switching = false;
-      let view = { x: 0, y: 0, s: 1 };
-      let selectedId = map.root,
-        editing = null,
-        mode = null,
-        hand = null,
-        gesture = null;
-      let deletion = null;
-      let history = [],
-        future = [],
-        forceSaveFail = false;
-      let revision = 0,
-        historyToken = 0,
-        mapSessionId = InstructionTransport.id('map_');
-      let instruction = null,
+        forceSaveFail = false,
         instructionTimer,
-        instructionUndoButton = null,
-        draftVersion = 0;
+        instructionUndoButton = null;
       const instructionClient = instructionsEnabled ? new InstructionTransport.Client() : null;
       const imageStore = new NodeImageStore.Store();
       let saveTimer,
@@ -1979,9 +1981,9 @@
         };
       }
       function serializeMap() {
-        return InstructionOperations.serialize(map);
+        return InstructionOperations.serialize(state.map);
       }
-      const readOnly = () => !mapClaim.editable;
+      const readOnly = () => !state.mapClaim.editable;
       function refuseReadOnly() {
         if (readOnly()) toast(tr('save.readonly'));
         return readOnly();
@@ -1991,39 +1993,39 @@
         treeCache = null;
       }
       function treeInfo() {
-        if (treeCache?.map === map) return treeCache;
+        if (treeCache?.map === state.map) return treeCache;
         const children = new Map(),
-          colors = new Map([[map.root, 'var(--color-ink)']]),
-          depths = new Map([[map.root, 0]]);
-        for (const n of Object.values(map.nodes)) {
+          colors = new Map([[state.map.root, 'var(--color-ink)']]),
+          depths = new Map([[state.map.root, 0]]);
+        for (const n of Object.values(state.map.nodes)) {
           if (!children.has(n.parent)) children.set(n.parent, []);
           children.get(n.parent).push(n);
         }
         for (const list of children.values()) list.sort((a, b) => a.order - b.order);
-        const roots = children.get(map.root) || [],
-          queue = [map.root];
+        const roots = children.get(state.map.root) || [],
+          queue = [state.map.root];
         roots.forEach((n, i) => colors.set(n.id, `var(--branch-${(i % 6) + 1})`));
         for (let i = 0; i < queue.length; i++) {
           const id = queue[i];
           for (const child of children.get(id) || []) {
             depths.set(child.id, depths.get(id) + 1);
-            if (id !== map.root) colors.set(child.id, colors.get(id));
+            if (id !== state.map.root) colors.set(child.id, colors.get(id));
             queue.push(child.id);
           }
         }
-        return (treeCache = { map, children, colors, depths });
+        return (treeCache = { map: state.map, children, colors, depths });
       }
       const childrenOf = id => treeInfo().children.get(id) || [];
       function subtree(id) {
         const out = new Set([id]);
-        for (const n of Object.values(map.nodes)) {
+        for (const n of Object.values(state.map.nodes)) {
           let cur = n;
           while (cur && cur.parent != null) {
             if (cur.parent === id) {
               out.add(n.id);
               break;
             }
-            cur = map.nodes[cur.parent];
+            cur = state.map.nodes[cur.parent];
           }
         }
         return out;
@@ -2043,10 +2045,10 @@
             : { w: Math.min(260, n.text.length * 18 + 40), h: 52 };
       }
       function place(pid, w = 160) {
-        return InstructionOperations.place(map, pid, w, nodeSize);
+        return InstructionOperations.place(state.map, pid, w, nodeSize);
       }
       function addNode(pid, text, pos) {
-        const id = InstructionOperations.addNode(map, pid, text, pos, nodeSize);
+        const id = InstructionOperations.addNode(state.map, pid, text, pos, nodeSize);
         invalidateTree();
         return id;
       }
@@ -2056,7 +2058,7 @@
       let lastSeq = 0,
         unsaved = new Map(),
         dropped = new Set();
-      const cursor = () => history.at(-1)?.seq ?? 0;
+      const cursor = () => state.history.at(-1)?.seq ?? 0;
       function forget(entries) {
         for (const e of entries) {
           unsaved.delete(e.seq);
@@ -2064,26 +2066,31 @@
         }
       }
       function record(before) {
-        const entry = { seq: ++lastSeq, prev: cursor(), at: Date.now(), ...MapHistory.diff(JSON.parse(before), map) };
-        forget(future);
-        future = [];
-        history.push(entry);
+        const entry = {
+          seq: ++lastSeq,
+          prev: cursor(),
+          at: Date.now(),
+          ...MapHistory.diff(JSON.parse(before), state.map),
+        };
+        forget(state.future);
+        state.future = [];
+        state.history.push(entry);
         unsaved.set(entry.seq, entry);
-        if (history.length > HISTORY_LIMIT) forget(history.splice(0, history.length - HISTORY_LIMIT));
+        if (state.history.length > HISTORY_LIMIT) forget(state.history.splice(0, state.history.length - HISTORY_LIMIT));
       }
       function commit(fn) {
         if (refuseReadOnly()) return false;
         interruptHand();
-        const before = JSON.stringify(map);
+        const before = JSON.stringify(state.map);
         try {
           fn();
-          const error = NodeImageFormat.mapError(map);
+          const error = NodeImageFormat.mapError(state.map);
           if (error) throw new Error(error);
         } catch (error) {
-          map = JSON.parse(before);
+          state.map = JSON.parse(before);
           invalidateTree();
-          if (!Object.hasOwn(map.nodes, selectedId)) selectedId = map.root;
-          $('#title').value = map.title;
+          if (!Object.hasOwn(state.map.nodes, state.selectedId)) state.selectedId = state.map.root;
+          $('#title').value = state.map.title;
           toast(error.message);
           render();
           return false;
@@ -2093,8 +2100,8 @@
         return true;
       }
       function changed() {
-        revision++;
-        historyToken++;
+        state.revision++;
+        state.historyToken++;
         endStaleInstruction();
         render();
         scheduleSave();
@@ -2102,8 +2109,9 @@
       }
       function endStaleInstruction() {
         if (instructionUndoButton) instructionUndoButton.disabled = true;
-        if (instruction?.state === 'awaiting_confirmation') endInstruction('conflict', tr('instruction.conflictApply'));
-        if (instruction?.state === 'awaiting_input' || instruction?.state === 'answering') {
+        if (state.instruction?.state === 'awaiting_confirmation')
+          endInstruction('conflict', tr('instruction.conflictApply'));
+        if (state.instruction?.state === 'awaiting_input' || state.instruction?.state === 'answering') {
           endInstruction('conflict', tr('instruction.conflictQuestion'));
           instructionClient.cancel();
         }
@@ -2111,30 +2119,30 @@
       function updateAccess() {
         palette?.sync();
         $('#title').readOnly = readOnly();
-        $('#undo').disabled = readOnly() || !history.length;
-        $('#redo').disabled = readOnly() || !future.length;
+        $('#undo').disabled = readOnly() || !state.history.length;
+        $('#redo').disabled = readOnly() || !state.future.length;
       }
       function restore(from, to) {
-        if (deletion) {
+        if (state.deletion) {
           closeDelete();
           return;
         }
         if (refuseReadOnly()) return;
-        if (gesture?.hand) {
+        if (state.gesture?.hand) {
           interruptHand();
           return;
         }
         if (!from.length) return;
-        if (editing) finishEdit();
+        if (state.editing) finishEdit();
         const entry = from.pop();
-        map = MapHistory.apply(map, entry, from === history ? 'before' : 'after');
+        state.map = MapHistory.apply(state.map, entry, from === state.history ? 'before' : 'after');
         to.push(entry);
-        if (!map.nodes[selectedId]) selectedId = null;
-        $('#title').value = map.title;
+        if (!state.map.nodes[state.selectedId]) state.selectedId = null;
+        $('#title').value = state.map.title;
         changed();
       }
-      const undo = () => restore(history, future),
-        redo = () => restore(future, history);
+      const undo = () => restore(state.history, state.future),
+        redo = () => restore(state.future, state.history);
       function scheduleSave() {
         saveDirty = true;
         setSave('saving');
@@ -2150,21 +2158,21 @@
         if (!saveDirty) return;
         saveDirty = false;
         // A drag in progress is not a committed state; store the map from before it.
-        const id = mapId,
-          snapshot = JSON.parse(gesture?.pre ?? JSON.stringify(map));
+        const id = state.mapId,
+          snapshot = JSON.parse(state.gesture?.pre ?? JSON.stringify(state.map));
         const changes = { cursor: cursor(), put: [...unsaved.values()], drop: [...dropped] };
         unsaved = new Map();
         dropped = new Set();
         saveWrite = (async () => {
-          if (!library) throw new Error(tr('save.unsupported'));
+          if (!state.library) throw new Error(tr('save.unsupported'));
           if (forceSaveFail) throw new Error(tr('save.error'));
-          await library.save(id, snapshot, changes);
+          await state.library.save(id, snapshot, changes);
         })();
         try {
           await saveWrite;
           if (!saveDirty) setSave('saved');
         } catch (error) {
-          if (mapId === id) {
+          if (state.mapId === id) {
             for (const e of changes.put) if (!dropped.has(e.seq)) unsaved.set(e.seq, e);
             for (const seq of changes.drop) dropped.add(seq);
           }
@@ -2175,20 +2183,20 @@
           saveWrite = null;
         }
       }
-      function setSave(state) {
-        if (state === 'saved' && readOnly()) state = 'readonly';
-        $('#save').dataset.state = state;
-        $('#saveText').textContent = tr('save.' + state);
-        $('#saveExport').hidden = state !== 'error';
+      function setSave(status) {
+        if (status === 'saved' && readOnly()) status = 'readonly';
+        $('#save').dataset.state = status;
+        $('#saveText').textContent = tr('save.' + status);
+        $('#saveExport').hidden = status !== 'error';
         resizeNotices();
       }
 
       /* ---------- maps ---------- */
       function storeView() {
         clearTimeout(viewTimer);
-        if (mapId)
+        if (state.mapId)
           try {
-            localStorage.setItem(VIEW_KEY + mapId, JSON.stringify(view));
+            localStorage.setItem(VIEW_KEY + state.mapId, JSON.stringify(state.view));
           } catch {}
       }
       function storedView(id) {
@@ -2201,8 +2209,8 @@
       }
       function useLog(m, log) {
         const { undo, redo, discard } = MapHistory.verify(m, log.cursor, log.entries);
-        history = undo;
-        future = redo.reverse();
+        state.history = undo;
+        state.future = redo.reverse();
         unsaved = new Map();
         dropped = new Set(discard);
         lastSeq = log.entries.reduce((max, e) => Math.max(max, e.seq), 0);
@@ -2213,21 +2221,21 @@
         stopWatch = null;
         clearTimeout(saveTimer);
         saveDirty = false;
-        map = m;
-        mapId = id;
-        mapClaim = claim;
-        selectedId = compact.matches ? null : map.root;
+        state.map = m;
+        state.mapId = id;
+        state.mapClaim = claim;
+        state.selectedId = compact.matches ? null : state.map.root;
         useLog(m, log);
         invalidateTree();
-        mapSessionId = InstructionTransport.id('map_');
-        revision++;
-        historyToken++;
+        state.mapSessionId = InstructionTransport.id('map_');
+        state.revision++;
+        state.historyToken++;
         endStaleInstruction();
         try {
           localStorage.setItem(LAST_KEY, id);
         } catch {}
-        if (!claim.editable) stopWatch = library.watch(id, showRemote);
-        $('#title').value = map.title;
+        if (!claim.editable) stopWatch = state.library.watch(id, showRemote);
+        $('#title').value = state.map.title;
         // A bundle can repair the same asset ID while an earlier read/decode is
         // still pending. Drop all old states so late failures cannot hide it.
         for (const el of nodeEls.values()) clearNodeImage(el);
@@ -2235,7 +2243,7 @@
         const stored = storedView(id);
         if (stored && !compact.matches) {
           animId++;
-          view = stored;
+          state.view = stored;
           applyView();
         } else fitAll();
         setSave('saved');
@@ -2243,33 +2251,33 @@
         renderMapList();
       }
       function showRemote(m) {
-        if (!readOnly() || switching) return;
+        if (!readOnly() || state.switching) return;
         if (!m) {
-          mapClaim.release();
-          mapClaim = { editable: false, release() {} };
+          state.mapClaim.release();
+          state.mapClaim = { editable: false, release() {} };
           toast(tr('maps.deletedElsewhere'));
           void openFallback().catch(failOpen);
           return;
         }
-        map = m;
+        state.map = m;
         invalidateTree();
-        revision++;
-        if (!map.nodes[selectedId]) selectedId = null;
-        $('#title').value = map.title;
+        state.revision++;
+        if (!state.map.nodes[state.selectedId]) state.selectedId = null;
+        $('#title').value = state.map.title;
         render();
       }
       async function grantEdit(id) {
-        const [m, log] = await Promise.all([library.load(id), library.log(id)]);
-        if (id !== mapId || !mapClaim.editable || switching) return;
+        const [m, log] = await Promise.all([state.library.load(id), state.library.log(id)]);
+        if (id !== state.mapId || !state.mapClaim.editable || state.switching) return;
         stopWatch?.();
         stopWatch = null;
         if (m) {
-          map = m;
+          state.map = m;
           useLog(m, log);
           invalidateTree();
-          revision++;
-          if (!map.nodes[selectedId]) selectedId = map.root;
-          $('#title').value = map.title;
+          state.revision++;
+          if (!state.map.nodes[state.selectedId]) state.selectedId = state.map.root;
+          $('#title').value = state.map.title;
           render();
         }
         setSave('saved');
@@ -2284,7 +2292,10 @@
           },
         });
         try {
-          const [m, log] = await Promise.all([library.load(id), claim.editable ? library.log(id) : undefined]);
+          const [m, log] = await Promise.all([
+            state.library.load(id),
+            claim.editable ? state.library.log(id) : undefined,
+          ]);
           if (!m) throw new Error(tr('maps.loadFailed'));
           showMap(id, m, claim, log);
         } catch (error) {
@@ -2293,32 +2304,32 @@
         }
       }
       async function openFallback() {
-        const [first] = await library.list();
-        await openMap(first?.id ?? (await library.create(sample())));
+        const [first] = await state.library.list();
+        await openMap(first?.id ?? (await state.library.create(sample())));
       }
       function failOpen(error) {
         console.error(error);
         toast(tr('maps.openFailed'));
       }
       function busyOperation() {
-        return !!(editing || gesture || mode || deletion || hand?.grab);
+        return !!(state.editing || state.gesture || state.mode || state.deletion || state.hand?.grab);
       }
       async function leaveMap() {
         if (busyOperation()) throw new Error(tr('maps.finishBeforeSwitch'));
-        const base = revision;
+        const base = state.revision;
         if (!readOnly()) await flushSave();
-        if (saveDirty || revision !== base) throw new Error(tr('maps.changedNoSwitch'));
+        if (saveDirty || state.revision !== base) throw new Error(tr('maps.changedNoSwitch'));
         storeView();
         stopWatch?.();
         stopWatch = null;
-        mapClaim.release();
-        mapClaim = { editable: false, release() {} };
+        state.mapClaim.release();
+        state.mapClaim = { editable: false, release() {} };
       }
       async function switchMap(target) {
-        if (!library) throw new Error(tr('save.unsupported'));
-        if (switching) throw new Error(tr('maps.switching'));
-        switching = true;
-        const previous = mapId;
+        if (!state.library) throw new Error(tr('save.unsupported'));
+        if (state.switching) throw new Error(tr('maps.switching'));
+        state.switching = true;
+        const previous = state.mapId;
         try {
           await leaveMap();
           try {
@@ -2328,39 +2339,39 @@
             throw error;
           }
         } finally {
-          switching = false;
+          state.switching = false;
         }
       }
       async function deleteMap(id) {
-        if (id !== mapId) {
+        if (id !== state.mapId) {
           const claim = await MapLocks.claim(id, { wait: false });
           if (!claim.editable) throw new Error(tr('maps.cantDeleteEditing'));
           try {
-            await library.remove(id);
+            await state.library.remove(id);
           } finally {
             claim.release();
           }
         } else {
           if (readOnly()) throw new Error(tr('maps.cantDeleteEditing'));
           if (busyOperation()) throw new Error(tr('maps.finishBeforeDelete'));
-          if (switching) throw new Error(tr('maps.switching'));
-          switching = true;
+          if (state.switching) throw new Error(tr('maps.switching'));
+          state.switching = true;
           try {
             const dirty = saveDirty;
             clearTimeout(saveTimer);
             saveDirty = false;
             while (saveWrite) await saveWrite.catch(() => {});
             try {
-              await library.remove(id);
+              await state.library.remove(id);
             } catch (error) {
               if (dirty) scheduleSave();
               throw error;
             }
-            mapClaim.release();
-            mapClaim = { editable: false, release() {} };
+            state.mapClaim.release();
+            state.mapClaim = { editable: false, release() {} };
             await openFallback().catch(failOpen);
           } finally {
-            switching = false;
+            state.switching = false;
           }
         }
         try {
@@ -2371,16 +2382,17 @@
         const locks = globalThis.navigator?.locks;
         if (!locks) return;
         await locks.request('mindmap:gc', { ifAvailable: true }, async lock => {
-          if (!lock || (await MapLocks.others(readOnly() ? null : mapId))) return;
+          if (!lock || (await MapLocks.others(readOnly() ? null : state.mapId))) return;
           const refs = new Set(),
             add = m => {
               for (const n of Object.values(m?.nodes || {})) if (n.image) refs.add(n.image.assetId);
             };
-          add(map);
-          for (const e of [...history, ...future]) MapHistory.references(e).forEach(id => refs.add(id));
-          for (const { id } of await library.list()) {
-            add(await library.load(id));
-            for (const e of (await library.log(id)).entries) MapHistory.references(e).forEach(ref => refs.add(ref));
+          add(state.map);
+          for (const e of [...state.history, ...state.future]) MapHistory.references(e).forEach(id => refs.add(id));
+          for (const { id } of await state.library.list()) {
+            add(await state.library.load(id));
+            for (const e of (await state.library.log(id)).entries)
+              MapHistory.references(e).forEach(ref => refs.add(ref));
           }
           const removed = await imageStore.gc(refs, now);
           if (removed) console.info(`Removed ${removed} unused images`);
@@ -2390,7 +2402,7 @@
         busyMaps = new Set(),
         mapSizes = new Map(),
         imageBytes = null;
-      const editedElsewhere = id => busyMaps.has(id) && (id !== mapId || readOnly());
+      const editedElsewhere = id => busyMaps.has(id) && (id !== state.mapId || readOnly());
       const formatBytes = n =>
         n < 1024 ? n + ' B' : n < 1024 ** 2 ? Math.round(n / 1024) + ' KB' : (n / 1024 ** 2).toFixed(1) + ' MB';
       function ago(t, now = Date.now()) {
@@ -2406,14 +2418,14 @@
         list.replaceChildren(
           ...mapList.map(m => {
             const row = Object.assign(document.createElement('li'), {
-              className: 'maps__row' + (m.id === mapId ? ' maps__row--current' : ''),
+              className: 'maps__row' + (m.id === state.mapId ? ' maps__row--current' : ''),
             });
             const open = Object.assign(document.createElement('button'), {
               className: 'btn maps__open',
               title: tr('maps.updated', new Date(m.updatedAt).toLocaleString(I18n.lang)),
             });
             open.dataset.open = m.id;
-            open.setAttribute('aria-current', m.id === mapId);
+            open.setAttribute('aria-current', m.id === state.mapId);
             const size = mapSizes.get(m.id);
             const name = Object.assign(document.createElement('span'), {
               className: 'maps__name',
@@ -2454,7 +2466,7 @@
         try {
           const files = await imageStore.files(),
             fileSize = id => files.get(id)?.size || 0;
-          const stats = await Promise.all(mapList.map(async m => [m.id, await library.stats(m.id)]));
+          const stats = await Promise.all(mapList.map(async m => [m.id, await state.library.stats(m.id)]));
           mapSizes = new Map(
             stats
               .filter(([, s]) => s)
@@ -2490,17 +2502,17 @@
 
       /* ---------- view ---------- */
       function applyView() {
-        world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
-        let g = 28 * view.s;
+        world.style.transform = `translate(${state.view.x}px, ${state.view.y}px) scale(${state.view.s})`;
+        let g = 28 * state.view.s;
         while (g < 16) g *= 2;
         viewportEl.style.backgroundSize = `${g}px ${g}px`;
-        viewportEl.style.backgroundPosition = `${view.x}px ${view.y}px`;
-        $('#zoomLabel').textContent = Math.round(view.s * 100) + '%';
+        viewportEl.style.backgroundPosition = `${state.view.x}px ${state.view.y}px`;
+        $('#zoomLabel').textContent = Math.round(state.view.s * 100) + '%';
         positionMenu();
         clearTimeout(viewTimer);
         viewTimer = setTimeout(storeView, 500);
       }
-      function clampView(v = view, hint = true) {
+      function clampView(v = state.view, hint = true) {
         const cx = (viewportWidth() / 2 - v.x) / v.s,
           cy = (innerHeight / 2 - v.y) / v.s;
         const nx = clamp(cx, -BOUND, BOUND),
@@ -2520,9 +2532,9 @@
       }
       function zoomAt(sx, sy, s) {
         s = clamp(s, ZMIN, ZMAX);
-        const wx = (sx - view.x) / view.s,
-          wy = (sy - view.y) / view.s;
-        view = clampView({ x: sx - wx * s, y: sy - wy * s, s });
+        const wx = (sx - state.view.x) / state.view.s,
+          wy = (sy - state.view.y) / state.view.s;
+        state.view = clampView({ x: sx - wx * s, y: sy - wy * s, s });
         applyView();
       }
       let animId = 0;
@@ -2530,17 +2542,17 @@
         const my = ++animId;
         target = clampView({ ...target, s: clamp(target.s, ZMIN, ZMAX) }, false);
         if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          view = target;
+          state.view = target;
           applyView();
           return;
         }
-        const from = { ...view },
+        const from = { ...state.view },
           t0 = performance.now();
         const step = now => {
           if (my !== animId) return;
           const k = Math.min(1, (now - t0) / 280),
             e = 1 - (1 - k) ** 3;
-          view = {
+          state.view = {
             x: from.x + (target.x - from.x) * e,
             y: from.y + (target.y - from.y) * e,
             s: from.s + (target.s - from.s) * e,
@@ -2550,7 +2562,7 @@
         };
         requestAnimationFrame(step);
       }
-      function centerOn(pt, s = view.s) {
+      function centerOn(pt, s = state.view.s) {
         return { x: viewportWidth() / 2 - pt.x * s, y: canvasHeight() / 2 - pt.y * s, s };
       }
       function mapBounds(tagSpace = 30) {
@@ -2558,7 +2570,7 @@
           y0 = Infinity,
           x1 = -Infinity,
           y1 = -Infinity;
-        for (const n of Object.values(map.nodes)) {
+        for (const n of Object.values(state.map.nodes)) {
           const { w, h } = nodeSize(n);
           x0 = Math.min(x0, n.x - w / 2);
           x1 = Math.max(x1, n.x + w / 2);
@@ -2577,11 +2589,11 @@
         animateTo({ s, x: viewportWidth() / 2 - ((x0 + x1) / 2) * s, y: top + h / 2 - ((y0 + y1) / 2) * s });
       }
       function ensureVisible(pt) {
-        const sx = pt.x * view.s + view.x,
-          sy = pt.y * view.s + view.y;
+        const sx = pt.x * state.view.s + state.view.x,
+          sy = pt.y * state.view.s + state.view.y;
         const { w, h } = nodeSize(pt),
-          mx = Math.min(viewportWidth() / 3, (w * view.s) / 2 + 24),
-          my = Math.min(canvasHeight() / 3, (h * view.s) / 2 + 24);
+          mx = Math.min(viewportWidth() / 3, (w * state.view.s) / 2 + 24),
+          my = Math.min(canvasHeight() / 3, (h * state.view.s) / 2 + 24);
         if (sx < mx || sx > viewportWidth() - mx || sy < my || sy > canvasHeight() - my) animateTo(centerOn(pt));
       }
 
@@ -2601,10 +2613,10 @@
         return el;
       }
       function tagFor(id) {
-        if (hand?.grab === id) return tr(hand.state === 'lost' ? 'hand.cantSee' : 'hand.grabbing');
-        if (hand?.hover === id) return tr('hand.grabbable');
-        if (mode?.id === id) return tr('reparent.active');
-        if (mode?.candidate === id) return tr('reparent.ok');
+        if (state.hand?.grab === id) return tr(state.hand.state === 'lost' ? 'hand.cantSee' : 'hand.grabbing');
+        if (state.hand?.hover === id) return tr('hand.grabbable');
+        if (state.mode?.id === id) return tr('reparent.active');
+        if (state.mode?.candidate === id) return tr('reparent.ok');
         return '';
       }
       let dragFrame = null;
@@ -2616,9 +2628,9 @@
         if (dragFrame !== null) return;
         dragFrame = requestAnimationFrame(() => {
           dragFrame = null;
-          if (gesture !== g) return;
-          for (const id of g.orig.keys()) renderNode(map.nodes[id], null);
-          for (const id of g.edgeIds) renderEdge(map.nodes[id]);
+          if (state.gesture !== g) return;
+          for (const id of g.orig.keys()) renderNode(state.map.nodes[id], null);
+          for (const id of g.edgeIds) renderEdge(state.map.nodes[id]);
           positionMenu();
         });
       }
@@ -2647,7 +2659,7 @@
         frame.append(img, message);
         el.prepend(frame);
         let settle;
-        const state = (el.imageState = {
+        const imageState = (el.imageState = {
           id: ref.assetId,
           frame,
           img,
@@ -2657,7 +2669,7 @@
         });
         img.onload = () => {
           settle();
-          if (el.imageState === state) {
+          if (el.imageState === imageState) {
             message.hidden = true;
             renderEdges();
             positionMenu();
@@ -2665,8 +2677,8 @@
         };
         const failed = () => {
           settle();
-          if (el.imageState === state) {
-            state.failed = true;
+          if (el.imageState === imageState) {
+            imageState.failed = true;
             img.hidden = true;
             message.hidden = false;
             message.textContent = tr('image.loadFailed');
@@ -2674,7 +2686,7 @@
         };
         img.onerror = failed;
         imageStore.acquire(ref.assetId).then(url => {
-          if (el.imageState === state) img.src = url;
+          if (el.imageState === imageState) img.src = url;
         }, failed);
       }
       async function attachNodeImage(blob, target, alt) {
@@ -2683,15 +2695,15 @@
         const conflict = () =>
           (target.valid && !target.valid()) ||
           readOnly() ||
-          session !== mapSessionId ||
-          baseRevision !== revision ||
-          instruction?.state === 'awaiting_confirmation' ||
-          !Object.hasOwn(map.nodes, nodeId) ||
-          editing ||
-          gesture ||
-          mode ||
-          deletion ||
-          hand?.grab;
+          session !== state.mapSessionId ||
+          baseRevision !== state.revision ||
+          state.instruction?.state === 'awaiting_confirmation' ||
+          !Object.hasOwn(state.map.nodes, nodeId) ||
+          state.editing ||
+          state.gesture ||
+          state.mode ||
+          state.deletion ||
+          state.hand?.grab;
         if (conflict()) throw new Error(tr('image.conflict'));
         if (typeof alt !== 'string' || alt.length > 4000) throw new Error(tr('image.altTooLong'));
         const asset = await imageStore.put(blob);
@@ -2700,13 +2712,13 @@
         if (
           !commit(() => {
             if (child) id = addNode(nodeId, alt, place(nodeId, 208));
-            map.nodes[id].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height };
+            state.map.nodes[id].image = { assetId: asset.assetId, alt, width: asset.width, height: asset.height };
           })
         )
           return;
         if (child) {
           select(id);
-          ensureVisible(map.nodes[id]);
+          ensureVisible(state.map.nodes[id]);
         }
         toast(tr('image.added'));
       }
@@ -2717,8 +2729,10 @@
         $('#imageInput').click();
       }
       async function adoptImageFile(file, pick) {
-        const target = { ...pick, mapSessionId, revision };
-        const alt = pick.child ? NodeImageUpload.name(file) : map.nodes[pick.nodeId].text || NodeImageUpload.name(file);
+        const target = { ...pick, mapSessionId: state.mapSessionId, revision: state.revision };
+        const alt = pick.child
+          ? NodeImageUpload.name(file)
+          : state.map.nodes[pick.nodeId].text || NodeImageUpload.name(file);
         try {
           await attachNodeImage(await NodeImageUpload.prepare(file), target, alt);
         } catch (error) {
@@ -2730,7 +2744,7 @@
           pick = imagePick;
         e.target.value = '';
         imagePick = null;
-        if (!file || !pick || !map.nodes[pick.nodeId]) return;
+        if (!file || !pick || !state.map.nodes[pick.nodeId]) return;
         await adoptImageFile(file, pick);
       };
       let dropTarget = null;
@@ -2759,12 +2773,12 @@
         setDropTarget(null);
         if (icon) {
           const id = nodeIdAt(e);
-          if (id && map.nodes[id]) await palette.drop(e.dataTransfer, id);
+          if (id && state.map.nodes[id]) await palette.drop(e.dataTransfer, id);
           return;
         }
         const id = nodeIdAt(e),
           file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
-        if (!id || !map.nodes[id] || refuseReadOnly()) return;
+        if (!id || !state.map.nodes[id] || refuseReadOnly()) return;
         if (!file) {
           toast(tr('image.dropFile'));
           return;
@@ -2773,7 +2787,7 @@
       });
       let viewing = null;
       function openImageViewer(id) {
-        const ref = map.nodes[id]?.image;
+        const ref = state.map.nodes[id]?.image;
         if (!ref || nodeEls.get(id)?.imageState?.failed) return false;
         const img = $('#imageViewerImg'),
           assetId = (viewing = ref.assetId);
@@ -2794,9 +2808,17 @@
         return true;
       }
       function removeNodeImage(id) {
-        if (!map.nodes[id]?.image || editing || gesture || mode || deletion || hand?.grab) return;
+        if (
+          !state.map.nodes[id]?.image ||
+          state.editing ||
+          state.gesture ||
+          state.mode ||
+          state.deletion ||
+          state.hand?.grab
+        )
+          return;
         commit(() => {
-          delete map.nodes[id].image;
+          delete state.map.nodes[id].image;
         });
         toast(tr('image.removed'));
       }
@@ -2804,27 +2826,31 @@
         const el = nodeEl(n.id),
           t = el.nodeText;
         renderNodeImage(el, n.image);
-        if (editing?.id !== n.id && t.textContent !== n.text) t.textContent = n.text;
+        if (state.editing?.id !== n.id && t.textContent !== n.text) t.textContent = n.text;
         el.style.setProperty('--x', n.x + 'px');
         el.style.setProperty('--y', n.y + 'px');
         el.style.setProperty('--b', branchColor(n.id));
         const c = el.classList;
-        c.toggle('is-root', n.id === map.root);
+        c.toggle('is-root', n.id === state.map.root);
         c.toggle('has-image', !!n.image);
-        c.toggle('is-selected', n.id === selectedId && !mode && !editing && !hand?.grab);
-        c.toggle('is-editing', editing?.id === n.id);
-        c.toggle('is-dragging', gesture?.type === 'node' && gesture.moved && gesture.id === n.id && !hand);
-        c.toggle('is-grabbable', hand?.hover === n.id && !hand.grab);
-        c.toggle('is-grabbed', hand?.grab === n.id && hand.state !== 'lost');
-        c.toggle('is-lost', hand?.grab === n.id && hand.state === 'lost');
-        c.toggle('is-source', mode?.id === n.id);
-        c.toggle('is-invalid', !!blocked && blocked.has(n.id) && n.id !== mode.id);
-        c.toggle('is-candidate', mode?.candidate === n.id || gesture?.swap === n.id);
+        c.toggle('is-selected', n.id === state.selectedId && !state.mode && !state.editing && !state.hand?.grab);
+        c.toggle('is-editing', state.editing?.id === n.id);
+        c.toggle(
+          'is-dragging',
+          state.gesture?.type === 'node' && state.gesture.moved && state.gesture.id === n.id && !state.hand,
+        );
+        c.toggle('is-grabbable', state.hand?.hover === n.id && !state.hand.grab);
+        c.toggle('is-grabbed', state.hand?.grab === n.id && state.hand.state !== 'lost');
+        c.toggle('is-lost', state.hand?.grab === n.id && state.hand.state === 'lost');
+        c.toggle('is-source', state.mode?.id === n.id);
+        c.toggle('is-invalid', !!blocked && blocked.has(n.id) && n.id !== state.mode.id);
+        c.toggle('is-candidate', state.mode?.candidate === n.id || state.gesture?.swap === n.id);
         c.toggle(
           'is-delete-preview',
-          !!deletion?.scope && (deletion.scope === 'branch' ? deletion.ids.includes(n.id) : deletion.id === n.id),
+          !!state.deletion?.scope &&
+            (state.deletion.scope === 'branch' ? state.deletion.ids.includes(n.id) : state.deletion.id === n.id),
         );
-        c.toggle('is-promote-preview', deletion?.scope === 'single' && deletion.children.includes(n.id));
+        c.toggle('is-promote-preview', state.deletion?.scope === 'single' && state.deletion.children.includes(n.id));
         const tag = tagFor(n.id);
         tag ? (el.dataset.tag = tag) : delete el.dataset.tag;
       }
@@ -2832,17 +2858,17 @@
         palette?.sync();
         cancelDragRender();
         for (const [id, el] of nodeEls)
-          if (!map.nodes[id]) {
+          if (!state.map.nodes[id]) {
             clearNodeImage(el);
             el.remove();
             nodeEls.delete(id);
           }
-        const blocked = mode?.blocked || null;
-        for (const n of Object.values(map.nodes)) renderNode(n, blocked);
+        const blocked = state.mode?.blocked || null;
+        for (const n of Object.values(state.map.nodes)) renderNode(n, blocked);
         renderEdges();
         positionMenu();
-        $('#promptTarget').textContent = map.nodes[selectedId]
-          ? tr('prompt.selected', map.nodes[selectedId].text)
+        $('#promptTarget').textContent = state.map.nodes[state.selectedId]
+          ? tr('prompt.selected', state.map.nodes[state.selectedId].text)
           : tr('prompt.targetRoot');
       }
       function curve(a, b) {
@@ -2866,29 +2892,30 @@
           el = createEdge('edge');
           edgeEls.set(n.id, el);
         }
-        el.classList.toggle('is-old', !!(mode?.id === n.id && mode.candidate));
+        el.classList.toggle('is-old', !!(state.mode?.id === n.id && state.mode.candidate));
         el.style.setProperty('--b', branchColor(n.id));
         el.style.strokeWidth = [0, 5, 3.5][depth(n.id)] || 2.5;
-        const promote = deletion?.scope === 'single' && deletion.children.includes(n.id);
+        const promote = state.deletion?.scope === 'single' && state.deletion.children.includes(n.id);
         el.classList.toggle('is-promote-preview', promote);
         el.classList.toggle(
           'is-delete-preview',
-          !!deletion?.scope && (deletion.scope === 'branch' ? deletion.ids.includes(n.id) : deletion.id === n.id),
+          !!state.deletion?.scope &&
+            (state.deletion.scope === 'branch' ? state.deletion.ids.includes(n.id) : state.deletion.id === n.id),
         );
-        el.setAttribute('d', curve(map.nodes[promote ? deletion.parent : n.parent], n));
+        el.setAttribute('d', curve(state.map.nodes[promote ? state.deletion.parent : n.parent], n));
       }
       let previewEdge = null;
       function renderEdges() {
         for (const [id, el] of edgeEls) {
-          if (!map.nodes[id] || map.nodes[id].parent == null) {
+          if (!state.map.nodes[id] || state.map.nodes[id].parent == null) {
             el.remove();
             edgeEls.delete(id);
           }
         }
-        for (const n of Object.values(map.nodes)) renderEdge(n);
-        if (mode?.candidate) {
+        for (const n of Object.values(state.map.nodes)) renderEdge(n);
+        if (state.mode?.candidate) {
           previewEdge ||= createEdge('edge is-preview');
-          previewEdge.setAttribute('d', curve(map.nodes[mode.candidate], map.nodes[mode.id]));
+          previewEdge.setAttribute('d', curve(state.map.nodes[state.mode.candidate], state.map.nodes[state.mode.id]));
         } else {
           previewEdge?.remove();
           previewEdge = null;
@@ -2896,9 +2923,16 @@
       }
       function positionMenu() {
         const menu = $('#nodeMenu'),
-          n = selectedId && map.nodes[selectedId];
+          n = state.selectedId && state.map.nodes[state.selectedId];
         const docked = document.body.classList.contains('canvas-narrow');
-        if (!n || editing || mode || deletion || hand?.grab || (gesture?.moved && !docked)) {
+        if (
+          !n ||
+          state.editing ||
+          state.mode ||
+          state.deletion ||
+          state.hand?.grab ||
+          (state.gesture?.moved && !docked)
+        ) {
           menu.hidden = true;
           return;
         }
@@ -2908,21 +2942,21 @@
         menu.querySelector('[data-act=image] .btn__label--long').textContent = tr(imageKey);
         menu.querySelector('[data-act=image] .btn__label--short').textContent = tr(`${imageKey}.short`);
         for (const act of ['reparent', 'delete'])
-          menu.querySelector(`[data-act=${act}]`).hidden = selectedId === map.root;
-        const el = nodeEls.get(selectedId),
+          menu.querySelector(`[data-act=${act}]`).hidden = state.selectedId === state.map.root;
+        const el = nodeEls.get(state.selectedId),
           half = el.offsetHeight / 2;
         const mw = menu.offsetWidth,
           mh = menu.offsetHeight;
-        const x = clamp(n.x * view.s + view.x - mw / 2, 8, Math.max(8, viewportWidth() - mw - 8));
-        const above = (n.y - half) * view.s + view.y - mh - 40,
-          below = (n.y + half) * view.s + view.y + 16;
+        const x = clamp(n.x * state.view.s + state.view.x - mw / 2, 8, Math.max(8, viewportWidth() - mw - 8));
+        const above = (n.y - half) * state.view.s + state.view.y - mh - 40,
+          below = (n.y + half) * state.view.s + state.view.y + 16;
         const covers = top =>
-          Object.values(map.nodes).some(m => {
-            if (m.id === selectedId) return false;
+          Object.values(state.map.nodes).some(m => {
+            if (m.id === state.selectedId) return false;
             const { w, h } = nodeSize(m),
-              left = (m.x - w / 2) * view.s + view.x,
-              mTop = (m.y - h / 2) * view.s + view.y;
-            return left < x + mw && left + w * view.s > x && mTop < top + mh && mTop + h * view.s > top;
+              left = (m.x - w / 2) * state.view.s + state.view.x,
+              mTop = (m.y - h / 2) * state.view.s + state.view.y;
+            return left < x + mw && left + w * state.view.s > x && mTop < top + mh && mTop + h * state.view.s > top;
           });
         const y = clamp(
           above >= 72 && (!covers(above) || covers(below)) ? above : below,
@@ -2937,12 +2971,12 @@
       let speechMessage = '';
       function updateSpeech() {
         const active = speech.active,
-          fromHand = !!editing?.handInput;
-        $('#nodeSpeech').hidden = !editing;
+          fromHand = !!state.editing?.handInput;
+        $('#nodeSpeech').hidden = !state.editing;
         $('#nodeSpeechToggle').hidden = fromHand && active;
         $('#nodeSpeechToggle').disabled = !speech.supported || speech.state === 'stopping';
         $('#nodeSpeechToggle').textContent = tr(active ? 'speech.stop' : 'speech.start');
-        $('#nodeSpeechDone').disabled = (active && !fromHand) || !!editing?.pendingDone;
+        $('#nodeSpeechDone').disabled = (active && !fromHand) || !!state.editing?.pendingDone;
         $('#nodeSpeechDone').textContent = tr(fromHand ? 'speech.handDone' : 'speech.done');
         $('#nodeSpeechCancel').textContent = tr(fromHand ? 'speech.handCancel' : 'common.cancel');
         $('#speechNote').textContent = tr(fromHand ? 'speech.handNote' : 'speech.note');
@@ -2952,18 +2986,19 @@
             ? tr('speech.' + speech.state)
             : speechMessage;
         if (!active) $('#speechInterim').textContent = '';
-        const t = editing && nodeEls.get(editing.id)?.nodeText;
+        const t = state.editing && nodeEls.get(state.editing.id)?.nodeText;
         if (t) t.contentEditable = active ? 'false' : 'plaintext-only';
       }
       function startNodeSpeech() {
-        if (!editing || readOnly()) return;
-        const edit = editing,
-          session = mapSessionId,
+        if (!state.editing || readOnly()) return;
+        const edit = state.editing,
+          session = state.mapSessionId,
           t = nodeEls.get(edit.id).nodeText;
         edit.pendingDone = false;
         speechMessage = '';
         speech.start({
-          valid: () => editing === edit && session === mapSessionId && !readOnly() && !!map.nodes[edit.id],
+          valid: () =>
+            state.editing === edit && session === state.mapSessionId && !readOnly() && !!state.map.nodes[edit.id],
           read: () => t.textContent,
           write: (text, interim) => {
             t.textContent = text;
@@ -2997,10 +3032,10 @@
         });
       }
       function confirmNodeSpeech() {
-        if (!editing || editing.pendingDone) return;
+        if (!state.editing || state.editing.pendingDone) return;
         if (speech.active) {
-          if (!editing.handInput) return;
-          editing.pendingDone = true;
+          if (!state.editing.handInput) return;
+          state.editing.pendingDone = true;
           speech.stop();
           updateSpeech();
         } else {
@@ -3032,29 +3067,29 @@
       });
       $('#nodeSpeech').addEventListener('focusout', e => {
         if (
-          editing &&
-          !editing.handInput &&
+          state.editing &&
+          !state.editing.handInput &&
           e.relatedTarget &&
           !$('#nodeSpeech').contains(e.relatedTarget) &&
-          e.relatedTarget !== nodeEls.get(editing.id)?.nodeText
+          e.relatedTarget !== nodeEls.get(state.editing.id)?.nodeText
         )
           finishEdit();
       });
       updateSpeech();
 
       function select(id) {
-        if (selectedId !== id) palette?.selectionChanged();
-        selectedId = id;
+        if (state.selectedId !== id) palette?.selectionChanged();
+        state.selectedId = id;
         render();
       }
       function startEdit(id, isNew = false, atEnd = false) {
         if (refuseReadOnly()) return;
-        if (editing?.id === id) return;
-        if (editing) finishEdit();
-        if (!map.nodes[id]) return;
+        if (state.editing?.id === id) return;
+        if (state.editing) finishEdit();
+        if (!state.map.nodes[id]) return;
         interruptHand();
-        editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
-        selectedId = id;
+        state.editing = { id, isNew, orig: state.map.nodes[id].text, pid: state.map.nodes[id].parent };
+        state.selectedId = id;
         render();
         const t = nodeEls.get(id).nodeText;
         t.dataset.placeholder = tr('node.placeholder');
@@ -3069,10 +3104,10 @@
         updateSpeech();
       }
       function finishEdit() {
-        if (!editing) return;
+        if (!state.editing) return;
         speech.abort();
-        const { id, isNew, orig, pid } = editing;
-        editing = null;
+        const { id, isNew, orig, pid } = state.editing;
+        state.editing = null;
         updateSpeech();
         const t = nodeEls.get(id)?.nodeText;
         let text = (t?.textContent || '').trim();
@@ -3089,20 +3124,20 @@
         if (t) t.contentEditable = 'false';
         if (isNew) {
           // The add was recorded with empty text; fold the typed text into it, or drop it.
-          const added = history.pop();
+          const added = state.history.pop();
           forget([added]);
-          const before = MapHistory.apply(map, added, 'before');
+          const before = MapHistory.apply(state.map, added, 'before');
           if (!text) {
-            map = before;
-            selectedId = pid;
+            state.map = before;
+            state.selectedId = pid;
           } else {
-            map.nodes[id].text = text;
+            state.map.nodes[id].text = text;
             record(JSON.stringify(before));
           }
           changed();
         } else if (text && text !== orig) {
           commit(() => {
-            map.nodes[id].text = text;
+            state.map.nodes[id].text = text;
           });
         } else {
           if (t) t.textContent = orig;
@@ -3110,14 +3145,14 @@
         }
       }
       function cancelEdit() {
-        if (!editing) return;
-        nodeEls.get(editing.id).nodeText.textContent = editing.isNew ? '' : editing.orig;
+        if (!state.editing) return;
+        nodeEls.get(state.editing.id).nodeText.textContent = state.editing.isNew ? '' : state.editing.orig;
         finishEdit();
       }
       function addChildAndEdit(pid, handInput = false) {
         if (refuseReadOnly()) return;
-        if (editing) finishEdit();
-        if (!map.nodes[pid]) pid = map.root;
+        if (state.editing) finishEdit();
+        if (!state.map.nodes[pid]) pid = state.map.root;
         let id;
         if (
           !commit(() => {
@@ -3125,40 +3160,40 @@
           })
         )
           return;
-        ensureVisible(map.nodes[id]);
+        ensureVisible(state.map.nodes[id]);
         startEdit(id, true);
         if (handInput) {
-          editing.handInput = true;
+          state.editing.handInput = true;
           updateSpeech();
           if (speech.supported) startNodeSpeech();
         }
       }
       function addSiblingAndEdit() {
-        const n = map.nodes[selectedId];
-        addChildAndEdit(!n || n.parent == null ? map.root : n.parent);
+        const n = state.map.nodes[state.selectedId];
+        addChildAndEdit(!n || n.parent == null ? state.map.root : n.parent);
       }
       function removeNode(id) {
-        if (!map.nodes[id]) return;
-        if (id === map.root) {
+        if (!state.map.nodes[id]) return;
+        if (id === state.map.root) {
           toast(tr('delete.root'));
           return;
         }
         if (refuseReadOnly()) return;
         interruptHand();
-        if (editing) finishEdit();
-        if (!map.nodes[id]) return;
-        if (mode) endReparent();
+        if (state.editing) finishEdit();
+        if (!state.map.nodes[id]) return;
+        if (state.mode) endReparent();
         const ids = [...subtree(id)],
           children = childrenOf(id).map(n => n.id);
-        deletion = {
+        state.deletion = {
           id,
           ids,
           children,
-          parent: map.nodes[id].parent,
+          parent: state.map.nodes[id].parent,
           scope: children.length ? null : 'single',
-          snapshot: JSON.stringify(map),
+          snapshot: JSON.stringify(state.map),
         };
-        $('#deleteTitle').textContent = tr('delete.title', map.nodes[id].text);
+        $('#deleteTitle').textContent = tr('delete.title', state.map.nodes[id].text);
         $('#deleteDescription').textContent = tr(children.length ? 'delete.choose' : 'delete.only');
         $('#deleteOptions').hidden = !children.length;
         $('#deleteSingle').checked = false;
@@ -3166,7 +3201,7 @@
         $('#deleteSingleDetail').textContent = tr(
           'delete.singleDetail',
           children.length,
-          map.nodes[deletion.parent].text,
+          state.map.nodes[state.deletion.parent].text,
         );
         $('#deleteBranchDetail').textContent = tr('delete.branchDetail', ids.length);
         updateDeletePreview();
@@ -3175,15 +3210,15 @@
         render();
       }
       function chooseDeleteScope(scope) {
-        if (!deletion || !['single', 'branch'].includes(scope)) return;
-        deletion.scope = scope;
+        if (!state.deletion || !['single', 'branch'].includes(scope)) return;
+        state.deletion.scope = scope;
         $('#deleteSingle').checked = scope === 'single';
         $('#deleteBranch').checked = scope === 'branch';
         updateDeletePreview();
         render();
       }
       function updateDeletePreview() {
-        const d = deletion;
+        const d = state.deletion;
         $('#deleteConfirm').disabled = !d?.scope;
         $('#deleteConfirm').textContent =
           d?.scope === 'branch'
@@ -3192,51 +3227,51 @@
         $('#deletePreview').textContent = !d?.scope
           ? tr('delete.previewEmpty')
           : d.scope === 'branch'
-            ? tr('delete.previewBranch', map.nodes[d.id].text, d.ids.length, map.nodes[d.parent].text)
+            ? tr('delete.previewBranch', state.map.nodes[d.id].text, d.ids.length, state.map.nodes[d.parent].text)
             : d.children.length
               ? tr(
                   'delete.previewReconnect',
-                  map.nodes[d.parent].text,
-                  d.children.map(id => map.nodes[id].text),
+                  state.map.nodes[d.parent].text,
+                  d.children.map(id => state.map.nodes[id].text),
                 )
               : tr('delete.previewSingle');
       }
       function closeDelete() {
-        if (!deletion) return;
-        deletion = null;
+        if (!state.deletion) return;
+        state.deletion = null;
         $('#deleteDialog').close();
         interruptHand();
         render();
         viewportEl.focus({ preventScroll: true });
       }
       function confirmDelete() {
-        const d = deletion;
+        const d = state.deletion;
         if (!d?.scope) return;
-        if (JSON.stringify(map) !== d.snapshot) {
+        if (JSON.stringify(state.map) !== d.snapshot) {
           const id = d.id;
           closeDelete();
-          if (map.nodes[id]) removeNode(id);
+          if (state.map.nodes[id]) removeNode(id);
           toast(tr('delete.changed'));
           return;
         }
         closeDelete();
         commit(() => {
-          if (d.scope === 'branch') for (const id of d.ids) delete map.nodes[id];
+          if (d.scope === 'branch') for (const id of d.ids) delete state.map.nodes[id];
           else {
             const siblings = childrenOf(d.parent).flatMap(n => (n.id === d.id ? d.children : [n.id]));
-            for (const id of d.children) map.nodes[id].parent = d.parent;
-            delete map.nodes[d.id];
-            for (const id of siblings) map.nodes[id].order = ++map.seq;
+            for (const id of d.children) state.map.nodes[id].parent = d.parent;
+            delete state.map.nodes[d.id];
+            for (const id of siblings) state.map.nodes[id].order = ++state.map.seq;
           }
           invalidateTree();
-          selectedId = d.parent;
+          state.selectedId = d.parent;
         });
         toast(tr('delete.done'), tr('common.undo'), undo);
       }
       function deleteHandItems() {
         return [
-          deletion?.children.length ? $('#deleteSingle') : null,
-          deletion?.children.length ? $('#deleteBranch') : null,
+          state.deletion?.children.length ? $('#deleteSingle') : null,
+          state.deletion?.children.length ? $('#deleteBranch') : null,
           $('#deleteCancel'),
           !$('#deleteConfirm').disabled ? $('#deleteConfirm') : null,
         ].filter(Boolean);
@@ -3251,8 +3286,8 @@
       }
 
       function relatives(id) {
-        const parent = map.nodes[id].parent;
-        return Object.values(map.nodes).filter(
+        const parent = state.map.nodes[id].parent;
+        return Object.values(state.map.nodes).filter(
           n => n.id === id || n.id === parent || n.parent === id || (parent != null && n.parent === parent),
         );
       }
@@ -3278,9 +3313,9 @@
         return null;
       }
       function branchKey(id) {
-        let n = map.nodes[id];
-        while (map.nodes[n.parent].parent != null) n = map.nodes[n.parent];
-        const root = map.nodes[map.root],
+        let n = state.map.nodes[id];
+        while (state.map.nodes[n.parent].parent != null) n = state.map.nodes[n.parent];
+        const root = state.map.nodes[state.map.root],
           dx = n.x - root.x,
           dy = n.y - root.y;
         return Math.abs(dx) >= Math.abs(dy) ? (dx < 0 ? 'ArrowLeft' : 'ArrowRight') : dy < 0 ? 'ArrowUp' : 'ArrowDown';
@@ -3288,7 +3323,7 @@
       function treeTarget(key, s) {
         // Descendants inherit the root branch's axis even when the fan curves.
         const out = branchKey(s.id),
-          parent = map.nodes[s.parent];
+          parent = state.map.nodes[s.parent];
         const angle = (n, origin) => {
           const [a, b] = along(out, n.x - origin.x, n.y - origin.y);
           return Math.atan2(b, a);
@@ -3309,23 +3344,23 @@
         return siblings[siblings.indexOf(s) + step]?.id ?? s.id;
       }
       function navigate(key, nodes) {
-        const s = map.nodes[selectedId] || map.nodes[map.root];
+        const s = state.map.nodes[state.selectedId] || state.map.nodes[state.map.root];
         const best = nodes
           ? nearestInDirection(key, s, nodes)
-          : ((s.id === map.root ? nearestInDirection(key, s, childrenOf(s.id)) : treeTarget(key, s)) ??
-            nearestInDirection(key, s, Object.values(map.nodes)));
+          : ((s.id === state.map.root ? nearestInDirection(key, s, childrenOf(s.id)) : treeTarget(key, s)) ??
+            nearestInDirection(key, s, Object.values(state.map.nodes)));
         if (best) {
           select(best);
-          ensureVisible(map.nodes[best]);
+          ensureVisible(state.map.nodes[best]);
         }
       }
       function nudge(key) {
-        const id = selectedId || map.root;
+        const id = state.selectedId || state.map.root;
         const [dx, dy] = { ArrowRight: [24, 0], ArrowLeft: [-24, 0], ArrowDown: [0, 24], ArrowUp: [0, -24] }[key];
         commit(() => {
           for (const d of subtree(id)) {
-            map.nodes[d].x += dx;
-            map.nodes[d].y += dy;
+            state.map.nodes[d].x += dx;
+            state.map.nodes[d].y += dy;
           }
         });
       }
@@ -3334,39 +3369,39 @@
       function startReparent(id) {
         if (refuseReadOnly()) return;
         interruptHand();
-        if (id === map.root) return;
-        mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
+        if (id === state.map.root) return;
+        state.mode = { type: 'reparent', id, candidate: null, blocked: subtree(id) };
         $('#modeMsg').innerHTML = tr('reparent.where');
-        $('#modeMsg b').textContent = map.nodes[id].text;
+        $('#modeMsg b').textContent = state.map.nodes[id].text;
         $('#modeBanner').hidden = false;
         resizeNotices();
         $('#modeOk').disabled = true;
         render();
       }
       function endReparent() {
-        mode = null;
+        state.mode = null;
         $('#modeBanner').hidden = true;
         resizeNotices();
         render();
       }
       function setCandidate(id) {
-        if (!mode) return;
-        if (mode.blocked.has(id)) id = null;
-        if (mode.candidate === id) return;
-        mode.candidate = id;
+        if (!state.mode) return;
+        if (state.mode.blocked.has(id)) id = null;
+        if (state.mode.candidate === id) return;
+        state.mode.candidate = id;
         $('#modeOk').disabled = !id;
         render();
       }
       function confirmReparent() {
-        const { id, candidate } = mode;
+        const { id, candidate } = state.mode;
         endReparent();
-        if (!candidate || map.nodes[id].parent === candidate) return;
+        if (!candidate || state.map.nodes[id].parent === candidate) return;
         commit(() => {
-          map.nodes[id].parent = candidate;
-          map.nodes[id].order = ++map.seq;
+          state.map.nodes[id].parent = candidate;
+          state.map.nodes[id].order = ++state.map.seq;
           invalidateTree();
         });
-        selectedId = id;
+        state.selectedId = id;
         render();
         toast(tr('reparent.done'), tr('common.undo'), undo);
       }
@@ -3414,7 +3449,7 @@
           t.append(button);
           if (action.undo) instructionUndoButton = button;
         }
-        if (!instruction) {
+        if (!state.instruction) {
           const close = Object.assign(document.createElement('button'), {
             className: 'btn',
             type: 'button',
@@ -3427,7 +3462,7 @@
         }
         if (transient)
           instructionTimer = setTimeout(() => {
-            if (!instruction) t.hidden = true;
+            if (!state.instruction) t.hidden = true;
           }, 5000);
       }
       async function checkCodexStatus() {
@@ -3443,15 +3478,15 @@
       }
       function instructionConflict(run) {
         return (
-          run.session !== mapSessionId ||
-          run.revision !== revision ||
-          !!(editing || gesture || mode || deletion || hand?.grab)
+          run.session !== state.mapSessionId ||
+          run.revision !== state.revision ||
+          !!(state.editing || state.gesture || state.mode || state.deletion || state.hand?.grab)
         );
       }
-      function endInstruction(state, message, counts) {
-        const run = instruction;
+      function endInstruction(status, message, counts) {
+        const run = state.instruction;
         if (!run) return;
-        instruction = null;
+        state.instruction = null;
         $('#promptSend').disabled = false;
         $('#promptSend').textContent = tr('prompt.send');
         $('#promptQuestion').hidden = true;
@@ -3460,18 +3495,18 @@
         if ($('#instructionDialog').open) $('#instructionDialog').close();
         const input = $('#promptInput'),
           actions = [];
-        if (state === 'succeeded') {
-          if (draftVersion === run.sentDraftVersion && input.value === run.sentText) {
+        if (status === 'succeeded') {
+          if (state.draftVersion === run.sentDraftVersion && input.value === run.sentText) {
             input.value = '';
-            draftVersion++;
+            state.draftVersion++;
           }
           if (counts) {
-            const token = historyToken;
+            const token = state.historyToken;
             actions.push({
               label: tr('common.undo'),
               undo: true,
               run: () => {
-                if (historyToken === token) {
+                if (state.historyToken === token) {
                   undo();
                   $('#instructionToast').hidden = true;
                 }
@@ -3483,61 +3518,61 @@
             label: tr('instruction.backToInput'),
             run: () => {
               input.value = run.text;
-              draftVersion++;
+              state.draftVersion++;
               resizePrompt();
               input.focus();
             },
           });
         }
-        if (state === 'failed')
+        if (status === 'failed')
           actions.push({
             label: tr('instruction.retry'),
             run: () => {
-              if (!instruction) void sendInstruction(run.text);
+              if (!state.instruction) void sendInstruction(run.text);
             },
           });
         instructionToast(
           message,
           actions,
-          ['succeeded', 'cancelled', 'no_change'].includes(state),
-          state === 'failed' || state === 'conflict',
+          ['succeeded', 'cancelled', 'no_change'].includes(status),
+          status === 'failed' || status === 'conflict',
         );
         resizePrompt();
       }
       function cancelInstruction() {
-        if (!instruction) return;
+        if (!state.instruction) return;
         // Invalidate the browser request before asking the relay to interrupt it.
         endInstruction('cancelled', tr('instruction.cancelled'));
         instructionClient.cancel();
       }
       async function sendInstruction(retryText) {
         if (!instructionsEnabled) return;
-        if (instruction?.state === 'awaiting_input' && typeof retryText !== 'string') {
+        if (state.instruction?.state === 'awaiting_input' && typeof retryText !== 'string') {
           await answerInstruction();
           return;
         }
-        if (instruction) return;
+        if (state.instruction) return;
         const text = typeof retryText === 'string' ? retryText : $('#promptInput').value;
         if (!text.trim()) return;
         if (readOnly()) {
           instructionToast(tr('instruction.readOnly'), [], false, true);
           return;
         }
-        if (deletion || $('#instructionDialog').open) return;
-        if (editing) finishEdit();
+        if (state.deletion || $('#instructionDialog').open) return;
+        if (state.editing) finishEdit();
         interruptHand();
-        if (gesture) {
+        if (state.gesture) {
           revertGesture();
           pts.clear();
         }
-        if (mode) endReparent();
+        if (state.mode) endReparent();
         const input = {
           requestId: InstructionTransport.id('req_'),
           clientSessionId: instructionClient.clientSessionId,
-          mapSessionId,
-          baseRevision: revision,
+          mapSessionId: state.mapSessionId,
+          baseRevision: state.revision,
           prompt: text,
-          selectedNodeId: map.nodes[selectedId] ? selectedId : null,
+          selectedNodeId: state.map.nodes[state.selectedId] ? state.selectedId : null,
           map: serializeMap(),
         };
         try {
@@ -3548,35 +3583,35 @@
           instructionToast(error.message, [], false, true);
           return;
         }
-        const run = (instruction = {
+        const run = (state.instruction = {
           id: input.requestId,
-          session: mapSessionId,
-          revision,
-          selection: selectedId,
+          session: state.mapSessionId,
+          revision: state.revision,
+          selection: state.selectedId,
           text,
-          draftVersion,
+          draftVersion: state.draftVersion,
           sentText: text,
-          sentDraftVersion: draftVersion,
+          sentDraftVersion: state.draftVersion,
           state: 'thinking',
           snapshot: input.map,
         });
         $('#promptSend').disabled = true;
         instructionToast(tr('instruction.thinking'), [{ label: tr('common.stop'), run: cancelInstruction }]);
         try {
-          const proposal = await instructionClient.run(input, (state, data) => {
-            if (instruction !== run) return;
-            if (state === 'awaiting_input') {
+          const proposal = await instructionClient.run(input, (status, data) => {
+            if (state.instruction !== run) return;
+            if (status === 'awaiting_input') {
               if (instructionConflict(run)) {
                 endInstruction('conflict', tr('instruction.conflictQuestion'));
                 instructionClient.cancel();
                 return;
               }
               const field = $('#promptInput');
-              if (draftVersion === run.sentDraftVersion && field.value === run.sentText) {
+              if (state.draftVersion === run.sentDraftVersion && field.value === run.sentText) {
                 field.value = '';
-                draftVersion++;
+                state.draftVersion++;
               }
-              run.state = state;
+              run.state = status;
               run.questionId = data.questionId;
               $('#promptQuestion').textContent = data.message;
               $('#promptQuestion').hidden = false;
@@ -3587,15 +3622,15 @@
               $('#promptSend').disabled = false;
               instructionToast(tr('instruction.waitingAnswer'), [{ label: tr('common.stop'), run: cancelInstruction }]);
               resizePrompt();
-            } else if (state === 'thinking') {
-              run.state = state;
+            } else if (status === 'thinking') {
+              run.state = status;
               $('#promptQuestion').hidden = true;
               $('#promptSend').disabled = true;
               instructionToast(tr('instruction.thinking'), [{ label: tr('common.stop'), run: cancelInstruction }]);
               resizePrompt();
             }
           });
-          if (instruction !== run || instructionClient.applied.has(run.id)) return;
+          if (state.instruction !== run || instructionClient.applied.has(run.id)) return;
           if (instructionConflict(run)) {
             endInstruction('conflict', tr('instruction.conflictApply'));
             return;
@@ -3615,11 +3650,11 @@
           if (run.prepared.deletions.length) confirmInstruction();
           else applyInstruction();
         } catch (error) {
-          if (instruction === run) endInstruction('failed', error.message || tr('instruction.connectFailed'));
+          if (state.instruction === run) endInstruction('failed', error.message || tr('instruction.connectFailed'));
         }
       }
       async function answerInstruction() {
-        const run = instruction,
+        const run = state.instruction,
           field = $('#promptInput'),
           answer = field.value;
         if (!run || run.state !== 'awaiting_input' || !answer.trim()) return;
@@ -3630,13 +3665,13 @@
         }
         const questionId = run.questionId;
         run.sentText = answer;
-        run.sentDraftVersion = draftVersion;
+        run.sentDraftVersion = state.draftVersion;
         run.state = 'answering';
         $('#promptSend').disabled = true;
         try {
           await instructionClient.answer(answer);
         } catch (error) {
-          if (instruction !== run || run.questionId !== questionId || run.state !== 'answering') return;
+          if (state.instruction !== run || run.questionId !== questionId || run.state !== 'answering') return;
           run.state = 'awaiting_input';
           $('#promptSend').disabled = false;
           instructionToast(
@@ -3648,7 +3683,7 @@
         }
       }
       function confirmInstruction() {
-        const run = instruction;
+        const run = state.instruction;
         run.state = 'awaiting_confirmation';
         const scopes = $('#instructionScopes');
         scopes.textContent = '';
@@ -3685,7 +3720,7 @@
         $('#instructionCancel').focus();
       }
       function updateInstructionPreview() {
-        const run = instruction;
+        const run = state.instruction;
         if (!run) return;
         try {
           run.prepared = InstructionOperations.prepare(run.snapshot, run.proposal, { size: nodeSize });
@@ -3711,7 +3746,7 @@
         }
       }
       function applyInstruction() {
-        const run = instruction;
+        const run = state.instruction;
         if (!run || !run.prepared) return;
         if (instructionConflict(run)) {
           endInstruction('conflict', tr('instruction.conflictApply'));
@@ -3724,24 +3759,24 @@
         }
         let target = candidate.focusId,
           preserveView = false;
-        if (selectedId !== run.selection) {
-          preserveView = !!candidate.map.nodes[selectedId];
-          target = selectedId;
-          while (target && !candidate.map.nodes[target]) target = map.nodes[target]?.parent;
+        if (state.selectedId !== run.selection) {
+          preserveView = !!candidate.map.nodes[state.selectedId];
+          target = state.selectedId;
+          while (target && !candidate.map.nodes[target]) target = state.map.nodes[target]?.parent;
           target ||= candidate.map.root;
         }
         run.state = 'applying';
         instructionToast(tr('instruction.applying'));
         // No await from the final revision check through publishing this one history entry.
         commit(() => {
-          map = candidate.map;
+          state.map = candidate.map;
           invalidateTree();
-          selectedId = target;
+          state.selectedId = target;
         });
         instructionClient.applied.add(run.id);
         if (instructionClient.applied.size > 1000)
           instructionClient.applied.delete(instructionClient.applied.values().next().value);
-        if (!preserveView) ensureVisible(map.nodes[selectedId]);
+        if (!preserveView) ensureVisible(state.map.nodes[state.selectedId]);
         endInstruction('succeeded', InstructionOperations.summary(candidate.counts), candidate.counts);
       }
 
@@ -3793,7 +3828,7 @@
         cameraSession = null;
         handController?.cancel();
         handController = null;
-        hand = null;
+        state.hand = null;
         camStatus = '';
         $('#cam').hidden = true;
         $('#handCursor').hidden = true;
@@ -3812,58 +3847,59 @@
         handController = new HandGestures.HandController({
           disable: stopHand,
           blocked: () =>
-            (speech.active && !editing?.handInput) ||
+            (speech.active && !state.editing?.handInput) ||
             palette?.focused() ||
             readOnly() ||
-            instruction?.state === 'awaiting_confirmation' ||
-            (!!editing && !editing.handInput) ||
-            !!mode ||
+            state.instruction?.state === 'awaiting_confirmation' ||
+            (!!state.editing && !state.editing.handInput) ||
+            !!state.mode ||
             pts.size > 0 ||
-            !!(gesture && !gesture.hand) ||
-            (!deletion &&
-              !editing?.handInput &&
+            !!(state.gesture && !state.gesture.hand) ||
+            (!state.deletion &&
+              !state.editing?.handInput &&
               !!document.activeElement?.closest?.('input, textarea, [contenteditable="plaintext-only"]')),
-          dialog: () => !!deletion || !!editing?.handInput,
+          dialog: () => !!state.deletion || !!state.editing?.handInput,
           dialogNavigate: step => {
-            if (deletion) navigateDelete(step);
+            if (state.deletion) navigateDelete(step);
           },
           dialogChoose: side => {
-            if (editing?.handInput) {
+            if (state.editing?.handInput) {
               if (side === 'left') confirmNodeSpeech();
               else {
                 cancelEdit();
                 viewportEl.focus();
               }
-            } else if (deletion) {
+            } else if (state.deletion) {
               side === 'left' ? closeDelete() : confirmDelete();
             }
           },
           command: action => {
-            if (deletion || editing || mode || !map.nodes[selectedId]) return;
-            if (action === 'add') addChildAndEdit(map.nodes[selectedId] ? selectedId : map.root, true);
-            else if (action === 'delete') removeNode(selectedId || map.root);
+            if (state.deletion || state.editing || state.mode || !state.map.nodes[state.selectedId]) return;
+            if (action === 'add')
+              addChildAndEdit(state.map.nodes[state.selectedId] ? state.selectedId : state.map.root, true);
+            else if (action === 'delete') removeNode(state.selectedId || state.map.root);
           },
           select: id => {
-            if (selectedId !== id) select(id);
+            if (state.selectedId !== id) select(id);
           },
           center: id => {
-            if (map.nodes[id]) animateTo(centerOn(map.nodes[id]));
+            if (state.map.nodes[id]) animateTo(centerOn(state.map.nodes[id]));
           },
           nodes: () =>
             [...nodeEls]
-              .filter(([id]) => map.nodes[id])
+              .filter(([id]) => state.map.nodes[id])
               .map(([id, el]) => {
                 const r = el.getBoundingClientRect();
                 return { id, left: r.left, top: r.top, right: r.right, bottom: r.bottom };
               }),
           pan: (dx, dy) => {
             animId++;
-            view = clampView({ x: view.x + dx, y: view.y + dy, s: view.s });
+            state.view = clampView({ x: state.view.x + dx, y: state.view.y + dy, s: state.view.s });
             applyView();
           },
           zoom: factor => {
             animId++;
-            zoomAt(viewportWidth() / 2, canvasHeight() / 2, view.s * factor);
+            zoomAt(viewportWidth() / 2, canvasHeight() / 2, state.view.s * factor);
           },
           bounds: () => {
             const r = viewportEl.getBoundingClientRect();
@@ -3874,9 +3910,9 @@
               bottom: Math.min(r.bottom, canvasHeight()),
             };
           },
-          paint: state => {
-            hand = state;
-            const key = [state.state, state.hover, state.grab].join(':');
+          paint: handState => {
+            state.hand = handState;
+            const key = [handState.state, handState.hover, handState.grab].join(':');
             if (key !== handPaintKey) {
               handPaintKey = key;
               render();
@@ -3884,7 +3920,7 @@
             updateHand();
           },
         });
-        hand = handController.state;
+        state.hand = handController.state;
         $('#cam').hidden = false;
         $('#handBtn').setAttribute('aria-pressed', 'true');
         const session = new CameraSession({
@@ -3950,44 +3986,49 @@
         $('#handGuideToggle').setAttribute('aria-expanded', String(open));
       };
       function updateHand() {
-        if (!hand) return;
+        if (!state.hand) return;
         const cursor = $('#handCursor');
-        cursor.hidden = !!camStatus || !hand.pointerVisible;
-        cursor.style.left = (hand.pointer?.x ?? hand.x) + 'px';
-        cursor.style.top = (hand.pointer?.y ?? hand.y) + 'px';
-        cursor.dataset.state = hand.hover ? 'hover' : 'ready';
-        $('#handLabel').textContent = hand.hover ? map.nodes[hand.hover]?.text || '' : '';
-        const message = tr('hand.' + hand.state),
-          unseen = !!camStatus || hand.state === 'nohand' || hand.state === 'lost';
-        const tips = unseen ? [] : editing?.handInput ? ['voiceDone', 'voiceCancel'] : HAND_TIPS[hand.state] || [];
-        $('#cam').dataset.state = camStatus ? 'starting' : hand.state;
+        cursor.hidden = !!camStatus || !state.hand.pointerVisible;
+        cursor.style.left = (state.hand.pointer?.x ?? state.hand.x) + 'px';
+        cursor.style.top = (state.hand.pointer?.y ?? state.hand.y) + 'px';
+        cursor.dataset.state = state.hand.hover ? 'hover' : 'ready';
+        $('#handLabel').textContent = state.hand.hover ? state.map.nodes[state.hand.hover]?.text || '' : '';
+        const message = tr('hand.' + state.hand.state),
+          unseen = !!camStatus || state.hand.state === 'nohand' || state.hand.state === 'lost';
+        const tips = unseen
+          ? []
+          : state.editing?.handInput
+            ? ['voiceDone', 'voiceCancel']
+            : HAND_TIPS[state.hand.state] || [];
+        $('#cam').dataset.state = camStatus ? 'starting' : state.hand.state;
         $('#camMsg').hidden = !unseen;
         $('#camMsg').textContent = unseen ? camStatus || message : '';
         $('#handHelp').textContent = unseen ? '' : message;
-        $('#handProgress').style.setProperty('--p', hand.progress || 0);
+        $('#handProgress').style.setProperty('--p', state.hand.progress || 0);
         if ($('#handTips').dataset.tips !== tips.join()) {
           $('#handTips').dataset.tips = tips.join();
           $('#handTips').replaceChildren(...tipItems(tips));
         }
-        if (deletion) $('#deleteHandHelp').textContent = hand.state === 'paused' ? message : tr('delete.handHelp');
+        if (state.deletion)
+          $('#deleteHandHelp').textContent = state.hand.state === 'paused' ? message : tr('delete.handHelp');
       }
       function beginNodeDrag(id, x, y, fromHand = false) {
         animId++;
-        selectedId = id;
-        const orig = new Map([...subtree(id)].map(d => [d, { x: map.nodes[d].x, y: map.nodes[d].y }]));
+        state.selectedId = id;
+        const orig = new Map([...subtree(id)].map(d => [d, { x: state.map.nodes[d].x, y: state.map.nodes[d].y }]));
         const edgeIds = new Set();
         for (const d of orig.keys()) {
-          if (map.nodes[d].parent != null) edgeIds.add(d);
+          if (state.map.nodes[d].parent != null) edgeIds.add(d);
           for (const child of childrenOf(d)) edgeIds.add(child.id);
         }
-        gesture = {
+        state.gesture = {
           type: 'node',
           edgeIds,
           id,
           sx: x,
           sy: y,
           moved: false,
-          pre: JSON.stringify(map),
+          pre: JSON.stringify(state.map),
           orig,
           hand: fromHand,
         };
@@ -3997,54 +4038,55 @@
         const dx = x - g.sx,
           dy = y - g.sy;
         if (!g.moved && Math.hypot(dx, dy) < 4) return;
-        let wx = dx / view.s,
-          wy = dy / view.s;
+        let wx = dx / state.view.s,
+          wy = dy / state.view.s;
         for (const p of g.orig.values()) {
           wx = clamp(wx, -BOUND - p.x, BOUND - p.x);
           wy = clamp(wy, -BOUND - p.y, BOUND - p.y);
         }
         for (const [id, p] of g.orig) {
-          map.nodes[id].x = Math.round(p.x + wx);
-          map.nodes[id].y = Math.round(p.y + wy);
+          state.map.nodes[id].x = Math.round(p.x + wx);
+          state.map.nodes[id].y = Math.round(p.y + wy);
         }
         g.moved = true;
         const target = swapTarget(g, x, y);
         if (target !== g.swap) {
           const prev = g.swap;
           g.swap = target;
-          for (const id of [prev, target]) if (id) renderNode(map.nodes[id], null);
+          for (const id of [prev, target]) if (id) renderNode(state.map.nodes[id], null);
         }
         scheduleDragRender(g);
       }
       function swapTarget(g, x, y) {
-        const wx = (x - view.x) / view.s,
-          wy = (y - view.y) / view.s;
+        const wx = (x - state.view.x) / state.view.s,
+          wy = (y - state.view.y) / state.view.s;
         return (
-          childrenOf(map.nodes[g.id].parent).find(n => {
+          childrenOf(state.map.nodes[g.id].parent).find(n => {
             const s = nodeSize(n);
             return n.id !== g.id && Math.abs(n.x - wx) < s.w / 2 && Math.abs(n.y - wy) < s.h / 2;
           })?.id ?? null
         );
       }
       function finishNodeDrag(g) {
-        gesture = null;
-        if (hand) hand.grab = null;
+        state.gesture = null;
+        if (state.hand) state.hand.grab = null;
         if (g.swap) {
-          for (const [id, p] of g.orig) Object.assign(map.nodes[id], p);
-          InstructionOperations.swap(map, g.id, g.swap);
+          for (const [id, p] of g.orig) Object.assign(state.map.nodes[id], p);
+          InstructionOperations.swap(state.map, g.id, g.swap);
           record(g.pre);
           changed();
           toast(tr('swap.done'), tr('common.undo'), undo);
-        } else if (JSON.stringify(map) !== g.pre) {
+        } else if (JSON.stringify(state.map) !== g.pre) {
           record(g.pre);
           changed();
         } else render();
         updateHand();
       }
       function revertGesture() {
-        if (gesture?.type === 'node') for (const [id, p] of gesture.orig) Object.assign(map.nodes[id], p);
-        if (hand) hand.grab = null;
-        gesture = null;
+        if (state.gesture?.type === 'node')
+          for (const [id, p] of state.gesture.orig) Object.assign(state.map.nodes[id], p);
+        if (state.hand) state.hand.grab = null;
+        state.gesture = null;
         render();
         updateHand();
       }
@@ -4058,47 +4100,55 @@
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         viewportEl.setPointerCapture(e.pointerId);
         if (pts.size === 2) {
-          if (gesture?.type === 'node') revertGesture();
+          if (state.gesture?.type === 'node') revertGesture();
           const [a, b] = [...pts.values()];
-          gesture = {
+          state.gesture = {
             type: 'pinch',
             d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-            s0: view.s,
-            wx: ((a.x + b.x) / 2 - view.x) / view.s,
-            wy: ((a.y + b.y) / 2 - view.y) / view.s,
+            s0: state.view.s,
+            wx: ((a.x + b.x) / 2 - state.view.x) / state.view.s,
+            wy: ((a.y + b.y) / 2 - state.view.y) / state.view.s,
           };
           return;
         }
-        if (editing) finishEdit();
+        if (state.editing) finishEdit();
         viewportEl.focus({ preventScroll: true });
         const id = e.target.closest('.node')?.dataset.id;
-        if (mode) {
+        if (state.mode) {
           if (!id) return;
-          if (e.pointerType === 'mouse' || mode.candidate === id) {
+          if (e.pointerType === 'mouse' || state.mode.candidate === id) {
             setCandidate(id);
-            if (mode.candidate) confirmReparent();
+            if (state.mode.candidate) confirmReparent();
           } else setCandidate(id);
           return;
         }
         if (id && !readOnly()) beginNodeDrag(id, e.clientX, e.clientY);
         else
-          gesture = { type: 'pan', id: id ?? null, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
+          state.gesture = {
+            type: 'pan',
+            id: id ?? null,
+            sx: e.clientX,
+            sy: e.clientY,
+            vx: state.view.x,
+            vy: state.view.y,
+            moved: false,
+          };
         palette?.sync();
       });
       viewportEl.addEventListener('pointermove', e => {
-        if (mode && e.pointerType === 'mouse') setCandidate(e.target.closest('.node')?.dataset.id || null);
+        if (state.mode && e.pointerType === 'mouse') setCandidate(e.target.closest('.node')?.dataset.id || null);
         if (!pts.has(e.pointerId)) return;
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        const g = gesture;
+        const g = state.gesture;
         if (!g) return;
         if (g.type === 'pinch') {
           if (pts.size < 2) {
-            gesture = null;
+            state.gesture = null;
             return;
           }
           const [a, b] = [...pts.values()];
           const s = clamp((g.s0 * Math.hypot(a.x - b.x, a.y - b.y)) / g.d0, ZMIN, ZMAX);
-          view = clampView({ x: (a.x + b.x) / 2 - g.wx * s, y: (a.y + b.y) / 2 - g.wy * s, s });
+          state.view = clampView({ x: (a.x + b.x) / 2 - g.wx * s, y: (a.y + b.y) / 2 - g.wy * s, s });
           applyView();
           return;
         }
@@ -4108,7 +4158,7 @@
         g.moved = true;
         if (g.type === 'pan') {
           viewportEl.classList.add('is-panning');
-          view = clampView({ x: g.vx + dx, y: g.vy + dy, s: view.s });
+          state.view = clampView({ x: g.vx + dx, y: g.vy + dy, s: state.view.s });
           applyView();
         } else if (g.type === 'node') {
           moveNodeDrag(g, e.clientX, e.clientY);
@@ -4116,39 +4166,39 @@
       });
       function endPointer(e) {
         pts.delete(e.pointerId);
-        const g = gesture;
+        const g = state.gesture;
         viewportEl.classList.remove('is-panning');
         if (!g || g.hand) return;
         // Lifting either finger ends the pinch. The remaining finger cannot start
         // a pan or move a node until a new gesture begins.
         if (g.type === 'pinch') {
-          gesture = null;
+          state.gesture = null;
           return;
         }
         if (g.type === 'node') {
           finishNodeDrag(g);
           return;
         }
-        gesture = null;
+        state.gesture = null;
         if (g.type === 'pan' && !g.moved) select(g.id);
         else render();
         updateHand();
       }
       viewportEl.addEventListener('pointerup', endPointer);
       viewportEl.addEventListener('pointercancel', e => {
-        if (gesture?.type === 'node') revertGesture();
+        if (state.gesture?.type === 'node') revertGesture();
         endPointer(e);
       });
       viewportEl.addEventListener('lostpointercapture', e => {
         if (!pts.has(e.pointerId)) return;
-        if (gesture?.type === 'node') revertGesture();
+        if (state.gesture?.type === 'node') revertGesture();
         endPointer(e);
       });
       viewportEl.addEventListener('dblclick', e => {
         const hit = document.elementFromPoint(e.clientX, e.clientY),
           id = hit?.closest('.node')?.dataset.id;
-        if (!id || mode) return;
-        if (!(hit.closest('.node__image') && !editing && openImageViewer(id))) startEdit(id);
+        if (!id || state.mode) return;
+        if (!(hit.closest('.node__image') && !state.editing && openImageViewer(id))) startEdit(id);
       });
       viewportEl.addEventListener(
         'wheel',
@@ -4156,9 +4206,9 @@
           e.preventDefault();
           interruptHand();
           animId++;
-          if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, view.s * Math.exp(-e.deltaY * 0.01));
+          if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, state.view.s * Math.exp(-e.deltaY * 0.01));
           else {
-            view = clampView({ x: view.x - e.deltaX, y: view.y - e.deltaY, s: view.s });
+            state.view = clampView({ x: state.view.x - e.deltaX, y: state.view.y - e.deltaY, s: state.view.s });
             applyView();
           }
         },
@@ -4168,7 +4218,7 @@
 
       /* ---------- keyboard ---------- */
       nodesEl.addEventListener('keydown', e => {
-        if (!editing || !e.target.isContentEditable) return;
+        if (!state.editing || !e.target.isContentEditable) return;
         e.stopPropagation();
         if (e.isComposing || e.keyCode === 229) return;
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -4188,16 +4238,16 @@
       });
       nodesEl.addEventListener('focusout', e => {
         if (
-          editing &&
-          !editing.handInput &&
-          e.target === nodeEls.get(editing.id)?.nodeText &&
+          state.editing &&
+          !state.editing.handInput &&
+          e.target === nodeEls.get(state.editing.id)?.nodeText &&
           !$('#nodeSpeech').contains(e.relatedTarget) &&
           (!speech.active || e.relatedTarget)
         )
           finishEdit();
       });
       addEventListener('keydown', e => {
-        if (editing && e.key === 'Escape' && !e.isComposing) {
+        if (state.editing && e.key === 'Escape' && !e.isComposing) {
           e.preventDefault();
           cancelEdit();
           viewportEl.focus();
@@ -4208,7 +4258,7 @@
           void printMap();
           return;
         }
-        if (deletion) {
+        if (state.deletion) {
           if (e.key === 'Escape') {
             e.preventDefault();
             closeDelete();
@@ -4219,20 +4269,20 @@
           k = e.key;
         if (instructionsEnabled && mod && k.toLowerCase() === 'k' && !e.isComposing) {
           e.preventDefault();
-          if (editing) finishEdit();
+          if (state.editing) finishEdit();
           setPromptHidden(false);
           $('#promptInput').focus();
           return;
         }
-        if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
+        if (state.editing || e.isComposing || e.target.closest?.('input, textarea')) return;
         if (mod && (k === '=' || k === '+')) {
           e.preventDefault();
-          zoomAt(viewportWidth() / 2, innerHeight / 2, view.s * 1.25);
+          zoomAt(viewportWidth() / 2, innerHeight / 2, state.view.s * 1.25);
           return;
         }
         if (mod && k === '-') {
           e.preventDefault();
-          zoomAt(viewportWidth() / 2, innerHeight / 2, view.s / 1.25);
+          zoomAt(viewportWidth() / 2, innerHeight / 2, state.view.s / 1.25);
           return;
         }
         if (mod && k === '0') {
@@ -4251,11 +4301,11 @@
           return;
         }
         if (k === 'Escape') {
-          if (gesture?.hand) {
+          if (state.gesture?.hand) {
             interruptHand();
             return;
           }
-          if (mode) endReparent();
+          if (state.mode) endReparent();
           else if (!$('#fileMenu').hidden) toggleFileMenu(false);
           else if (!$('#mapsMenu').hidden) toggleMapsMenu(false);
           else if (document.activeElement === viewportEl) $('#addChild').focus();
@@ -4264,38 +4314,38 @@
         }
         if (e.target !== viewportEl && e.target !== document.body) return;
         interruptHand();
-        if (mode) {
-          if (k === 'Enter' && mode.candidate) {
+        if (state.mode) {
+          if (k === 'Enter' && state.mode.candidate) {
             e.preventDefault();
             confirmReparent();
           } else if (k.startsWith('Arrow')) {
             e.preventDefault();
-            const from = selectedId;
-            selectedId = mode.candidate || mode.id;
-            navigate(k, Object.values(map.nodes));
-            setCandidate(selectedId);
-            selectedId = from;
+            const from = state.selectedId;
+            state.selectedId = state.mode.candidate || state.mode.id;
+            navigate(k, Object.values(state.map.nodes));
+            setCandidate(state.selectedId);
+            state.selectedId = from;
           }
           return;
         }
         if (k === 'Tab' && !e.shiftKey) {
           e.preventDefault();
-          addChildAndEdit(selectedId || map.root);
+          addChildAndEdit(state.selectedId || state.map.root);
         } else if (k === 'Enter') {
           e.preventDefault();
           addSiblingAndEdit();
-        } else if (k === ' ' && selectedId) {
+        } else if (k === ' ' && state.selectedId) {
           e.preventDefault();
-          startEdit(selectedId, false, e.shiftKey);
-        } else if (k === 'F2' && selectedId) {
+          startEdit(state.selectedId, false, e.shiftKey);
+        } else if (k === 'F2' && state.selectedId) {
           e.preventDefault();
-          startEdit(selectedId, false, true);
-        } else if ((k === 'Delete' || k === 'Backspace') && selectedId && selectedId !== map.root) {
+          startEdit(state.selectedId, false, true);
+        } else if ((k === 'Delete' || k === 'Backspace') && state.selectedId && state.selectedId !== state.map.root) {
           e.preventDefault();
-          removeNode(selectedId);
+          removeNode(state.selectedId);
         } else if (k.startsWith('Arrow')) {
           e.preventDefault();
-          const selected = map.nodes[selectedId];
+          const selected = state.map.nodes[state.selectedId];
           if (e.altKey) nudge(k);
           else if (
             e.shiftKey &&
@@ -4304,14 +4354,14 @@
             branchKey(selected.id) === 'ArrowRight'
           ) {
             select(selected.parent);
-            ensureVisible(map.nodes[selected.parent]);
+            ensureVisible(state.map.nodes[selected.parent]);
           } else navigate(k);
         } else if (e.code === 'Digit1' && e.shiftKey) {
           e.preventDefault();
           fitAll();
         } else if (e.code === 'Digit2' && e.shiftKey) {
           e.preventDefault();
-          animateTo(centerOn(map.nodes[selectedId || map.root], 1.5));
+          animateTo(centerOn(state.map.nodes[state.selectedId || state.map.root], 1.5));
         } else if (k === '?') {
           e.preventDefault();
           $('#keysDialog').showModal();
@@ -4379,7 +4429,7 @@
         viewportEl.style.setProperty('--print-h', p.height + 'px');
         viewportEl.style.setProperty('--print-transform', `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
         titleBeforePrint ??= document.title;
-        document.title = map.title || tr('maps.untitled');
+        document.title = state.map.title || tr('maps.untitled');
       });
       addEventListener('afterprint', () => {
         if (titleBeforePrint !== null) document.title = titleBeforePrint;
@@ -4387,24 +4437,24 @@
       });
       $('#nodeMenu').addEventListener('click', e => {
         const act = e.target.closest('[data-act]')?.dataset.act;
-        if (!act || !selectedId) return;
+        if (!act || !state.selectedId) return;
         ({
-          child: () => addChildAndEdit(selectedId),
-          edit: () => startEdit(selectedId),
-          image: () => pickImage(selectedId, false),
-          'image-child': () => pickImage(selectedId, true),
-          'remove-image': () => removeNodeImage(selectedId),
-          reparent: () => startReparent(selectedId),
-          delete: () => removeNode(selectedId),
+          child: () => addChildAndEdit(state.selectedId),
+          edit: () => startEdit(state.selectedId),
+          image: () => pickImage(state.selectedId, false),
+          'image-child': () => pickImage(state.selectedId, true),
+          'remove-image': () => removeNodeImage(state.selectedId),
+          reparent: () => startReparent(state.selectedId),
+          delete: () => removeNode(state.selectedId),
         })[act]();
       });
-      $('#addChild').onclick = () => addChildAndEdit(selectedId || map.root);
+      $('#addChild').onclick = () => addChildAndEdit(state.selectedId || state.map.root);
       $('#promptForm').onsubmit = e => {
         e.preventDefault();
         void sendInstruction();
       };
       $('#promptInput').oninput = () => {
-        draftVersion++;
+        state.draftVersion++;
         resizePrompt();
       };
       $('#promptInput').onkeydown = e => {
@@ -4421,7 +4471,7 @@
         cancelInstruction();
       });
       $('#instructionDialog').addEventListener('close', () => {
-        if (instruction?.state === 'awaiting_confirmation') cancelInstruction();
+        if (state.instruction?.state === 'awaiting_confirmation') cancelInstruction();
       });
       $('#handBtn').onclick = () => toggleHand();
       $('#camSelect').onchange = e => {
@@ -4452,8 +4502,8 @@
         if (!fitHeld) fitAll();
         fitHeld = false;
       };
-      $('#zoomIn').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, view.s * 1.25);
-      $('#zoomOut').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, view.s / 1.25);
+      $('#zoomIn').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, state.view.s * 1.25);
+      $('#zoomOut').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, state.view.s / 1.25);
       $('#zoomLabel').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, 1);
       $('#undo').onclick = undo;
       $('#deleteSingle').onchange = () => chooseDeleteScope('single');
@@ -4487,7 +4537,7 @@
       };
       async function importMap(m) {
         if (!valid(m) || m.version !== 2) throw new Error(tr('map.invalid'));
-        await switchMap(() => library.create(m));
+        await switchMap(() => state.library.create(m));
       }
       let importRequest = 0;
       $('#fileInput').onchange = async e => {
@@ -4511,8 +4561,8 @@
       $('#newMapBtn').onclick = async () => {
         toggleMapsMenu(false);
         try {
-          await switchMap(() => library.create(blankMap()));
-          startEdit(map.root);
+          await switchMap(() => state.library.create(blankMap()));
+          startEdit(state.map.root);
         } catch (error) {
           toast(error.message || tr('maps.createFailed'));
         }
@@ -4526,7 +4576,7 @@
         }
         if (!open) return;
         toggleMapsMenu(false);
-        if (open === mapId) return;
+        if (open === state.mapId) return;
         try {
           await switchMap(open);
         } catch (error) {
@@ -4549,9 +4599,9 @@
         }
       };
       $('#title').oninput = e => {
-        if (map.title !== e.target.value)
+        if (state.map.title !== e.target.value)
           commit(() => {
-            map.title = e.target.value;
+            state.map.title = e.target.value;
           });
       };
       $('#title').onkeydown = e => {
@@ -4618,11 +4668,11 @@
         }
         if (d === 'reset' && !readOnly()) {
           commit(() => {
-            map = sample();
-            mapSessionId = InstructionTransport.id('map_');
+            state.map = sample();
+            state.mapSessionId = InstructionTransport.id('map_');
           });
-          selectedId = map.root;
-          $('#title').value = map.title;
+          state.selectedId = state.map.root;
+          $('#title').value = state.map.title;
           animateTo(centerOn({ x: 0, y: 0 }, 1));
         }
       });
@@ -4633,33 +4683,33 @@
       });
       addEventListener('resize', () => {
         interruptHand();
-        clampView(view, false);
+        clampView(state.view, false);
         applyView();
       });
       addEventListener('blur', () => {
         if (speech.active) return;
-        if (gesture?.type === 'node') revertGesture();
+        if (state.gesture?.type === 'node') revertGesture();
         pts.clear();
         stopHand();
       });
       addEventListener('pagehide', () => {
         speech.abort();
-        if (editing) editing.pendingDone = false;
+        if (state.editing) state.editing.pendingDone = false;
         updateSpeech();
         stopHand();
         for (const el of nodeEls.values()) clearNodeImage(el);
         storeView();
         if (!readOnly()) flushSave().catch(() => {});
-        mapClaim.release();
+        state.mapClaim.release();
       });
       addEventListener('pageshow', e => {
         render();
-        if (e?.persisted && library && mapId) void openMap(mapId).catch(failOpen);
+        if (e?.persisted && state.library && state.mapId) void openMap(state.mapId).catch(failOpen);
       });
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
           speech.abort();
-          if (editing) editing.pendingDone = false;
+          if (state.editing) state.editing.pendingDone = false;
           updateSpeech();
           stopHand();
         }
@@ -4667,16 +4717,16 @@
 
       palette = globalThis.IconPalette?.create({
         state: () => ({
-          session: mapSessionId,
-          revision,
-          selection: map.nodes[selectedId] ? selectedId : null,
-          root: map.root,
-          targetName: map.nodes[selectedId]?.text || '',
-          hasImage: !!map.nodes[selectedId]?.image,
+          session: state.mapSessionId,
+          revision: state.revision,
+          selection: state.map.nodes[state.selectedId] ? state.selectedId : null,
+          root: state.map.root,
+          targetName: state.map.nodes[state.selectedId]?.text || '',
+          hasImage: !!state.map.nodes[state.selectedId]?.image,
           blocked:
-            readOnly() || switching
+            readOnly() || state.switching
               ? tr('save.readonly')
-              : busyOperation() || instruction?.state === 'awaiting_confirmation'
+              : busyOperation() || state.instruction?.state === 'awaiting_confirmation'
                 ? tr('palette.busy')
                 : '',
         }),
@@ -4700,13 +4750,13 @@
         layout: () => {
           animId++;
           resizeNotices();
-          if (nodeEls.has(selectedId)) {
+          if (nodeEls.has(state.selectedId)) {
             positionMenu();
-            ensureVisible(map.nodes[selectedId]);
+            ensureVisible(state.map.nodes[state.selectedId]);
           }
         },
       });
-      $('#title').value = map.title;
+      $('#title').value = state.map.title;
       function updateViewport() {
         const viewport = globalThis.visualViewport;
         const kb = viewport ? Math.max(0, innerHeight - viewport.height - viewport.offsetTop) : 0;
@@ -4721,27 +4771,27 @@
       addEventListener('pagehide', cancelInstruction);
       updateViewport();
       void checkCodexStatus();
-      view = centerOn(map.nodes[map.root], 1);
-      view.y -= 20;
+      state.view = centerOn(state.map.nodes[state.map.root], 1);
+      state.view.y -= 20;
       render();
       applyView();
       void (async () => {
         try {
           const rxdb = await import('./vendor/rxdb.js');
-          library = await MapLibrary.open({
+          state.library = await MapLibrary.open({
             createRxDatabase: rxdb.createRxDatabase,
             storage: rxdb.getRxStorageDexie(),
           });
         } catch (error) {
           console.error(error);
-          mapClaim = { editable: true, release() {} };
+          state.mapClaim = { editable: true, release() {} };
           updateAccess();
           setSave('error');
           toast(tr('save.unsupportedExport'));
           return;
         }
         try {
-          await library.migrateLegacy(localStorage);
+          await state.library.migrateLegacy(localStorage);
         } catch (error) {
           console.error('Migration failed', error);
         }
@@ -4757,7 +4807,7 @@
           last = localStorage.getItem(LAST_KEY);
         } catch {}
         try {
-          if (last && (await library.load(last))) await openMap(last);
+          if (last && (await state.library.load(last))) await openMap(last);
           else await openFallback();
         } catch (error) {
           failOpen(error);
@@ -4768,7 +4818,7 @@
           localStorage.removeItem(GC_SKEW_KEY);
         } catch {}
         cleanImages(Date.now() + skew).catch(error => console.error('Image cleanup failed', error));
-        library.watchList(list => {
+        state.library.watchList(list => {
           mapList = list;
           if (!$('#mapsMenu').hidden) void refreshMapsMenu();
           else renderMapList();

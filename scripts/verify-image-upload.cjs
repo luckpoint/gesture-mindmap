@@ -47,10 +47,10 @@ const { chromium } = require('playwright');
     await upload('image-child', await png('海辺の電車.png', 320, 240));
     await page.waitForFunction(
       () =>
-        map.nodes[selectedId]?.text === '海辺の電車' &&
-        nodeEls.get(selectedId).querySelector('img')?.naturalWidth === 320,
+        state.map.nodes[state.selectedId]?.text === '海辺の電車' &&
+        nodeEls.get(state.selectedId).querySelector('img')?.naturalWidth === 320,
     );
-    const child = await page.evaluate(() => selectedId);
+    const child = await page.evaluate(() => state.selectedId);
     assert.equal(await page.locator(`[data-id=${child}] .node__text`).isVisible(), true);
     await page.screenshot({ path: out + '/upload-selected.png' });
     const fit = async () => {
@@ -68,19 +68,19 @@ const { chromium } = require('playwright');
     await page.locator('[data-id=root]').click();
     await upload('image', await png('big.png', 3000, 2200));
     await page.waitForFunction(
-      () => map.nodes.root.image && nodeEls.get('root').querySelector('img')?.naturalWidth === 2048,
+      () => state.map.nodes.root.image && nodeEls.get('root').querySelector('img')?.naturalWidth === 2048,
     );
     assert.deepEqual(
       await page.evaluate(async () => {
-        const a = await imageStore.get(map.nodes.root.image.assetId);
-        return [map.nodes.root.text, a.mime, a.width, a.height];
+        const a = await imageStore.get(state.map.nodes.root.image.assetId);
+        return [state.map.nodes.root.text, a.mime, a.width, a.height];
       }),
       ['週末にやりたいこと', 'image/jpeg', 2048, 1502],
     );
     assert.equal(await page.locator('#nodeMenu [data-act=image] .btn__label').textContent(), '画像を変更');
 
     await page.locator('#undo').click();
-    assert.equal(await page.evaluate(() => !map.nodes.root.image), true);
+    assert.equal(await page.evaluate(() => !state.map.nodes.root.image), true);
     await page.locator('#redo').click();
 
     await page.evaluate(() => new Promise(r => setTimeout(r, 800)));
@@ -97,10 +97,10 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => $('#imageDialog').open && $('#imageViewerImg').naturalWidth === 320);
     const big = await page.locator('#imageViewerImg').boundingBox();
     assert.ok(big.width > 600, JSON.stringify(big));
-    assert.equal(await page.evaluate(() => !editing), true);
+    assert.equal(await page.evaluate(() => !state.editing), true);
     await page.screenshot({ path: out + '/image-viewer.png' });
     await page.keyboard.press('Escape');
-    assert.equal(await page.evaluate(() => !$('#imageDialog').open && !editing), true);
+    assert.equal(await page.evaluate(() => !$('#imageDialog').open && !state.editing), true);
     assert.deepEqual(errors, []);
     console.log(
       'Browser checks passed: menu upload as child and onto a node, image-only card, text on selection, resize to 2048px JPEG, reload, double-click viewer.',

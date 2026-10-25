@@ -30,12 +30,24 @@ const { chromium } = require('playwright');
       ctx.fillRect(0, 0, 32, 24);
       const blob = await new Promise(r => canvas.toBlob(r));
       window.fixtureBlob = blob;
-      const before = history.length;
-      await attachNodeImage(blob, { nodeId: 'a', mapSessionId, revision }, '海の絵');
-      await attachNodeImage(blob, { nodeId: 'root', mapSessionId, revision }, '中心の絵');
+      const before = state.history.length;
+      await attachNodeImage(
+        blob,
+        { nodeId: 'a', mapSessionId: state.mapSessionId, revision: state.revision },
+        '海の絵',
+      );
+      await attachNodeImage(
+        blob,
+        { nodeId: 'root', mapSessionId: state.mapSessionId, revision: state.revision },
+        '中心の絵',
+      );
       const bundle = await NodeImageFormat.exportBundle(serializeMap(), imageStore);
       window.fixtureBundle = bundle;
-      return { history: history.length - before, assets: Object.keys(bundle.assets).length, mapVersion: map.version };
+      return {
+        history: state.history.length - before,
+        assets: Object.keys(bundle.assets).length,
+        mapVersion: state.map.version,
+      };
     });
     assert.deepEqual(result, { history: 2, assets: 1, mapVersion: 2 });
     await page.waitForFunction(() =>
@@ -51,18 +63,18 @@ const { chromium } = require('playwright');
     await page.evaluate(() => startEdit('a'));
     await page.locator('[data-id=a] .node__text').fill('画像を残して編集');
     await page.locator('[data-id=a] .node__text').press('Enter');
-    assert.equal(await page.evaluate(() => !!map.nodes.a.image), true);
+    assert.equal(await page.evaluate(() => !!state.map.nodes.a.image), true);
     await page.reload();
     await page.waitForLoadState('networkidle');
     await page.waitForFunction(() => document.querySelector('[data-id=a] img')?.naturalWidth === 32);
-    assert.equal(await page.evaluate(() => map.nodes.a.text), '画像を残して編集');
+    assert.equal(await page.evaluate(() => state.map.nodes.a.text), '画像を残して編集');
     const bundle = await page.evaluate(() => NodeImageFormat.exportBundle(serializeMap(), imageStore));
     // Missing/corrupt/mismatched images never switch the current map.
     for (const damage of ['hash', 'mime', 'missing', 'extra', 'dimensions', 'invalid']) {
       assert.equal(
         await page.evaluate(
           async ({ bundle, damage }) => {
-            const original = JSON.stringify(map);
+            const original = JSON.stringify(state.map);
             const b = structuredClone(bundle),
               id = Object.keys(b.assets)[0];
             if (damage === 'hash') {
@@ -80,7 +92,7 @@ const { chromium } = require('playwright');
               importMap(await NodeImageFormat.importBundle(b, imageStore));
               return false;
             } catch {
-              return JSON.stringify(map) === original;
+              return JSON.stringify(state.map) === original;
             }
           },
           { bundle, damage },
@@ -104,17 +116,17 @@ const { chromium } = require('playwright');
     await other.evaluate(() => select('a'));
     await other.screenshot({ path: '/tmp/mindmap-node-images-tablet.png' });
     await other.locator('[data-act=remove-image]').click();
-    assert.equal(await other.evaluate(() => !!map.nodes.a.image), false);
+    assert.equal(await other.evaluate(() => !!state.map.nodes.a.image), false);
     await other.locator('#undo').click();
     await other.waitForFunction(() => document.querySelector('[data-id=a] img')?.naturalWidth === 32);
     await other.locator('#redo').click();
-    assert.equal(await other.evaluate(() => !!map.nodes.a.image), false);
+    assert.equal(await other.evaluate(() => !!state.map.nodes.a.image), false);
     await other.locator('#undo').click();
     // Native IndexedDB transaction failures leave the map/history untouched.
     assert.equal(
       await other.evaluate(async () => {
-        const before = JSON.stringify(map),
-          h = history.length,
+        const before = JSON.stringify(state.map),
+          h = state.history.length,
           original = imageStore.open.bind(imageStore);
         imageStore.open = async () => ({
           transaction() {
@@ -124,14 +136,18 @@ const { chromium } = require('playwright');
         try {
           const a = await original();
           const existing = await new Promise((r, j) => {
-            const q = a.transaction('assets').objectStore('assets').get(map.nodes.a.image.assetId);
+            const q = a.transaction('assets').objectStore('assets').get(state.map.nodes.a.image.assetId);
             q.onsuccess = () => r(q.result);
             q.onerror = j;
           });
-          await attachNodeImage(existing.blob, { nodeId: 'a', mapSessionId, revision }, '置き換え');
+          await attachNodeImage(
+            existing.blob,
+            { nodeId: 'a', mapSessionId: state.mapSessionId, revision: state.revision },
+            '置き換え',
+          );
           return false;
         } catch {
-          return JSON.stringify(map) === before && history.length === h;
+          return JSON.stringify(state.map) === before && state.history.length === h;
         } finally {
           imageStore.open = original;
         }
@@ -141,7 +157,7 @@ const { chromium } = require('playwright');
     // Same-byte dedupe and URL release use the real IndexedDB and browser decoder.
     assert.equal(
       await other.evaluate(async () => {
-        const id = map.nodes.a.image.assetId;
+        const id = state.map.nodes.a.image.assetId;
         const a = await imageStore.get(id);
         const urls = await Promise.all([imageStore.acquire(id), imageStore.acquire(id)]);
         imageStore.release(id);
@@ -158,7 +174,7 @@ const { chromium } = require('playwright');
     );
     // Restoring a verified bundle also repairs corrupt bytes under the same ID.
     await other.evaluate(async () => {
-      const id = map.nodes.a.image.assetId,
+      const id = state.map.nodes.a.image.assetId,
         asset = await imageStore.get(id),
         db = await imageStore.open();
       await new Promise((resolve, reject) => {
@@ -183,7 +199,7 @@ const { chromium } = require('playwright');
     assert.equal(
       await other.evaluate(async expectedData => {
         const assets = (await NodeImageFormat.exportBundle(serializeMap(), imageStore)).assets;
-        return Object.keys(assets).length === 1 && assets[map.nodes.a.image.assetId].data === expectedData;
+        return Object.keys(assets).length === 1 && assets[state.map.nodes.a.image.assetId].data === expectedData;
       }, Object.values(bundle.assets)[0].data),
       true,
     );
@@ -202,7 +218,7 @@ const { chromium } = require('playwright');
     await other.waitForFunction(
       () => document.querySelector('[data-id=a] .node__image span')?.textContent === '画像を読み込めません',
     );
-    assert.equal(await other.evaluate(() => map.nodes.a.text), '画像を残して編集');
+    assert.equal(await other.evaluate(() => state.map.nodes.a.text), '画像を残して編集');
     assert.equal(await other.locator('[data-id=a] .node__image').evaluate(e => e.offsetHeight), 144);
     // Restoring the same bundle must recover failed DOM/URL entries immediately,
     // even though neither the node IDs nor the content hashes have changed.

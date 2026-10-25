@@ -34,62 +34,67 @@ const { chromium } = require('playwright');
     // Native drag from an unselected icon applies to the hovered node, not the selection.
     await page.evaluate(() => select('a'));
     const dragBefore = await page.evaluate(() => ({
-      count: Object.keys(map.nodes).length,
-      history: history.length,
-      selection: selectedId,
+      count: Object.keys(state.map.nodes).length,
+      history: state.history.length,
+      selection: state.selectedId,
     }));
     const rootNode = page.locator('.node[data-id="root"]');
     await page.locator('#paletteList button').first().dragTo(rootNode);
-    await page.waitForFunction(() => !!map.nodes[map.root].image);
-    const firstDrag = await page.evaluate(() => map.nodes[map.root].image);
-    assert.equal(await page.evaluate(() => selectedId), dragBefore.selection);
-    assert.equal(await page.evaluate(() => Object.keys(map.nodes).length), dragBefore.count);
-    assert.equal(await page.evaluate(() => history.length), dragBefore.history + 1);
+    await page.waitForFunction(() => !!state.map.nodes[state.map.root].image);
+    const firstDrag = await page.evaluate(() => state.map.nodes[state.map.root].image);
+    assert.equal(await page.evaluate(() => state.selectedId), dragBefore.selection);
+    assert.equal(await page.evaluate(() => Object.keys(state.map.nodes).length), dragBefore.count);
+    assert.equal(await page.evaluate(() => state.history.length), dragBefore.history + 1);
     assert.equal(await page.locator('.is-drop-target').count(), 0);
     await page.locator('#paletteList button').nth(1).dragTo(rootNode);
-    await page.waitForFunction(id => map.nodes[map.root].image.assetId !== id, firstDrag.assetId);
+    await page.waitForFunction(id => state.map.nodes[state.map.root].image.assetId !== id, firstDrag.assetId);
     await page.evaluate(() => undo());
-    assert.equal(await page.evaluate(() => map.nodes[map.root].image.assetId), firstDrag.assetId);
+    assert.equal(await page.evaluate(() => state.map.nodes[state.map.root].image.assetId), firstDrag.assetId);
     await page.evaluate(() => redo());
-    assert.notEqual(await page.evaluate(() => map.nodes[map.root].image.assetId), firstDrag.assetId);
+    assert.notEqual(await page.evaluate(() => state.map.nodes[state.map.root].image.assetId), firstDrag.assetId);
     await page.evaluate(() => {
       undo();
       undo();
     });
-    assert.equal(await page.evaluate(() => !!map.nodes[map.root].image), false);
+    assert.equal(await page.evaluate(() => !!state.map.nodes[state.map.root].image), false);
     // Releasing outside a node makes no history entry and clears the target outline.
     await page.locator('#paletteList button').first().dragTo(page.locator('#paletteSearch'));
-    assert.equal(await page.evaluate(() => history.length), dragBefore.history);
+    assert.equal(await page.evaluate(() => state.history.length), dragBefore.history);
     assert.equal(await page.locator('.is-drop-target').count(), 0);
     await page.locator('#palette-daily').click();
     await page.locator('#paletteSearch').fill('ご飯');
     assert.equal(await page.locator('#paletteList button').count(), 1);
     await page.locator('#paletteSearch').fill('home');
     await page.locator('#paletteList button').click();
-    const before = await page.evaluate(() => ({ count: Object.keys(map.nodes).length, history: history.length }));
+    const before = await page.evaluate(() => ({
+      count: Object.keys(state.map.nodes).length,
+      history: state.history.length,
+    }));
     await page.locator('#paletteChild').click();
-    await page.waitForFunction(() => map.nodes[selectedId]?.text === '家' && !!map.nodes[selectedId]?.image);
+    await page.waitForFunction(
+      () => state.map.nodes[state.selectedId]?.text === '家' && !!state.map.nodes[state.selectedId]?.image,
+    );
     const after = await page.evaluate(() => ({
-      count: Object.keys(map.nodes).length,
-      history: history.length,
-      ref: map.nodes[selectedId].image,
+      count: Object.keys(state.map.nodes).length,
+      history: state.history.length,
+      ref: state.map.nodes[state.selectedId].image,
     }));
     assert.equal(after.count, before.count + 1);
     assert.equal(after.history, before.history + 1);
     assert.equal(after.ref.width, 128);
     assert.equal(after.ref.height, 112);
     await page.locator('#paletteSearch').press('ControlOrMeta+z');
-    assert.equal(await page.evaluate(() => Object.keys(map.nodes).length), after.count);
+    assert.equal(await page.evaluate(() => Object.keys(state.map.nodes).length), after.count);
     await page.evaluate(() => undo());
-    assert.equal(await page.evaluate(() => Object.keys(map.nodes).length), before.count);
+    assert.equal(await page.evaluate(() => Object.keys(state.map.nodes).length), before.count);
     await page.evaluate(() => redo());
-    await page.evaluate(() => select(map.root));
+    await page.evaluate(() => select(state.map.root));
     await page.locator('#paletteApply').click();
-    await page.waitForFunction(() => !!map.nodes[map.root].image);
+    await page.waitForFunction(() => !!state.map.nodes[state.map.root].image);
     assert.equal(await page.locator('#paletteApply').innerText(), '画像を置き換える');
-    assert.equal(await page.evaluate(() => map.nodes[map.root].image.assetId), after.ref.assetId);
+    assert.equal(await page.evaluate(() => state.map.nodes[state.map.root].image.assetId), after.ref.assetId);
     await page.evaluate(() => undo());
-    assert.equal(await page.evaluate(() => !!map.nodes[map.root].image), false);
+    assert.equal(await page.evaluate(() => !!state.map.nodes[state.map.root].image), false);
     await page.evaluate(() => redo());
     const bundle = await page.evaluate(() => NodeImageFormat.exportBundle(serializeMap(), imageStore));
     assert.equal(Object.keys(bundle.assets).length, 1);
@@ -147,7 +152,7 @@ const { chromium } = require('playwright');
       await open(p);
       await p.locator('#paletteList button').first().click();
       await p.locator('#paletteChild').click();
-      await p.waitForFunction(() => !!map.nodes[selectedId]?.image);
+      await p.waitForFunction(() => !!state.map.nodes[state.selectedId]?.image);
       await p.locator('#paletteSearch').fill('baby');
       if (apple.land.width === 844)
         assert.equal(
@@ -175,9 +180,9 @@ const { chromium } = require('playwright');
       .locator('#fileInput')
       .setInputFiles({ name: 'icons.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(bundle)) });
     await other.waitForFunction(
-      () => !!map.nodes[map.root]?.image && !!document.querySelector('.node__image img')?.naturalWidth,
+      () => !!state.map.nodes[state.map.root]?.image && !!document.querySelector('.node__image img')?.naturalWidth,
     );
-    assert.equal(await other.evaluate(() => map.nodes[map.root].image.assetId), after.ref.assetId);
+    assert.equal(await other.evaluate(() => state.map.nodes[state.map.root].image.assetId), after.ref.assetId);
     assert.deepEqual(errors, []);
     await fresh.close();
     await context.close();

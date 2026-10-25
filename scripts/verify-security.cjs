@@ -49,14 +49,14 @@ const { chromium } = require('playwright');
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://127.0.0.1:' + server.address().port);
     await page.waitForLoadState('networkidle');
-    await page.waitForFunction(() => library && mapId);
+    await page.waitForFunction(() => state.library && state.mapId);
     assert.ok((await page.locator('.node').count()) > 0);
     const authenticated = await page.evaluate(async () => {
       const status = await instructionClient.status();
       const proposal = await instructionClient.run({
         requestId: 'browser-security',
-        mapSessionId,
-        baseRevision: revision,
+        mapSessionId: state.mapSessionId,
+        baseRevision: state.revision,
         prompt: 'No changes',
         selectedNodeId: null,
         map: serializeMap(),
@@ -131,12 +131,16 @@ const { chromium } = require('playwright');
       transparent.close();
       if (check.getContext('2d').getImageData(0, 0, 1, 1).data[3] !== 0) throw Error('Transparency lost');
       // Legacy stored images must also be cleaned without modifying their saved references.
-      await attachNodeImage(annotatedPNG, { nodeId: 'root', mapSessionId, revision }, 'legacy image');
+      await attachNodeImage(
+        annotatedPNG,
+        { nodeId: 'root', mapSessionId: state.mapSessionId, revision: state.revision },
+        'legacy image',
+      );
       const saved = serializeMap(),
         originalId = saved.nodes.root.image.assetId;
       const bundle = await NodeImageFormat.exportBundle(saved, imageStore),
         newId = bundle.map.nodes.root.image.assetId;
-      if (newId === originalId || map.nodes.root.image.assetId !== originalId)
+      if (newId === originalId || state.map.nodes.root.image.assetId !== originalId)
         throw Error('Hash remapping mutated the original');
       const cleaned = new Blob([Uint8Array.from(atob(bundle.assets[newId].data), c => c.charCodeAt(0))], {
         type: bundle.assets[newId].mime,
@@ -166,9 +170,9 @@ const { chromium } = require('playwright');
       nudge('ArrowRight');
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const editMs = performance.now() - editStart;
-      const before = JSON.stringify(map);
+      const before = JSON.stringify(state.map);
       addChildAndEdit('n0');
-      if (JSON.stringify(map) !== before || editing) throw Error('Limit changed the current map');
+      if (JSON.stringify(state.map) !== before || state.editing) throw Error('Limit changed the current map');
       const oversized = JSON.parse(JSON.stringify(large));
       oversized.nodes.extra = { ...oversized.nodes.n1, id: 'extra' };
       let rejected = false;
