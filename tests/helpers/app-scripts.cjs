@@ -8,7 +8,6 @@ const appScripts = [
   'app/tree.js',
   'app/history.js',
   'app/persistence.js',
-  'app/bootstrap.js',
   'app/maps.js',
   'app/viewport.js',
   'app/render.js',
@@ -20,6 +19,10 @@ const appScripts = [
   'app/pointer.js',
   'app/keyboard.js',
   'app/controls.js',
+  'app/access.js',
+  'app/startup.js',
+  'app/bootstrap.js',
+  'app/browser.js',
   'app/main.js',
 ];
 module.exports = { coreScripts, appScripts };

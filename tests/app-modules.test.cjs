@@ -178,3 +178,18 @@ test('history limits and verified log loading keep monotonic sequence numbers', 
   edit(store, nextMap, 'fresh');
   assert.equal(stacks.history[0].seq, 1);
 });
+
+const factories = appScripts.filter(path => path !== 'app/main.js');
+for (const paths of [factories, [...factories].reverse()]) {
+  test(`all screen factories evaluate without DOM or services (${paths[0]} first)`, () => {
+    const sandbox = vm.createContext({});
+    for (const path of paths) vm.runInContext(source(path), sandbox);
+    assert.equal(sandbox.state, undefined);
+    assert.equal(sandbox.appContext, undefined);
+    assert.equal(sandbox.operations, undefined);
+    assert.equal(Object.keys(sandbox).length, factories.length);
+    for (const path of paths) {
+      assert.equal(typeof require(join(__dirname, '../ui-prototype', path)).create, 'function', path);
+    }
+  });
+}

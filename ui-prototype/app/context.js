@@ -5,7 +5,7 @@
   else root.MindmapAppContext = api;
 })(globalThis, () => {
   'use strict';
-  function create({ map, sessionId, elements, services, timers, effects }) {
+  function create({ map, sessionId, elements, services, timers, effects, environment }) {
     const state = {
       map,
       view: { x: 0, y: 0, s: 1 },
@@ -29,6 +29,8 @@
     };
     return {
       state,
+      environment,
+      ui: {},
       elements,
       services,
       timers: { ...timers, toast: null, hint: null, view: null, instruction: null },

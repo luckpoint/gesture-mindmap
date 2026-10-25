@@ -66,7 +66,10 @@
       }
     }
   }
-  function create(io) {
+  function create(io, { environment = globalThis, i18n = environment.I18n, catalog = environment.IconCatalog } = {}) {
+    const { document } = environment;
+    const I18n = i18n,
+      IconCatalog = catalog;
     const $ = s => document.querySelector(s),
       panel = $('#iconPalette'),
       toggle = $('#paletteToggle'),
@@ -78,7 +81,7 @@
       category = 'people',
       selected = null,
       last = io.state(),
-      availability = device(),
+      availability = device(environment),
       dragging = null;
     const failed = new Set(),
       cells = new Map();
@@ -90,7 +93,7 @@
         const s = io.state();
         return s.session === target.session && s.revision === target.revision && s.selection === target.selection;
       },
-      fetch: (...args) => fetch(...args),
+      fetch: (...args) => environment.fetch(...args),
       attach: io.attach,
       name,
       update: footer,
@@ -199,8 +202,11 @@
       footer();
     }
     function layout() {
-      const width = open ? (availability.phone || innerWidth < 1000 ? 240 : 320) : 0;
-      document.body.style.setProperty('--palette-width', (availability.phone || innerWidth < 1000 ? 240 : 320) + 'px');
+      const width = open ? (availability.phone || environment.innerWidth < 1000 ? 240 : 320) : 0;
+      document.body.style.setProperty(
+        '--palette-width',
+        (availability.phone || environment.innerWidth < 1000 ? 240 : 320) + 'px',
+      );
       document.body.style.setProperty('--side', (open ? panel.offsetWidth || width : 0) + 'px');
       const canvasWidth = io.width();
       document.body.classList.toggle('canvas-compact', canvasWidth <= 720);
@@ -266,16 +272,16 @@
     for (const event of ['wheel', 'touchmove'])
       panel.addEventListener(event, e => e.stopPropagation(), { passive: true });
     function resize() {
-      availability = device();
+      availability = device(environment);
       toggle.hidden = !availability.available;
       dockToggle.hidden = !availability.available;
       $('#paletteSeparator').hidden = !availability.available;
       if (!availability.available) setOpen(false);
       layout();
     }
-    addEventListener('resize', resize);
-    addEventListener('orientationchange', resize);
-    globalThis.screen?.orientation?.addEventListener('change', resize);
+    environment.addEventListener('resize', resize);
+    environment.addEventListener('orientationchange', resize);
+    environment.screen?.orientation?.addEventListener('change', resize);
     toggle.textContent = I18n.t('palette.show');
     resize();
     return {

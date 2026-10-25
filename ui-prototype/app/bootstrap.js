@@ -1,32 +1,85 @@
-// Connect callbacks after module evaluation; factories never call other screens on load.
-Object.assign(appContext.effects, {
-  invalidateTree: () => invalidateTree(),
-  render: () => render(),
-  interruptHand: () => interruptHand(),
-  finishEdit: () => finishEdit(),
-  endStaleInstruction: () => endStaleInstruction(),
-  scheduleSave: () => scheduleSave(),
-  updateAccess: () => updateAccess(),
-  closeDelete: () => closeDelete(),
-  toast: message => toast(message),
-  resizeNotices: () => resizeNotices(),
-});
-const HISTORY_LIMIT = appContext.services.history.HISTORY_LIMIT;
-const historyOperations = MindmapAppHistory.create(appContext);
-const { editHistory, takeHistoryChanges, retryHistoryChanges, restoreMap, commit, changed, undo, redo } =
-  historyOperations;
-const { autosave, scheduleSave, flushSave, setSave } = MindmapAppPersistence.create(appContext, historyOperations);
-function endStaleInstruction() {
-  if (instructionUndoButton) instructionUndoButton.disabled = true;
-  if (state.instruction?.state === 'awaiting_confirmation') endInstruction('conflict', tr('instruction.conflictApply'));
-  if (state.instruction?.state === 'awaiting_input' || state.instruction?.state === 'answering') {
-    endInstruction('conflict', tr('instruction.conflictQuestion'));
-    instructionClient.cancel();
+// Application dependencies are supplied per instance; evaluation has no screen effects.
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.MindmapAppBootstrap = api;
+})(globalThis, () => {
+  'use strict';
+  function create({ environment, services, modules, map, sessionId }) {
+    const document = environment.document;
+    const query = selector => document.querySelector(selector);
+    const context = modules.context.create({
+      map: map ?? modules.state.sample(services.tr),
+      sessionId: sessionId ?? services.InstructionTransport.id('map_'),
+      elements: {
+        $: query,
+        viewportEl: query('#viewport'),
+        world: query('#world'),
+        edgesEl: query('#edges'),
+        nodesEl: query('#nodes'),
+        nodeEls: new Map(),
+        title: query('#title'),
+        undo: query('#undo'),
+        redo: query('#redo'),
+        save: query('#save'),
+        saveText: query('#saveText'),
+        saveExport: query('#saveExport'),
+      },
+      environment,
+      services,
+      timers: { set: (fn, ms) => environment.setTimeout(fn, ms), clear: id => environment.clearTimeout(id) },
+      effects: {},
+    });
+    const operations = {};
+    // Resolve mutual screen callbacks only after every factory has returned its API.
+    for (const name of [
+      'invalidateTree',
+      'render',
+      'interruptHand',
+      'finishEdit',
+      'endStaleInstruction',
+      'scheduleSave',
+      'updateAccess',
+      'closeDelete',
+      'toast',
+      'resizeNotices',
+    ]) {
+      context.effects[name] = (...args) => operations[name](...args);
+    }
+    const screens = [];
+    for (const name of [
+      'state',
+      'operation-policy',
+      'tree',
+      'history',
+      'persistence',
+      'access',
+      'maps',
+      'viewport',
+      'render',
+      'node-images',
+      'speech',
+      'editing',
+      'instructions',
+      'hand',
+      'pointer',
+      'keyboard',
+      'controls',
+      'startup',
+    ]) {
+      const api =
+        name === 'history'
+          ? modules.history.create(context)
+          : name === 'persistence'
+            ? modules.persistence.create(context, operations)
+            : modules[name].create(context, operations);
+      const { initialize, ...methods } = api;
+      Object.assign(operations, methods);
+      if (initialize) screens.push(initialize);
+    }
+    operations.HISTORY_LIMIT = services.history.HISTORY_LIMIT;
+    for (const initialize of screens) initialize();
+    return { context, operations, start: () => operations.start() };
   }
-}
-function updateAccess() {
-  palette?.sync();
-  $('#title').readOnly = readOnly();
-  $('#undo').disabled = readOnly() || !state.history.length;
-  $('#redo').disabled = readOnly() || !state.future.length;
-}
+  return { create };
+});
