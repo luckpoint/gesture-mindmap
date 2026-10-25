@@ -121,3 +121,31 @@ test('deployment build minifies code, preserves assets and removes stale output'
   assert.equal(worker.value, 42);
   assert.deepEqual((await load()).verifyAssets(output, pinned).errors, []);
 });
+
+test('build adds a Japanese landing page with Japanese OGP tags', async t => {
+  const { buildStatic } = await import('../scripts/build-static.mjs');
+  const { rmSync } = require('node:fs');
+  const { en, ja } = require('../ui-prototype/i18n.js').messages;
+  const landing = readFileSync(join(__dirname, '../ui-prototype/landing.html'), 'utf8');
+  const source = tree({ ...base, 'landing.html': landing });
+  const output = tree({});
+  t.after(() => {
+    rmSync(source, { recursive: true });
+    rmSync(output, { recursive: true });
+  });
+  await buildStatic(source, output);
+  const page = readFileSync(join(output, 'ja/landing.html'), 'utf8');
+  for (const value of [
+    ja['landing.title'],
+    ja['landing.description'],
+    'https://mindmap.luckpoint.jp/ja/landing',
+    'https://mindmap.luckpoint.jp/landing/og-ja.png',
+    'ja_JP',
+  ])
+    assert.ok(page.includes(value), value);
+  assert.ok(!page.includes(en['landing.description']));
+  assert.match(page, /<base href="?\/"?/);
+  const english = readFileSync(join(output, 'landing.html'), 'utf8');
+  for (const value of [en['landing.title'], en['landing.description'], '/landing/og.png', 'en_US'])
+    assert.ok(english.includes(value), value);
+});
