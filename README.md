@@ -58,3 +58,7 @@ After asset preparation, `npm run dev:cf` previews the minified build. `npm run 
 Design documents, implementation plans, investigations, and validation procedures are listed in the [documentation index](docs/README.md) (in Japanese).
 
 Maps and images are stored in your browser and are lost if you clear its data. Keep JSON exports that include images as backups. For items awaiting validation, including real microphone input, Safari, and iPad behavior, see the relevant design documents and validation records.
+
+## License
+
+Licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (AGPL-3.0-only), including the icon images. If you run a modified version as a network service, you must offer its source code to its users. Third-party components redistributed in the deployed site are listed in [THIRD_PARTY_NOTICES.txt](ui-prototype/THIRD_PARTY_NOTICES.txt).

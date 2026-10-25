@@ -56,3 +56,7 @@ npm run verify:assets
 設計・実装計画・調査記録・検証手順は [ドキュメント一覧](docs/README.md) にまとめています。
 
 マップと画像はブラウザ内に保存されます。ブラウザのデータを消すと失われるため、画像込みJSONを保管してください。実マイク・Safari・iPadなどの未確認項目は、各設計書と検証記録を参照してください。
+
+## ライセンス
+
+アイコン画像を含め、[GNU Affero General Public License v3.0 only](LICENSE)（AGPL-3.0-only）で公開しています。改変版をネットワーク経由で提供する場合は、利用者にソースコードを提供する必要があります。公開サイトで再配布している第三者コンポーネントは [THIRD_PARTY_NOTICES.txt](ui-prototype/THIRD_PARTY_NOTICES.txt) を参照してください。
