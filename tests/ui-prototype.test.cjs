@@ -4,10 +4,13 @@ const { join } = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 
-// Run the actual inline script with minimal DOM/storage adapters. These tests
-// cover state transitions and import failures, not browser layout or real touch.
+// Run the actual app scripts, minus the boot in app/main.js, with minimal DOM/storage adapters.
+// These tests cover state transitions and import failures, not browser layout or real touch.
 const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8');
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const appScripts = [...html.matchAll(/<script src="(app\/[^"]+)"/g)]
+  .map(m => m[1])
+  .filter(path => path !== 'app/main.js')
+  .map(path => readFileSync(join(__dirname, '../ui-prototype', path), 'utf8'));
 // Keeps maps in memory with the same contract as storage/library.js.
 function memoryLibrary() {
   const docs = new Map(),
@@ -232,7 +235,7 @@ function setup({
   if (paletteUI)
     for (const file of ['catalog.js', 'palette.js'])
       vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/icons', file), 'utf8'), context);
-  vm.runInContext(script.slice(0, script.lastIndexOf("$('#title').value = state.map.title;")), context);
+  for (const script of appScripts) vm.runInContext(script, context);
   context.memoryLibrary = memoryLibrary;
   vm.runInContext(
     `state.library = memoryLibrary(); state.library.docs.set('m_first', { map: sample(), updatedAt: 1, cursor: 0, log: new Map() });
