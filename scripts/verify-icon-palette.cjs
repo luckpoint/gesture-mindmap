@@ -30,19 +30,19 @@ const { chromium } = require('playwright');
     await page.locator('#paletteClose').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#paletteList button').count(), 72);
     assert.equal(await page.evaluate(() => document.activeElement.id), 'paletteClose');
-    assert.equal(await page.evaluate(() => W()), 960);
+    assert.equal(await page.evaluate(() => viewportWidth()), 960);
     // Native drag from an unselected icon applies to the hovered node, not the selection.
     await page.evaluate(() => select('a'));
     const dragBefore = await page.evaluate(() => ({
       count: Object.keys(map.nodes).length,
       history: history.length,
-      selection: sel,
+      selection: selectedId,
     }));
     const rootNode = page.locator('.node[data-id="root"]');
     await page.locator('#paletteList button').first().dragTo(rootNode);
     await page.waitForFunction(() => !!map.nodes[map.root].image);
     const firstDrag = await page.evaluate(() => map.nodes[map.root].image);
-    assert.equal(await page.evaluate(() => sel), dragBefore.selection);
+    assert.equal(await page.evaluate(() => selectedId), dragBefore.selection);
     assert.equal(await page.evaluate(() => Object.keys(map.nodes).length), dragBefore.count);
     assert.equal(await page.evaluate(() => history.length), dragBefore.history + 1);
     assert.equal(await page.locator('.is-drop-target').count(), 0);
@@ -68,11 +68,11 @@ const { chromium } = require('playwright');
     await page.locator('#paletteList button').click();
     const before = await page.evaluate(() => ({ count: Object.keys(map.nodes).length, history: history.length }));
     await page.locator('#paletteChild').click();
-    await page.waitForFunction(() => map.nodes[sel]?.text === '家' && !!map.nodes[sel]?.image);
+    await page.waitForFunction(() => map.nodes[selectedId]?.text === '家' && !!map.nodes[selectedId]?.image);
     const after = await page.evaluate(() => ({
       count: Object.keys(map.nodes).length,
       history: history.length,
-      ref: map.nodes[sel].image,
+      ref: map.nodes[selectedId].image,
     }));
     assert.equal(after.count, before.count + 1);
     assert.equal(after.history, before.history + 1);
@@ -147,7 +147,7 @@ const { chromium } = require('playwright');
       await open(p);
       await p.locator('#paletteList button').first().click();
       await p.locator('#paletteChild').click();
-      await p.waitForFunction(() => !!map.nodes[sel]?.image);
+      await p.waitForFunction(() => !!map.nodes[selectedId]?.image);
       await p.locator('#paletteSearch').fill('baby');
       if (apple.land.width === 844)
         assert.equal(
@@ -159,7 +159,7 @@ const { chromium } = require('playwright');
       await p.waitForTimeout(300);
       assert.equal(await p.locator('#iconPalette').getAttribute('aria-hidden'), 'true');
       assert.equal(await p.locator('#paletteToggle').isVisible(), false);
-      assert.equal(await p.evaluate(() => W()), apple.portrait.width);
+      assert.equal(await p.evaluate(() => viewportWidth()), apple.portrait.width);
       assert.equal(await p.evaluate(() => document.activeElement.id), 'fileBtn');
       await p.setViewportSize(apple.land);
       await p.waitForTimeout(100);

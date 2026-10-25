@@ -46,9 +46,11 @@ const { chromium } = require('playwright');
     await page.locator('[data-id=a]').click();
     await upload('image-child', await png('海辺の電車.png', 320, 240));
     await page.waitForFunction(
-      () => map.nodes[sel]?.text === '海辺の電車' && els.get(sel).querySelector('img')?.naturalWidth === 320,
+      () =>
+        map.nodes[selectedId]?.text === '海辺の電車' &&
+        nodeEls.get(selectedId).querySelector('img')?.naturalWidth === 320,
     );
-    const child = await page.evaluate(() => sel);
+    const child = await page.evaluate(() => selectedId);
     assert.equal(await page.locator(`[data-id=${child}] .node__text`).isVisible(), true);
     await page.screenshot({ path: out + '/upload-selected.png' });
     const fit = async () => {
@@ -66,7 +68,7 @@ const { chromium } = require('playwright');
     await page.locator('[data-id=root]').click();
     await upload('image', await png('big.png', 3000, 2200));
     await page.waitForFunction(
-      () => map.nodes.root.image && els.get('root').querySelector('img')?.naturalWidth === 2048,
+      () => map.nodes.root.image && nodeEls.get('root').querySelector('img')?.naturalWidth === 2048,
     );
     assert.deepEqual(
       await page.evaluate(async () => {
@@ -86,8 +88,8 @@ const { chromium } = require('playwright');
     await page.waitForLoadState('networkidle');
     await page.waitForFunction(
       id =>
-        els.get(id)?.querySelector('img')?.naturalWidth === 320 &&
-        els.get('root').querySelector('img')?.naturalWidth === 2048,
+        nodeEls.get(id)?.querySelector('img')?.naturalWidth === 320 &&
+        nodeEls.get('root').querySelector('img')?.naturalWidth === 2048,
       child,
     );
     await fit();

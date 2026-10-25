@@ -1906,15 +1906,15 @@
       const $ = s => document.querySelector(s);
       const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
       const compact = matchMedia('(max-width: 560px)');
-      const vp = $('#viewport'),
+      const viewportEl = $('#viewport'),
         world = $('#world'),
         edgesEl = $('#edges'),
         nodesEl = $('#nodes');
-      const els = new Map();
-      const W = () => vp.clientWidth || innerWidth;
-      const H = () => {
+      const nodeEls = new Map();
+      const viewportWidth = () => viewportEl.clientWidth || innerWidth;
+      const canvasHeight = () => {
         const top = $($('#prompt').hidden ? '.dock' : '#prompt').getBoundingClientRect().top;
-        return Math.max(80, Math.min(vp.clientHeight || innerHeight, top > 150 ? top : innerHeight - 120));
+        return Math.max(80, Math.min(viewportEl.clientHeight || innerHeight, top > 150 ? top : innerHeight - 120));
       };
 
       let palette = null;
@@ -1925,7 +1925,7 @@
         stopWatch = null,
         switching = false;
       let view = { x: 0, y: 0, s: 1 };
-      let sel = map.root,
+      let selectedId = map.root,
         editing = null,
         mode = null,
         hand = null,
@@ -2013,7 +2013,7 @@
         }
         return (treeCache = { map, children, colors, depths });
       }
-      const kids = id => treeInfo().children.get(id) || [];
+      const childrenOf = id => treeInfo().children.get(id) || [];
       function subtree(id) {
         const out = new Set([id]);
         for (const n of Object.values(map.nodes)) {
@@ -2034,8 +2034,8 @@
       function depth(id) {
         return treeInfo().depths.get(id);
       }
-      function size(n) {
-        const el = els.get(n.id);
+      function nodeSize(n) {
+        const el = nodeEls.get(n.id);
         return el
           ? { w: el.offsetWidth, h: el.offsetHeight }
           : n.image
@@ -2043,10 +2043,10 @@
             : { w: Math.min(260, n.text.length * 18 + 40), h: 52 };
       }
       function place(pid, w = 160) {
-        return InstructionOperations.place(map, pid, w, size);
+        return InstructionOperations.place(map, pid, w, nodeSize);
       }
       function addNode(pid, text, pos) {
-        const id = InstructionOperations.addNode(map, pid, text, pos, size);
+        const id = InstructionOperations.addNode(map, pid, text, pos, nodeSize);
         invalidateTree();
         return id;
       }
@@ -2082,7 +2082,7 @@
         } catch (error) {
           map = JSON.parse(before);
           invalidateTree();
-          if (!Object.hasOwn(map.nodes, sel)) sel = map.root;
+          if (!Object.hasOwn(map.nodes, selectedId)) selectedId = map.root;
           $('#title').value = map.title;
           toast(error.message);
           render();
@@ -2129,7 +2129,7 @@
         const entry = from.pop();
         map = MapHistory.apply(map, entry, from === history ? 'before' : 'after');
         to.push(entry);
-        if (!map.nodes[sel]) sel = null;
+        if (!map.nodes[selectedId]) selectedId = null;
         $('#title').value = map.title;
         changed();
       }
@@ -2216,7 +2216,7 @@
         map = m;
         mapId = id;
         mapClaim = claim;
-        sel = compact.matches ? null : map.root;
+        selectedId = compact.matches ? null : map.root;
         useLog(m, log);
         invalidateTree();
         mapSessionId = InstructionTransport.id('map_');
@@ -2230,7 +2230,7 @@
         $('#title').value = map.title;
         // A bundle can repair the same asset ID while an earlier read/decode is
         // still pending. Drop all old states so late failures cannot hide it.
-        for (const el of els.values()) clearNodeImage(el);
+        for (const el of nodeEls.values()) clearNodeImage(el);
         render();
         const stored = storedView(id);
         if (stored && !compact.matches) {
@@ -2254,7 +2254,7 @@
         map = m;
         invalidateTree();
         revision++;
-        if (!map.nodes[sel]) sel = null;
+        if (!map.nodes[selectedId]) selectedId = null;
         $('#title').value = map.title;
         render();
       }
@@ -2268,7 +2268,7 @@
           useLog(m, log);
           invalidateTree();
           revision++;
-          if (!map.nodes[sel]) sel = map.root;
+          if (!map.nodes[selectedId]) selectedId = map.root;
           $('#title').value = map.title;
           render();
         }
@@ -2493,21 +2493,21 @@
         world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
         let g = 28 * view.s;
         while (g < 16) g *= 2;
-        vp.style.backgroundSize = `${g}px ${g}px`;
-        vp.style.backgroundPosition = `${view.x}px ${view.y}px`;
+        viewportEl.style.backgroundSize = `${g}px ${g}px`;
+        viewportEl.style.backgroundPosition = `${view.x}px ${view.y}px`;
         $('#zoomLabel').textContent = Math.round(view.s * 100) + '%';
         positionMenu();
         clearTimeout(viewTimer);
         viewTimer = setTimeout(storeView, 500);
       }
       function clampView(v = view, hint = true) {
-        const cx = (W() / 2 - v.x) / v.s,
+        const cx = (viewportWidth() / 2 - v.x) / v.s,
           cy = (innerHeight / 2 - v.y) / v.s;
         const nx = clamp(cx, -BOUND, BOUND),
           ny = clamp(cy, -BOUND, BOUND);
         if (hint && nx !== cx) edgeHint(cx < 0 ? 'left' : 'right');
         if (hint && ny !== cy) edgeHint(cy < 0 ? 'top' : 'bottom');
-        v.x = W() / 2 - nx * v.s;
+        v.x = viewportWidth() / 2 - nx * v.s;
         v.y = innerHeight / 2 - ny * v.s;
         return v;
       }
@@ -2551,7 +2551,7 @@
         requestAnimationFrame(step);
       }
       function centerOn(pt, s = view.s) {
-        return { x: W() / 2 - pt.x * s, y: H() / 2 - pt.y * s, s };
+        return { x: viewportWidth() / 2 - pt.x * s, y: canvasHeight() / 2 - pt.y * s, s };
       }
       function mapBounds(tagSpace = 30) {
         let x0 = Infinity,
@@ -2559,7 +2559,7 @@
           x1 = -Infinity,
           y1 = -Infinity;
         for (const n of Object.values(map.nodes)) {
-          const { w, h } = size(n);
+          const { w, h } = nodeSize(n);
           x0 = Math.min(x0, n.x - w / 2);
           x1 = Math.max(x1, n.x + w / 2);
           y0 = Math.min(y0, n.y - h / 2 - tagSpace);
@@ -2569,25 +2569,25 @@
       }
       function fitAll() {
         const { x0, y0, x1, y1 } = mapBounds();
-        const top = Math.min($('.topbar').getBoundingClientRect().bottom + 16, H() / 3),
-          side = Math.min(40, W() / 10);
-        const w = Math.max(1, W() - side * 2),
-          h = Math.max(1, H() - top - 24);
+        const top = Math.min($('.topbar').getBoundingClientRect().bottom + 16, canvasHeight() / 3),
+          side = Math.min(40, viewportWidth() / 10);
+        const w = Math.max(1, viewportWidth() - side * 2),
+          h = Math.max(1, canvasHeight() - top - 24);
         const s = clamp(Math.min(w / (x1 - x0), h / (y1 - y0)), ZMIN, 1.25);
-        animateTo({ s, x: W() / 2 - ((x0 + x1) / 2) * s, y: top + h / 2 - ((y0 + y1) / 2) * s });
+        animateTo({ s, x: viewportWidth() / 2 - ((x0 + x1) / 2) * s, y: top + h / 2 - ((y0 + y1) / 2) * s });
       }
       function ensureVisible(pt) {
         const sx = pt.x * view.s + view.x,
           sy = pt.y * view.s + view.y;
-        const { w, h } = size(pt),
-          mx = Math.min(W() / 3, (w * view.s) / 2 + 24),
-          my = Math.min(H() / 3, (h * view.s) / 2 + 24);
-        if (sx < mx || sx > W() - mx || sy < my || sy > H() - my) animateTo(centerOn(pt));
+        const { w, h } = nodeSize(pt),
+          mx = Math.min(viewportWidth() / 3, (w * view.s) / 2 + 24),
+          my = Math.min(canvasHeight() / 3, (h * view.s) / 2 + 24);
+        if (sx < mx || sx > viewportWidth() - mx || sy < my || sy > canvasHeight() - my) animateTo(centerOn(pt));
       }
 
       /* ---------- render ---------- */
       function nodeEl(id) {
-        let el = els.get(id);
+        let el = nodeEls.get(id);
         if (!el) {
           el = Object.assign(document.createElement('div'), {
             className: 'node',
@@ -2596,7 +2596,7 @@
           el.nodeText = el.querySelector('.node__text');
           el.dataset.id = id;
           nodesEl.append(el);
-          els.set(id, el);
+          nodeEls.set(id, el);
         }
         return el;
       }
@@ -2736,12 +2736,12 @@
       let dropTarget = null;
       function setDropTarget(id) {
         if (dropTarget === id) return;
-        els.get(dropTarget)?.classList.remove('is-drop-target');
+        nodeEls.get(dropTarget)?.classList.remove('is-drop-target');
         dropTarget = id;
-        els.get(id)?.classList.add('is-drop-target');
+        nodeEls.get(id)?.classList.add('is-drop-target');
       }
       const nodeIdAt = e => document.elementFromPoint(e.clientX, e.clientY)?.closest('.node')?.dataset.id;
-      vp.addEventListener('dragover', e => {
+      viewportEl.addEventListener('dragover', e => {
         const icon = palette?.isDrag(e.dataTransfer);
         if (!icon && !e.dataTransfer?.types.includes('Files')) return;
         e.preventDefault();
@@ -2749,10 +2749,10 @@
         e.dataTransfer.dropEffect = id ? 'copy' : 'none';
         setDropTarget(id ?? null);
       });
-      vp.addEventListener('dragleave', e => {
-        if (!vp.contains(e.relatedTarget)) setDropTarget(null);
+      viewportEl.addEventListener('dragleave', e => {
+        if (!viewportEl.contains(e.relatedTarget)) setDropTarget(null);
       });
-      vp.addEventListener('drop', async e => {
+      viewportEl.addEventListener('drop', async e => {
         const icon = palette?.isDrag(e.dataTransfer);
         if (!icon && !e.dataTransfer?.types.includes('Files')) return;
         e.preventDefault();
@@ -2774,7 +2774,7 @@
       let viewing = null;
       function openImageViewer(id) {
         const ref = map.nodes[id]?.image;
-        if (!ref || els.get(id)?.imageState?.failed) return false;
+        if (!ref || nodeEls.get(id)?.imageState?.failed) return false;
         const img = $('#imageViewerImg'),
           assetId = (viewing = ref.assetId);
         img.alt = ref.alt;
@@ -2811,7 +2811,7 @@
         const c = el.classList;
         c.toggle('is-root', n.id === map.root);
         c.toggle('has-image', !!n.image);
-        c.toggle('is-selected', n.id === sel && !mode && !editing && !hand?.grab);
+        c.toggle('is-selected', n.id === selectedId && !mode && !editing && !hand?.grab);
         c.toggle('is-editing', editing?.id === n.id);
         c.toggle('is-dragging', gesture?.type === 'node' && gesture.moved && gesture.id === n.id && !hand);
         c.toggle('is-grabbable', hand?.hover === n.id && !hand.grab);
@@ -2831,18 +2831,18 @@
       function render() {
         palette?.sync();
         cancelDragRender();
-        for (const [id, el] of els)
+        for (const [id, el] of nodeEls)
           if (!map.nodes[id]) {
             clearNodeImage(el);
             el.remove();
-            els.delete(id);
+            nodeEls.delete(id);
           }
         const blocked = mode?.blocked || null;
         for (const n of Object.values(map.nodes)) renderNode(n, blocked);
         renderEdges();
         positionMenu();
-        $('#promptTarget').textContent = map.nodes[sel]
-          ? tr('prompt.selected', map.nodes[sel].text)
+        $('#promptTarget').textContent = map.nodes[selectedId]
+          ? tr('prompt.selected', map.nodes[selectedId].text)
           : tr('prompt.targetRoot');
       }
       function curve(a, b) {
@@ -2896,7 +2896,7 @@
       }
       function positionMenu() {
         const menu = $('#nodeMenu'),
-          n = sel && map.nodes[sel];
+          n = selectedId && map.nodes[selectedId];
         const docked = document.body.classList.contains('canvas-narrow');
         if (!n || editing || mode || deletion || hand?.grab || (gesture?.moved && !docked)) {
           menu.hidden = true;
@@ -2907,18 +2907,19 @@
         const imageKey = n.image ? 'node.changeImage' : 'node.image';
         menu.querySelector('[data-act=image] .btn__label--long').textContent = tr(imageKey);
         menu.querySelector('[data-act=image] .btn__label--short').textContent = tr(`${imageKey}.short`);
-        for (const act of ['reparent', 'delete']) menu.querySelector(`[data-act=${act}]`).hidden = sel === map.root;
-        const el = els.get(sel),
+        for (const act of ['reparent', 'delete'])
+          menu.querySelector(`[data-act=${act}]`).hidden = selectedId === map.root;
+        const el = nodeEls.get(selectedId),
           half = el.offsetHeight / 2;
         const mw = menu.offsetWidth,
           mh = menu.offsetHeight;
-        const x = clamp(n.x * view.s + view.x - mw / 2, 8, Math.max(8, W() - mw - 8));
+        const x = clamp(n.x * view.s + view.x - mw / 2, 8, Math.max(8, viewportWidth() - mw - 8));
         const above = (n.y - half) * view.s + view.y - mh - 40,
           below = (n.y + half) * view.s + view.y + 16;
         const covers = top =>
           Object.values(map.nodes).some(m => {
-            if (m.id === sel) return false;
-            const { w, h } = size(m),
+            if (m.id === selectedId) return false;
+            const { w, h } = nodeSize(m),
               left = (m.x - w / 2) * view.s + view.x,
               mTop = (m.y - h / 2) * view.s + view.y;
             return left < x + mw && left + w * view.s > x && mTop < top + mh && mTop + h * view.s > top;
@@ -2926,7 +2927,7 @@
         const y = clamp(
           above >= 72 && (!covers(above) || covers(below)) ? above : below,
           8,
-          Math.max(8, (vp.clientHeight || innerHeight) - mh - 8),
+          Math.max(8, (viewportEl.clientHeight || innerHeight) - mh - 8),
         );
         menu.style.transform = `translate(${x}px, ${y}px)`;
       }
@@ -2951,14 +2952,14 @@
             ? tr('speech.' + speech.state)
             : speechMessage;
         if (!active) $('#speechInterim').textContent = '';
-        const t = editing && els.get(editing.id)?.nodeText;
+        const t = editing && nodeEls.get(editing.id)?.nodeText;
         if (t) t.contentEditable = active ? 'false' : 'plaintext-only';
       }
       function startNodeSpeech() {
         if (!editing || readOnly()) return;
         const edit = editing,
           session = mapSessionId,
-          t = els.get(edit.id).nodeText;
+          t = nodeEls.get(edit.id).nodeText;
         edit.pendingDone = false;
         speechMessage = '';
         speech.start({
@@ -2990,7 +2991,7 @@
             updateSpeech();
             if (!error && confirm && t.textContent.trim()) {
               finishEdit();
-              vp.focus();
+              viewportEl.focus();
             }
           },
         });
@@ -3004,14 +3005,14 @@
           updateSpeech();
         } else {
           finishEdit();
-          vp.focus();
+          viewportEl.focus();
         }
       }
       $('#nodeSpeechToggle').onclick = () => (speech.active ? speech.stop() : startNodeSpeech());
       $('#nodeSpeechDone').onclick = confirmNodeSpeech;
       $('#nodeSpeechCancel').onclick = () => {
         cancelEdit();
-        vp.focus();
+        viewportEl.focus();
       };
       for (const id of ['#nodeSpeechToggle', '#nodeSpeechDone', '#nodeSpeechCancel']) {
         $(id).addEventListener('pointerdown', e => {
@@ -3026,7 +3027,7 @@
         if (e.key === 'Escape') {
           e.preventDefault();
           cancelEdit();
-          vp.focus();
+          viewportEl.focus();
         }
       });
       $('#nodeSpeech').addEventListener('focusout', e => {
@@ -3035,15 +3036,15 @@
           !editing.handInput &&
           e.relatedTarget &&
           !$('#nodeSpeech').contains(e.relatedTarget) &&
-          e.relatedTarget !== els.get(editing.id)?.nodeText
+          e.relatedTarget !== nodeEls.get(editing.id)?.nodeText
         )
           finishEdit();
       });
       updateSpeech();
 
       function select(id) {
-        if (sel !== id) palette?.selectionChanged();
-        sel = id;
+        if (selectedId !== id) palette?.selectionChanged();
+        selectedId = id;
         render();
       }
       function startEdit(id, isNew = false, atEnd = false) {
@@ -3053,9 +3054,9 @@
         if (!map.nodes[id]) return;
         interruptHand();
         editing = { id, isNew, orig: map.nodes[id].text, pid: map.nodes[id].parent };
-        sel = id;
+        selectedId = id;
         render();
-        const t = els.get(id).nodeText;
+        const t = nodeEls.get(id).nodeText;
         t.dataset.placeholder = tr('node.placeholder');
         t.contentEditable = 'plaintext-only';
         t.focus();
@@ -3073,7 +3074,7 @@
         const { id, isNew, orig, pid } = editing;
         editing = null;
         updateSpeech();
-        const t = els.get(id)?.nodeText;
+        const t = nodeEls.get(id)?.nodeText;
         let text = (t?.textContent || '').trim();
         if (text) {
           const candidate = serializeMap();
@@ -3093,7 +3094,7 @@
           const before = MapHistory.apply(map, added, 'before');
           if (!text) {
             map = before;
-            sel = pid;
+            selectedId = pid;
           } else {
             map.nodes[id].text = text;
             record(JSON.stringify(before));
@@ -3110,7 +3111,7 @@
       }
       function cancelEdit() {
         if (!editing) return;
-        els.get(editing.id).nodeText.textContent = editing.isNew ? '' : editing.orig;
+        nodeEls.get(editing.id).nodeText.textContent = editing.isNew ? '' : editing.orig;
         finishEdit();
       }
       function addChildAndEdit(pid, handInput = false) {
@@ -3133,7 +3134,7 @@
         }
       }
       function addSiblingAndEdit() {
-        const n = map.nodes[sel];
+        const n = map.nodes[selectedId];
         addChildAndEdit(!n || n.parent == null ? map.root : n.parent);
       }
       function removeNode(id) {
@@ -3148,7 +3149,7 @@
         if (!map.nodes[id]) return;
         if (mode) endReparent();
         const ids = [...subtree(id)],
-          children = kids(id).map(n => n.id);
+          children = childrenOf(id).map(n => n.id);
         deletion = {
           id,
           ids,
@@ -3206,7 +3207,7 @@
         $('#deleteDialog').close();
         interruptHand();
         render();
-        vp.focus({ preventScroll: true });
+        viewportEl.focus({ preventScroll: true });
       }
       function confirmDelete() {
         const d = deletion;
@@ -3222,13 +3223,13 @@
         commit(() => {
           if (d.scope === 'branch') for (const id of d.ids) delete map.nodes[id];
           else {
-            const siblings = kids(d.parent).flatMap(n => (n.id === d.id ? d.children : [n.id]));
+            const siblings = childrenOf(d.parent).flatMap(n => (n.id === d.id ? d.children : [n.id]));
             for (const id of d.children) map.nodes[id].parent = d.parent;
             delete map.nodes[d.id];
             for (const id of siblings) map.nodes[id].order = ++map.seq;
           }
           invalidateTree();
-          sel = d.parent;
+          selectedId = d.parent;
         });
         toast(tr('delete.done'), tr('common.undo'), undo);
       }
@@ -3293,7 +3294,7 @@
           return Math.atan2(b, a);
         };
         const ordered = origin =>
-          [...kids(origin.id)].sort(
+          [...childrenOf(origin.id)].sort(
             (a, b) =>
               angle(a, origin) - angle(b, origin) ||
               Math.hypot(a.x - origin.x, a.y - origin.y) - Math.hypot(b.x - origin.x, b.y - origin.y) ||
@@ -3308,10 +3309,10 @@
         return siblings[siblings.indexOf(s) + step]?.id ?? s.id;
       }
       function navigate(key, nodes) {
-        const s = map.nodes[sel] || map.nodes[map.root];
+        const s = map.nodes[selectedId] || map.nodes[map.root];
         const best = nodes
           ? nearestInDirection(key, s, nodes)
-          : ((s.id === map.root ? nearestInDirection(key, s, kids(s.id)) : treeTarget(key, s)) ??
+          : ((s.id === map.root ? nearestInDirection(key, s, childrenOf(s.id)) : treeTarget(key, s)) ??
             nearestInDirection(key, s, Object.values(map.nodes)));
         if (best) {
           select(best);
@@ -3319,7 +3320,7 @@
         }
       }
       function nudge(key) {
-        const id = sel || map.root;
+        const id = selectedId || map.root;
         const [dx, dy] = { ArrowRight: [24, 0], ArrowLeft: [-24, 0], ArrowDown: [0, 24], ArrowUp: [0, -24] }[key];
         commit(() => {
           for (const d of subtree(id)) {
@@ -3365,7 +3366,7 @@
           map.nodes[id].order = ++map.seq;
           invalidateTree();
         });
-        sel = id;
+        selectedId = id;
         render();
         toast(tr('reparent.done'), tr('common.undo'), undo);
       }
@@ -3536,7 +3537,7 @@
           mapSessionId,
           baseRevision: revision,
           prompt: text,
-          selectedNodeId: map.nodes[sel] ? sel : null,
+          selectedNodeId: map.nodes[selectedId] ? selectedId : null,
           map: serializeMap(),
         };
         try {
@@ -3551,7 +3552,7 @@
           id: input.requestId,
           session: mapSessionId,
           revision,
-          selection: sel,
+          selection: selectedId,
           text,
           draftVersion,
           sentText: text,
@@ -3610,7 +3611,7 @@
           }
           run.proposal = proposal;
           run.state = 'validating';
-          run.prepared = InstructionOperations.prepare(run.snapshot, proposal, { size });
+          run.prepared = InstructionOperations.prepare(run.snapshot, proposal, { size: nodeSize });
           if (run.prepared.deletions.length) confirmInstruction();
           else applyInstruction();
         } catch (error) {
@@ -3687,7 +3688,7 @@
         const run = instruction;
         if (!run) return;
         try {
-          run.prepared = InstructionOperations.prepare(run.snapshot, run.proposal, { size });
+          run.prepared = InstructionOperations.prepare(run.snapshot, run.proposal, { size: nodeSize });
           $('#instructionPreview').textContent =
             run.prepared.deletions
               .map(d =>
@@ -3723,9 +3724,9 @@
         }
         let target = candidate.focusId,
           preserveView = false;
-        if (sel !== run.selection) {
-          preserveView = !!candidate.map.nodes[sel];
-          target = sel;
+        if (selectedId !== run.selection) {
+          preserveView = !!candidate.map.nodes[selectedId];
+          target = selectedId;
           while (target && !candidate.map.nodes[target]) target = map.nodes[target]?.parent;
           target ||= candidate.map.root;
         }
@@ -3735,12 +3736,12 @@
         commit(() => {
           map = candidate.map;
           invalidateTree();
-          sel = target;
+          selectedId = target;
         });
         instructionClient.applied.add(run.id);
         if (instructionClient.applied.size > 1000)
           instructionClient.applied.delete(instructionClient.applied.values().next().value);
-        if (!preserveView) ensureVisible(map.nodes[sel]);
+        if (!preserveView) ensureVisible(map.nodes[selectedId]);
         endInstruction('succeeded', InstructionOperations.summary(candidate.counts), candidate.counts);
       }
 
@@ -3831,25 +3832,25 @@
               if (side === 'left') confirmNodeSpeech();
               else {
                 cancelEdit();
-                vp.focus();
+                viewportEl.focus();
               }
             } else if (deletion) {
               side === 'left' ? closeDelete() : confirmDelete();
             }
           },
           command: action => {
-            if (deletion || editing || mode || !map.nodes[sel]) return;
-            if (action === 'add') addChildAndEdit(map.nodes[sel] ? sel : map.root, true);
-            else if (action === 'delete') removeNode(sel || map.root);
+            if (deletion || editing || mode || !map.nodes[selectedId]) return;
+            if (action === 'add') addChildAndEdit(map.nodes[selectedId] ? selectedId : map.root, true);
+            else if (action === 'delete') removeNode(selectedId || map.root);
           },
           select: id => {
-            if (sel !== id) select(id);
+            if (selectedId !== id) select(id);
           },
           center: id => {
             if (map.nodes[id]) animateTo(centerOn(map.nodes[id]));
           },
           nodes: () =>
-            [...els]
+            [...nodeEls]
               .filter(([id]) => map.nodes[id])
               .map(([id, el]) => {
                 const r = el.getBoundingClientRect();
@@ -3862,11 +3863,16 @@
           },
           zoom: factor => {
             animId++;
-            zoomAt(W() / 2, H() / 2, view.s * factor);
+            zoomAt(viewportWidth() / 2, canvasHeight() / 2, view.s * factor);
           },
           bounds: () => {
-            const r = vp.getBoundingClientRect();
-            return { left: r.left, top: r.top, right: r.left + W(), bottom: Math.min(r.bottom, H()) };
+            const r = viewportEl.getBoundingClientRect();
+            return {
+              left: r.left,
+              top: r.top,
+              right: r.left + viewportWidth(),
+              bottom: Math.min(r.bottom, canvasHeight()),
+            };
           },
           paint: state => {
             hand = state;
@@ -3914,7 +3920,7 @@
           },
         });
         cameraSession = session;
-        vp.focus({ preventScroll: true });
+        viewportEl.focus({ preventScroll: true });
         let deviceId;
         try {
           deviceId = localStorage.getItem(CAMERA_KEY) || undefined;
@@ -3967,12 +3973,12 @@
       }
       function beginNodeDrag(id, x, y, fromHand = false) {
         animId++;
-        sel = id;
+        selectedId = id;
         const orig = new Map([...subtree(id)].map(d => [d, { x: map.nodes[d].x, y: map.nodes[d].y }]));
         const edgeIds = new Set();
         for (const d of orig.keys()) {
           if (map.nodes[d].parent != null) edgeIds.add(d);
-          for (const child of kids(d)) edgeIds.add(child.id);
+          for (const child of childrenOf(d)) edgeIds.add(child.id);
         }
         gesture = {
           type: 'node',
@@ -4014,8 +4020,8 @@
         const wx = (x - view.x) / view.s,
           wy = (y - view.y) / view.s;
         return (
-          kids(map.nodes[g.id].parent).find(n => {
-            const s = size(n);
+          childrenOf(map.nodes[g.id].parent).find(n => {
+            const s = nodeSize(n);
             return n.id !== g.id && Math.abs(n.x - wx) < s.w / 2 && Math.abs(n.y - wy) < s.h / 2;
           })?.id ?? null
         );
@@ -4045,12 +4051,12 @@
 
       /* ---------- pointer ---------- */
       const pts = new Map();
-      vp.addEventListener('pointerdown', e => {
+      viewportEl.addEventListener('pointerdown', e => {
         if (e.target.isContentEditable) return;
         interruptHand();
         animId++;
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        vp.setPointerCapture(e.pointerId);
+        viewportEl.setPointerCapture(e.pointerId);
         if (pts.size === 2) {
           if (gesture?.type === 'node') revertGesture();
           const [a, b] = [...pts.values()];
@@ -4064,7 +4070,7 @@
           return;
         }
         if (editing) finishEdit();
-        vp.focus({ preventScroll: true });
+        viewportEl.focus({ preventScroll: true });
         const id = e.target.closest('.node')?.dataset.id;
         if (mode) {
           if (!id) return;
@@ -4079,7 +4085,7 @@
           gesture = { type: 'pan', id: id ?? null, sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false };
         palette?.sync();
       });
-      vp.addEventListener('pointermove', e => {
+      viewportEl.addEventListener('pointermove', e => {
         if (mode && e.pointerType === 'mouse') setCandidate(e.target.closest('.node')?.dataset.id || null);
         if (!pts.has(e.pointerId)) return;
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -4101,7 +4107,7 @@
         if (!g.moved && Math.hypot(dx, dy) < 4) return;
         g.moved = true;
         if (g.type === 'pan') {
-          vp.classList.add('is-panning');
+          viewportEl.classList.add('is-panning');
           view = clampView({ x: g.vx + dx, y: g.vy + dy, s: view.s });
           applyView();
         } else if (g.type === 'node') {
@@ -4111,7 +4117,7 @@
       function endPointer(e) {
         pts.delete(e.pointerId);
         const g = gesture;
-        vp.classList.remove('is-panning');
+        viewportEl.classList.remove('is-panning');
         if (!g || g.hand) return;
         // Lifting either finger ends the pinch. The remaining finger cannot start
         // a pan or move a node until a new gesture begins.
@@ -4128,23 +4134,23 @@
         else render();
         updateHand();
       }
-      vp.addEventListener('pointerup', endPointer);
-      vp.addEventListener('pointercancel', e => {
+      viewportEl.addEventListener('pointerup', endPointer);
+      viewportEl.addEventListener('pointercancel', e => {
         if (gesture?.type === 'node') revertGesture();
         endPointer(e);
       });
-      vp.addEventListener('lostpointercapture', e => {
+      viewportEl.addEventListener('lostpointercapture', e => {
         if (!pts.has(e.pointerId)) return;
         if (gesture?.type === 'node') revertGesture();
         endPointer(e);
       });
-      vp.addEventListener('dblclick', e => {
+      viewportEl.addEventListener('dblclick', e => {
         const hit = document.elementFromPoint(e.clientX, e.clientY),
           id = hit?.closest('.node')?.dataset.id;
         if (!id || mode) return;
         if (!(hit.closest('.node__image') && !editing && openImageViewer(id))) startEdit(id);
       });
-      vp.addEventListener(
+      viewportEl.addEventListener(
         'wheel',
         e => {
           e.preventDefault();
@@ -4168,7 +4174,7 @@
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           finishEdit();
-          vp.focus();
+          viewportEl.focus();
         } else if (e.key === 'Tab') {
           if (!e.shiftKey) {
             e.preventDefault();
@@ -4177,14 +4183,14 @@
         } else if (e.key === 'Escape') {
           e.preventDefault();
           cancelEdit();
-          vp.focus();
+          viewportEl.focus();
         }
       });
       nodesEl.addEventListener('focusout', e => {
         if (
           editing &&
           !editing.handInput &&
-          e.target === els.get(editing.id)?.nodeText &&
+          e.target === nodeEls.get(editing.id)?.nodeText &&
           !$('#nodeSpeech').contains(e.relatedTarget) &&
           (!speech.active || e.relatedTarget)
         )
@@ -4194,7 +4200,7 @@
         if (editing && e.key === 'Escape' && !e.isComposing) {
           e.preventDefault();
           cancelEdit();
-          vp.focus();
+          viewportEl.focus();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p' && !e.isComposing) {
@@ -4221,17 +4227,17 @@
         if (editing || e.isComposing || e.target.closest?.('input, textarea')) return;
         if (mod && (k === '=' || k === '+')) {
           e.preventDefault();
-          zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
+          zoomAt(viewportWidth() / 2, innerHeight / 2, view.s * 1.25);
           return;
         }
         if (mod && k === '-') {
           e.preventDefault();
-          zoomAt(W() / 2, innerHeight / 2, view.s / 1.25);
+          zoomAt(viewportWidth() / 2, innerHeight / 2, view.s / 1.25);
           return;
         }
         if (mod && k === '0') {
           e.preventDefault();
-          zoomAt(W() / 2, innerHeight / 2, 1);
+          zoomAt(viewportWidth() / 2, innerHeight / 2, 1);
           return;
         }
         if (mod && k.toLowerCase() === 'z') {
@@ -4252,11 +4258,11 @@
           if (mode) endReparent();
           else if (!$('#fileMenu').hidden) toggleFileMenu(false);
           else if (!$('#mapsMenu').hidden) toggleMapsMenu(false);
-          else if (document.activeElement === vp) $('#addChild').focus();
-          else vp.focus();
+          else if (document.activeElement === viewportEl) $('#addChild').focus();
+          else viewportEl.focus();
           return;
         }
-        if (e.target !== vp && e.target !== document.body) return;
+        if (e.target !== viewportEl && e.target !== document.body) return;
         interruptHand();
         if (mode) {
           if (k === 'Enter' && mode.candidate) {
@@ -4264,32 +4270,32 @@
             confirmReparent();
           } else if (k.startsWith('Arrow')) {
             e.preventDefault();
-            const from = sel;
-            sel = mode.candidate || mode.id;
+            const from = selectedId;
+            selectedId = mode.candidate || mode.id;
             navigate(k, Object.values(map.nodes));
-            setCandidate(sel);
-            sel = from;
+            setCandidate(selectedId);
+            selectedId = from;
           }
           return;
         }
         if (k === 'Tab' && !e.shiftKey) {
           e.preventDefault();
-          addChildAndEdit(sel || map.root);
+          addChildAndEdit(selectedId || map.root);
         } else if (k === 'Enter') {
           e.preventDefault();
           addSiblingAndEdit();
-        } else if (k === ' ' && sel) {
+        } else if (k === ' ' && selectedId) {
           e.preventDefault();
-          startEdit(sel, false, e.shiftKey);
-        } else if (k === 'F2' && sel) {
+          startEdit(selectedId, false, e.shiftKey);
+        } else if (k === 'F2' && selectedId) {
           e.preventDefault();
-          startEdit(sel, false, true);
-        } else if ((k === 'Delete' || k === 'Backspace') && sel && sel !== map.root) {
+          startEdit(selectedId, false, true);
+        } else if ((k === 'Delete' || k === 'Backspace') && selectedId && selectedId !== map.root) {
           e.preventDefault();
-          removeNode(sel);
+          removeNode(selectedId);
         } else if (k.startsWith('Arrow')) {
           e.preventDefault();
-          const selected = map.nodes[sel];
+          const selected = map.nodes[selectedId];
           if (e.altKey) nudge(k);
           else if (
             e.shiftKey &&
@@ -4305,7 +4311,7 @@
           fitAll();
         } else if (e.code === 'Digit2' && e.shiftKey) {
           e.preventDefault();
-          animateTo(centerOn(map.nodes[sel || map.root], 1.5));
+          animateTo(centerOn(map.nodes[selectedId || map.root], 1.5));
         } else if (k === '?') {
           e.preventDefault();
           $('#keysDialog').showModal();
@@ -4359,7 +4365,7 @@
         if (printing) return;
         printing = true;
         try {
-          const images = [...els.values()].map(el => el.imageState?.ready).filter(Boolean);
+          const images = [...nodeEls.values()].map(el => el.imageState?.ready).filter(Boolean);
           await Promise.race([Promise.all(images), new Promise(resolve => setTimeout(resolve, 3000))]);
           print();
         } finally {
@@ -4369,9 +4375,9 @@
       addEventListener('beforeprint', () => {
         const p = PrintLayout.fit(mapBounds(0));
         $('#pageStyle').textContent = `@page { size: A4 ${p.orientation}; margin: 10mm }`;
-        vp.style.setProperty('--print-w', p.width + 'px');
-        vp.style.setProperty('--print-h', p.height + 'px');
-        vp.style.setProperty('--print-transform', `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
+        viewportEl.style.setProperty('--print-w', p.width + 'px');
+        viewportEl.style.setProperty('--print-h', p.height + 'px');
+        viewportEl.style.setProperty('--print-transform', `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
         titleBeforePrint ??= document.title;
         document.title = map.title || tr('maps.untitled');
       });
@@ -4381,18 +4387,18 @@
       });
       $('#nodeMenu').addEventListener('click', e => {
         const act = e.target.closest('[data-act]')?.dataset.act;
-        if (!act || !sel) return;
+        if (!act || !selectedId) return;
         ({
-          child: () => addChildAndEdit(sel),
-          edit: () => startEdit(sel),
-          image: () => pickImage(sel, false),
-          'image-child': () => pickImage(sel, true),
-          'remove-image': () => removeNodeImage(sel),
-          reparent: () => startReparent(sel),
-          delete: () => removeNode(sel),
+          child: () => addChildAndEdit(selectedId),
+          edit: () => startEdit(selectedId),
+          image: () => pickImage(selectedId, false),
+          'image-child': () => pickImage(selectedId, true),
+          'remove-image': () => removeNodeImage(selectedId),
+          reparent: () => startReparent(selectedId),
+          delete: () => removeNode(selectedId),
         })[act]();
       });
-      $('#addChild').onclick = () => addChildAndEdit(sel || map.root);
+      $('#addChild').onclick = () => addChildAndEdit(selectedId || map.root);
       $('#promptForm').onsubmit = e => {
         e.preventDefault();
         void sendInstruction();
@@ -4406,7 +4412,7 @@
           e.preventDefault();
           void sendInstruction();
         }
-        if (e.key === 'Escape') vp.focus();
+        if (e.key === 'Escape') viewportEl.focus();
       };
       $('#instructionCancel').onclick = cancelInstruction;
       $('#instructionConfirm').onclick = applyInstruction;
@@ -4435,7 +4441,7 @@
         fitHeld = false;
         fitTimer = setTimeout(() => {
           fitHeld = true;
-          zoomAt(W() / 2, innerHeight / 2, 1);
+          zoomAt(viewportWidth() / 2, innerHeight / 2, 1);
         }, 500);
       };
       $('#fitBtn').onpointerup =
@@ -4446,9 +4452,9 @@
         if (!fitHeld) fitAll();
         fitHeld = false;
       };
-      $('#zoomIn').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s * 1.25);
-      $('#zoomOut').onclick = () => zoomAt(W() / 2, innerHeight / 2, view.s / 1.25);
-      $('#zoomLabel').onclick = () => zoomAt(W() / 2, innerHeight / 2, 1);
+      $('#zoomIn').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, view.s * 1.25);
+      $('#zoomOut').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, view.s / 1.25);
+      $('#zoomLabel').onclick = () => zoomAt(viewportWidth() / 2, innerHeight / 2, 1);
       $('#undo').onclick = undo;
       $('#deleteSingle').onchange = () => chooseDeleteScope('single');
       $('#deleteBranch').onchange = () => chooseDeleteScope('branch');
@@ -4549,7 +4555,7 @@
           });
       };
       $('#title').onkeydown = e => {
-        if (e.key === 'Enter' && !e.isComposing) vp.focus();
+        if (e.key === 'Enter' && !e.isComposing) viewportEl.focus();
       };
       $('#devBtn').onclick = () => {
         const open = $('#dev').hidden;
@@ -4567,7 +4573,7 @@
       };
       $('#promptHide').onclick = () => {
         setPromptHidden(true);
-        vp.focus();
+        viewportEl.focus();
       };
       $('#promptToggle').hidden = !instructionsEnabled;
       $('#promptShortcutKey').hidden = !instructionsEnabled;
@@ -4615,7 +4621,7 @@
             map = sample();
             mapSessionId = InstructionTransport.id('map_');
           });
-          sel = map.root;
+          selectedId = map.root;
           $('#title').value = map.title;
           animateTo(centerOn({ x: 0, y: 0 }, 1));
         }
@@ -4641,7 +4647,7 @@
         if (editing) editing.pendingDone = false;
         updateSpeech();
         stopHand();
-        for (const el of els.values()) clearNodeImage(el);
+        for (const el of nodeEls.values()) clearNodeImage(el);
         storeView();
         if (!readOnly()) flushSave().catch(() => {});
         mapClaim.release();
@@ -4663,10 +4669,10 @@
         state: () => ({
           session: mapSessionId,
           revision,
-          selection: map.nodes[sel] ? sel : null,
+          selection: map.nodes[selectedId] ? selectedId : null,
           root: map.root,
-          targetName: map.nodes[sel]?.text || '',
-          hasImage: !!map.nodes[sel]?.image,
+          targetName: map.nodes[selectedId]?.text || '',
+          hasImage: !!map.nodes[selectedId]?.image,
           blocked:
             readOnly() || switching
               ? tr('save.readonly')
@@ -4677,7 +4683,7 @@
         attach: (blob, target, alt) => attachNodeImage(blob, { ...target, mapSessionId: target.session }, alt),
         error: message => toast(message),
         interrupt: interruptHand,
-        width: W,
+        width: viewportWidth,
         clearDrop: () => setDropTarget(null),
         closeMenu: () => toggleFileMenu(false),
         closeMenus: () => {
@@ -4694,9 +4700,9 @@
         layout: () => {
           animId++;
           resizeNotices();
-          if (els.has(sel)) {
+          if (nodeEls.has(selectedId)) {
             positionMenu();
-            ensureVisible(map.nodes[sel]);
+            ensureVisible(map.nodes[selectedId]);
           }
         },
       });
