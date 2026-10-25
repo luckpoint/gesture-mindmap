@@ -357,11 +357,12 @@ test('valid import adds a new map, opens it and keeps the original', async () =>
 });
 
 test('import and switching do not replace a map during an active operation', async () => {
-  for (const field of ['state.editing', 'state.gesture', 'state.mode']) {
+  for (const field of ['state.editing', 'state.gesture', 'state.mode', 'state.deletion', 'state.hand']) {
     const { run } = setup();
-    run(`const original = state.map; ${field} = {};`);
+    run(`const original = state.map; ${field} = ${field === 'state.hand' ? "{ grab: 'a' }" : '{}'};`);
     await assert.rejects(run('importMap(sample())'), /操作を終えて/);
     await assert.rejects(run(`state.library.create(sample()).then(id => switchMap(id))`), /操作を終えて/);
+    await assert.rejects(run(`deleteMap('m_first')`), /操作を終えて/);
     assert.equal(run(`state.map === original && state.mapId === 'm_first' && state.mapClaim.editable`), true);
   }
 });
@@ -768,6 +769,38 @@ function mockInstruction(t, operations) {
   };
 }
 
+test('sending an instruction settles editing, drag previews and reparenting before capturing its snapshot', async () => {
+  for (const prepare of [
+    `startEdit('a'); nodeEls.get('a').nodeText.textContent = '確定した編集';`,
+    `beginNodeDrag('a', 0, 0); moveNodeDrag(state.gesture, 60, 40); pts.set(1, { x: 60, y: 40 });`,
+    `startReparent('a'); setCandidate('b');`,
+  ]) {
+    const t = setup({ renderUI: true });
+    t.run(prepare);
+    const expectedText = t.run(`state.editing ? '確定した編集' : state.map.nodes.a.text`);
+    const request = mockInstruction(t, []);
+    assert.equal(t.run(`!state.editing && !state.gesture && !state.mode && pts.size === 0`), true, prepare);
+    assert.equal(t.run(`state.instruction.snapshot.nodes.a.text`), expectedText);
+    assert.equal(
+      t.run(`state.instruction.snapshot.nodes.a.x === 310 && state.instruction.snapshot.nodes.a.parent === 'root'`),
+      true,
+    );
+    assert.equal(t.run(`state.instruction.revision === state.revision`), true);
+    request.finish();
+    await request.pending;
+  }
+});
+
+test('manual deletion and instruction dialogs block sending before editing is settled', async () => {
+  for (const block of [`state.deletion = {};`, `$('#instructionDialog').open = true;`]) {
+    const t = setup({ renderUI: true });
+    t.run(`startEdit('a'); nodeEls.get('a').nodeText.textContent = '未確定'; ${block}`);
+    const request = mockInstruction(t, []);
+    await request.pending;
+    assert.equal(t.run(`!!state.editing && !state.instruction && state.history.length === 0`), true);
+  }
+});
+
 test('instructions apply multiple operations as one undo/redo entry and share export serialization', async () => {
   const t = setup();
   const before = t.run('JSON.stringify(serializeMap())');
@@ -810,6 +843,9 @@ test('instructions reject edits, undo cycles, imports, and unfinished gestures w
     'importMap(sample());',
     "state.gesture = { type: 'node' };",
     "state.editing = { id: 'a' };",
+    'state.mode = {};',
+    'state.deletion = {};',
+    "state.hand = { grab: 'a' };",
   ]) {
     const t = setup();
     const request = mockInstruction(t, [{ type: 'update_node', nodeId: 'b', text: '新しい本' }]);
@@ -1643,6 +1679,11 @@ test('adoption after a storage await rejects edits, undo, import, deletion and a
     'commit(()=>delete state.map.nodes.a1)',
     'state.gesture={type:"node"}',
     'state.hand={grab:"a1"}',
+    'state.editing={id:"a"}',
+    'state.mode={}',
+    'state.deletion={}',
+    'state.instruction={state:"awaiting_confirmation"}',
+    'state.mapClaim.editable=false',
   ]) {
     const t = setup();
     t.run(`commit(()=>state.map.nodes.b.text='編集'); let saved;
@@ -1654,6 +1695,31 @@ test('adoption after a storage await rejects edits, undo, import, deletion and a
     await assert.rejects(pending, /保存中/);
     assert.equal(t.run(`!state.map.nodes.a1?.image && state.history.length === historyAfterChange`), true);
   }
+});
+test('AI deletion confirmation blocks image attachment but image removal invalidates the confirmation', async () => {
+  const t = setup();
+  t.run(`state.map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
+    let imageWrites=0; imageStore.put=async()=>{imageWrites++;};`);
+  const request = mockInstruction(t, [{ type: 'delete_node', nodeId: 'b', scope: 'single' }]);
+  request.finish();
+  await request.pending;
+  await assert.rejects(
+    t.run(
+      `attachNodeImage(new Blob(['test']), {nodeId:'a',mapSessionId:state.mapSessionId,revision:state.revision}, '画像')`,
+    ),
+    /操作中/,
+  );
+  assert.equal(
+    t.run(`imageWrites === 0 && state.history.length === 0 && state.instruction.state === 'awaiting_confirmation'`),
+    true,
+  );
+  t.run(`removeNodeImage('a');`);
+  assert.equal(
+    t.run(
+      `!state.map.nodes.a.image && state.history.length === 1 && state.instruction === null && !$('#instructionDialog').open`,
+    ),
+    true,
+  );
 });
 test('image adoption captures its target before storage and replacement is one undoable change', async () => {
   const t = setup();

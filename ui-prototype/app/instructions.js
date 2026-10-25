@@ -68,11 +68,7 @@ async function checkCodexStatus() {
   }
 }
 function instructionConflict(run) {
-  return (
-    run.session !== state.mapSessionId ||
-    run.revision !== state.revision ||
-    !!(state.editing || state.gesture || state.mode || state.deletion || state.hand?.grab)
-  );
+  return mapRevisionConflict(run) || !OperationPolicy.canApplyInstruction(operationState());
 }
 function endInstruction(status, message, counts) {
   const run = state.instruction;
@@ -149,7 +145,7 @@ async function sendInstruction(retryText) {
     instructionToast(tr('instruction.readOnly'), [], false, true);
     return;
   }
-  if (state.deletion || $('#instructionDialog').open) return;
+  if (!OperationPolicy.canStartInstruction(operationState())) return;
   if (state.editing) finishEdit();
   interruptHand();
   if (state.gesture) {

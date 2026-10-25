@@ -346,12 +346,7 @@ palette = globalThis.IconPalette?.create({
     root: state.map.root,
     targetName: state.map.nodes[state.selectedId]?.text || '',
     hasImage: !!state.map.nodes[state.selectedId]?.image,
-    blocked:
-      readOnly() || state.switching
-        ? tr('save.readonly')
-        : busyOperation() || state.instruction?.state === 'awaiting_confirmation'
-          ? tr('palette.busy')
-          : '',
+    blocked: tr(OperationPolicy.paletteBlock(operationState())),
   }),
   attach: (blob, target, alt) => attachNodeImage(blob, { ...target, mapSessionId: target.session }, alt),
   error: message => toast(message),

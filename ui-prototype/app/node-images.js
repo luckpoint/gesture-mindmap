@@ -58,16 +58,9 @@ async function attachNodeImage(blob, target, alt) {
   const { nodeId, child, mapSessionId: session, revision: baseRevision } = target;
   const conflict = () =>
     (target.valid && !target.valid()) ||
-    readOnly() ||
-    session !== state.mapSessionId ||
-    baseRevision !== state.revision ||
-    state.instruction?.state === 'awaiting_confirmation' ||
-    !Object.hasOwn(state.map.nodes, nodeId) ||
-    state.editing ||
-    state.gesture ||
-    state.mode ||
-    state.deletion ||
-    state.hand?.grab;
+    mapRevisionConflict({ session, revision: baseRevision }) ||
+    !OperationPolicy.canAttachImage(operationState()) ||
+    !Object.hasOwn(state.map.nodes, nodeId);
   if (conflict()) throw new Error(tr('image.conflict'));
   if (typeof alt !== 'string' || alt.length > 4000) throw new Error(tr('image.altTooLong'));
   const asset = await imageStore.put(blob);
@@ -170,8 +163,7 @@ function openImageViewer(id) {
   return true;
 }
 function removeNodeImage(id) {
-  if (!state.map.nodes[id]?.image || state.editing || state.gesture || state.mode || state.deletion || state.hand?.grab)
-    return;
+  if (!state.map.nodes[id]?.image || !OperationPolicy.canRemoveImage(operationState())) return;
   commit(() => {
     delete state.map.nodes[id].image;
   });

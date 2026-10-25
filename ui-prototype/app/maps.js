@@ -113,11 +113,8 @@ function failOpen(error) {
   console.error(error);
   toast(tr('maps.openFailed'));
 }
-function busyOperation() {
-  return !!(state.editing || state.gesture || state.mode || state.deletion || state.hand?.grab);
-}
 async function leaveMap() {
-  if (busyOperation()) throw new Error(tr('maps.finishBeforeSwitch'));
+  if (!OperationPolicy.canLeaveMap(operationState())) throw new Error(tr('maps.finishBeforeSwitch'));
   const base = state.revision;
   if (!readOnly()) await flushSave();
   if (saveDirty || state.revision !== base) throw new Error(tr('maps.changedNoSwitch'));
@@ -155,7 +152,7 @@ async function deleteMap(id) {
     }
   } else {
     if (readOnly()) throw new Error(tr('maps.cantDeleteEditing'));
-    if (busyOperation()) throw new Error(tr('maps.finishBeforeDelete'));
+    if (!OperationPolicy.canLeaveMap(operationState())) throw new Error(tr('maps.finishBeforeDelete'));
     if (state.switching) throw new Error(tr('maps.switching'));
     state.switching = true;
     try {
