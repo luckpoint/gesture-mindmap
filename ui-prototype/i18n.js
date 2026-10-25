@@ -1079,7 +1079,7 @@
     'landing.description':
       'A mind map that runs in your browser. Add and delete nodes with the mouse, touch, or hand gestures in front of your camera.',
     'landing.brand': 'Mind Map by luckpoint factory',
-    'landing.nav': 'Open the app',
+    'landing.nav': 'GitHub',
     'landing.heroA': 'Raise your hand,',
     'landing.heroB': 'grow your ideas.',
     'landing.lede':
@@ -1154,7 +1154,7 @@
     'landing.description':
       'ブラウザで動くマインドマップ。マウスやタッチに加えて、カメラに映した手のジェスチャーでもノードを追加・削除できます。',
     'landing.brand': 'Mind Map by luckpoint factory',
-    'landing.nav': 'アプリを開く',
+    'landing.nav': 'GitHub',
     'landing.heroA': '手をかざして、',
     'landing.heroB': '考えを広げる。',
     'landing.lede':
