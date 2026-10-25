@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { create } = require('../ui-prototype/app/autosave.js');
+const { create } = require('../ui-prototype/core/autosave.js');
 
 function deferred() {
   let resolve, reject;

@@ -1,5 +1,5 @@
 function storeView() {
-  clearTimeout(viewTimer);
+  appContext.timers.clear(appContext.timers.view);
   if (state.mapId)
     try {
       localStorage.setItem(VIEW_KEY + state.mapId, JSON.stringify(state.view));
@@ -13,12 +13,7 @@ function storedView(id) {
   return null;
 }
 function useLog(m, log) {
-  const { undo, redo, discard } = MapHistory.verify(m, log.cursor, log.entries);
-  state.history = undo;
-  state.future = redo.reverse();
-  unsaved = new Map();
-  dropped = new Set(discard);
-  lastSeq = log.entries.reduce((max, e) => Math.max(max, e.seq), 0);
+  editHistory.load(m, log);
 }
 function showMap(id, m, claim, log = { cursor: 0, entries: [] }) {
   speech.abort();

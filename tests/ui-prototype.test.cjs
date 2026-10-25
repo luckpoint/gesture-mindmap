@@ -4,13 +4,12 @@ const { join } = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 
-// Run the actual app scripts, minus the boot in app/main.js, with minimal DOM/storage adapters.
-// These tests cover state transitions and import failures, not browser layout or real touch.
-const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8');
-const appScripts = [...html.matchAll(/<script src="(app\/[^"]+)"/g)]
-  .map(m => m[1])
-  .filter(path => path !== 'app/main.js')
-  .map(path => readFileSync(join(__dirname, '../ui-prototype', path), 'utf8'));
+// Load an explicit application boundary; index.html is checked separately.
+// Unit tests for core/ require those modules without a DOM or this shared scope.
+const { coreScripts, appScripts: appPaths } = require('./helpers/app-scripts.cjs');
+const appScripts = [...coreScripts, ...appPaths.filter(path => path !== 'app/main.js')].map(path =>
+  readFileSync(join(__dirname, '../ui-prototype', path), 'utf8'),
+);
 // Keeps maps in memory with the same contract as storage/library.js.
 function memoryLibrary() {
   const docs = new Map(),
@@ -550,9 +549,9 @@ const mouse = (x, y, id = null) => ({
 test('reparent reuses its exclusion set across pointer moves and redraws', () => {
   const { run, elements } = setup({ renderUI: true });
   run(`render();
-    const findSubtree = subtree;
+    const findSubtree = treeIndex.subtree;
     let subtreeCalls = 0;
-    subtree = id => { subtreeCalls++; return findSubtree(id); };
+    treeIndex.subtree = (map, id) => { subtreeCalls++; return findSubtree(map, id); };
     startReparent('a');
     const blocked = state.mode.blocked;
     const drawNode = renderNode;
@@ -677,7 +676,7 @@ test('history survives reopening: undo and redo continue from the saved cursor',
 test('an empty new node leaves no history entry, and a failed save keeps entries for the next try', async () => {
   const t = setup({ renderUI: true });
   t.run(`addChildAndEdit('a'); finishEdit();`);
-  assert.equal(t.run('state.history.length === 0 && unsaved.size === 0'), true);
+  assert.equal(t.run('state.history.length === 0 && takeHistoryChanges().put.length === 0'), true);
   t.run(`state.library.failSave = true; commit(() => { state.map.nodes.a.text = '保存待ち'; });`);
   await assert.rejects(t.run('flushSave()'));
   t.run('state.library.failSave = false;');

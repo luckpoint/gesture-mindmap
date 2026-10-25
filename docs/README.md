@@ -18,6 +18,7 @@
 
 ## 計画 — `plans/`
 
+- [アプリの共有グローバル依存を減らす計画](plans/app-module-migration.md)
 - [マインドマップ・プロトタイプ実装計画](plans/mind-map-implementation-plan.md)
 
 ## 調査・改善・引き継ぎ — `investigations/`

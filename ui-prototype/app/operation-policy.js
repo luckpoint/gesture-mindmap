@@ -13,23 +13,7 @@ function operationState() {
     instructionDialog: !!$('#instructionDialog').open,
   };
 }
-function busyOperation(s = operationState()) {
-  return s.editing || s.gesturing || s.reparenting || s.deleting || s.handGrabbing;
+const OperationPolicy = MapOperationPolicy;
+function mapRevisionConflict(expected) {
+  return OperationPolicy.mapRevisionConflict({ session: state.mapSessionId, revision: state.revision }, expected);
 }
-function mapRevisionConflict({ session, revision }) {
-  return session !== state.mapSessionId || revision !== state.revision;
-}
-const OperationPolicy = {
-  // Switching may cancel an AI run, but must not discard a manual operation.
-  canLeaveMap: s => !busyOperation(s),
-  // Sending finishes editing and cancels gestures/reparenting in the caller.
-  canStartInstruction: s => !s.readOnly && !s.instructionRunning && !s.deleting && !s.instructionDialog,
-  canApplyInstruction: s => !busyOperation(s),
-  // AI thinking is compatible with images; its deletion confirmation is not.
-  canAttachImage: s => !s.readOnly && !busyOperation(s) && !s.instructionConfirmation,
-  // Removal is a normal commit, which invalidates an AI deletion confirmation.
-  canRemoveImage: s => !busyOperation(s),
-  // The palette additionally blocks selection while a map switch is pending.
-  paletteBlock: s =>
-    s.readOnly || s.switching ? 'save.readonly' : !OperationPolicy.canAttachImage(s) ? 'palette.busy' : '',
-};

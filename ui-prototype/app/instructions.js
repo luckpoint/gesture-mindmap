@@ -23,7 +23,7 @@ function resizeNotices() {
   document.body.style.setProperty('--notice-top', (banner.hidden ? top : top + banner.offsetHeight + 8) + 'px');
 }
 function instructionToast(message, actions = [], transient = false, error = false) {
-  clearTimeout(instructionTimer);
+  appContext.timers.clear(appContext.timers.instruction);
   instructionUndoButton = null;
   const t = $('#instructionToast');
   t.textContent = message;
@@ -52,7 +52,7 @@ function instructionToast(message, actions = [], transient = false, error = fals
     t.append(close);
   }
   if (transient)
-    instructionTimer = setTimeout(() => {
+    appContext.timers.instruction = appContext.timers.set(() => {
       if (!state.instruction) t.hidden = true;
     }, 5000);
 }

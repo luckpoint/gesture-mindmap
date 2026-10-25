@@ -12,46 +12,45 @@ const tr = I18n.t;
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const compact = matchMedia('(max-width: 560px)');
-const viewportEl = $('#viewport'),
-  world = $('#world'),
-  edgesEl = $('#edges'),
-  nodesEl = $('#nodes');
-const nodeEls = new Map();
+const appContext = MindmapAppContext.create({
+  map: sample(),
+  sessionId: InstructionTransport.id('map_'),
+  elements: {
+    viewportEl: $('#viewport'),
+    world: $('#world'),
+    edgesEl: $('#edges'),
+    nodesEl: $('#nodes'),
+    nodeEls: new Map(),
+    title: $('#title'),
+    undo: $('#undo'),
+    redo: $('#redo'),
+    save: $('#save'),
+    saveText: $('#saveText'),
+    saveExport: $('#saveExport'),
+  },
+  services: {
+    history: MapEditHistory,
+    diffs: MapHistory,
+    autosave: MapAutosave,
+    imageFormat: NodeImageFormat,
+    instructionClient: instructionsEnabled ? new InstructionTransport.Client() : null,
+    imageStore: new NodeImageStore.Store(),
+    tr,
+  },
+  timers: { set: setTimeout, clear: clearTimeout },
+  effects: {},
+});
+const { viewportEl, world, edgesEl, nodesEl, nodeEls } = appContext.elements;
 const viewportWidth = () => viewportEl.clientWidth || innerWidth;
 const canvasHeight = () => {
   const top = $($('#prompt').hidden ? '.dock' : '#prompt').getBoundingClientRect().top;
   return Math.max(80, Math.min(viewportEl.clientHeight || innerHeight, top > 150 ? top : innerHeight - 120));
 };
-
-const state = {
-  map: sample(),
-  view: { x: 0, y: 0, s: 1 },
-  selectedId: 'root',
-  editing: null,
-  mode: null,
-  hand: null,
-  gesture: null,
-  deletion: null,
-  library: null,
-  mapId: null,
-  mapClaim: { editable: false, release() {} },
-  switching: false,
-  history: [],
-  future: [],
-  revision: 0,
-  historyToken: 0,
-  mapSessionId: InstructionTransport.id('map_'),
-  instruction: null,
-  draftVersion: 0,
-};
+const state = appContext.state;
+const { instructionClient, imageStore } = appContext.services;
 let palette = null,
   stopWatch = null,
-  forceSaveFail = false,
-  instructionTimer,
   instructionUndoButton = null;
-const instructionClient = instructionsEnabled ? new InstructionTransport.Client() : null;
-const imageStore = new NodeImageStore.Store();
-let toastTimer, hintTimer, viewTimer;
 
 /* ---------- model ---------- */
 function sample() {

@@ -10,8 +10,8 @@ function toast(msg, label, action) {
     t.append(b);
   }
   t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
+  appContext.timers.clear(appContext.timers.toast);
+  appContext.timers.toast = appContext.timers.set(() => {
     t.hidden = true;
   }, 3600);
 }
@@ -42,7 +42,7 @@ async function printMap() {
   printing = true;
   try {
     const images = [...nodeEls.values()].map(el => el.imageState?.ready).filter(Boolean);
-    await Promise.race([Promise.all(images), new Promise(resolve => setTimeout(resolve, 3000))]);
+    await Promise.race([Promise.all(images), new Promise(resolve => appContext.timers.set(resolve, 3000))]);
     print();
   } finally {
     printing = false;
@@ -115,12 +115,15 @@ let fitTimer,
   fitHeld = false;
 $('#fitBtn').onpointerdown = () => {
   fitHeld = false;
-  fitTimer = setTimeout(() => {
+  fitTimer = appContext.timers.set(() => {
     fitHeld = true;
     zoomAt(viewportWidth() / 2, innerHeight / 2, 1);
   }, 500);
 };
-$('#fitBtn').onpointerup = $('#fitBtn').onpointerleave = $('#fitBtn').onpointercancel = () => clearTimeout(fitTimer);
+$('#fitBtn').onpointerup =
+  $('#fitBtn').onpointerleave =
+  $('#fitBtn').onpointercancel =
+    () => appContext.timers.clear(fitTimer);
 $('#fitBtn').onclick = () => {
   if (!fitHeld) fitAll();
   fitHeld = false;
@@ -269,16 +272,16 @@ $('#dev').addEventListener('click', e => {
     setSave('saving');
   }
   if (d === 's-error') {
-    forceSaveFail = true;
+    appContext.controls.forceSaveFail = true;
     scheduleSave();
   }
   if (d === 's-saved') {
-    forceSaveFail = false;
+    appContext.controls.forceSaveFail = false;
     scheduleSave();
   }
   if (d === 'edge') {
     animateTo(centerOn({ x: BOUND, y: 0 }));
-    setTimeout(() => {
+    appContext.timers.set(() => {
       edgeHint('right');
       toast(tr('dev.edgeToast'));
     }, 300);

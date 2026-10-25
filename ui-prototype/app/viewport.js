@@ -6,8 +6,8 @@ function applyView() {
   viewportEl.style.backgroundPosition = `${state.view.x}px ${state.view.y}px`;
   $('#zoomLabel').textContent = Math.round(state.view.s * 100) + '%';
   positionMenu();
-  clearTimeout(viewTimer);
-  viewTimer = setTimeout(storeView, 500);
+  appContext.timers.clear(appContext.timers.view);
+  appContext.timers.view = appContext.timers.set(storeView, 500);
 }
 function clampView(v = state.view, hint = true) {
   const cx = (viewportWidth() / 2 - v.x) / v.s,
@@ -24,8 +24,8 @@ function edgeHint(side) {
   const h = $('#edgeHint');
   h.dataset.side = side;
   h.classList.add('is-on');
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => h.classList.remove('is-on'), 1200);
+  appContext.timers.clear(appContext.timers.hint);
+  appContext.timers.hint = appContext.timers.set(() => h.classList.remove('is-on'), 1200);
 }
 function zoomAt(sx, sy, s) {
   s = clamp(s, ZMIN, ZMAX);
