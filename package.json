@@ -13,10 +13,13 @@
     "build:static": "npm run setup && python3 scripts/setup-gesture-assets.py && npm run verify:assets",
     "dev:cf": "wrangler dev --env staging",
     "deploy:staging": "npm run verify:assets && wrangler deploy --env staging",
-    "deploy:production": "npm run verify:assets && wrangler deploy --env production"
+    "deploy:production": "npm run verify:assets && wrangler deploy --env production",
+    "format": "prettier --write \"**/*.{js,mjs,cjs,html,css}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs,cjs,html,css}\""
   },
   "devDependencies": {
     "esbuild": "0.28.2",
+    "prettier": "3.9.10",
     "rxdb": "17.6.0",
     "rxjs": "7.8.2",
     "wrangler": "4.152.0"
