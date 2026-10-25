@@ -14,7 +14,8 @@ const ARGS = {
   'dev.metrics': [{ mode: 'worker', hands: 2, frameValid: true, inferenceMs: 1, displayMs: 2, revision: 'r' }],
   'ops.summary': [{ added: 1, updated: 2, reparented: 0, moved: 1, deleted: 3 }],
 };
-const render = (dict, key) => typeof dict[key] === 'function' ? dict[key](...(ARGS[key] || [2, 'Name', 3])) : dict[key];
+const render = (dict, key) =>
+  typeof dict[key] === 'function' ? dict[key](...(ARGS[key] || [2, 'Name', 3])) : dict[key];
 
 test('only a Japanese first language selects Japanese', () => {
   assert.equal(I18n.detect(['ja-JP']), 'ja');
@@ -49,8 +50,9 @@ test('user-facing code keeps Japanese only in the dictionary', () => {
   const walk = dir => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) { if (!['vendor', 'mediapipe', 'legal'].includes(entry.name)) walk(path); }
-      else if (/\.(js|html)$/.test(entry.name) && entry.name !== 'i18n.js') files.push(path);
+      if (entry.isDirectory()) {
+        if (!['vendor', 'mediapipe', 'legal'].includes(entry.name)) walk(path);
+      } else if (/\.(js|html)$/.test(entry.name) && entry.name !== 'i18n.js') files.push(path);
     }
   };
   walk(root);
@@ -61,7 +63,10 @@ test('t fills in values, picks English plurals and returns unknown keys as is', 
   I18n.use('en');
   assert.equal(I18n.t('delete.branchConfirm', 1), 'Delete 1 node');
   assert.equal(I18n.t('delete.branchConfirm', 2), 'Delete 2 nodes');
-  assert.equal(I18n.t('ops.summary', { added: 1, updated: 0, reparented: 0, moved: 0, deleted: 2 }), '1 added, 2 deleted');
+  assert.equal(
+    I18n.t('ops.summary', { added: 1, updated: 0, reparented: 0, moved: 0, deleted: 2 }),
+    '1 added, 2 deleted',
+  );
   assert.equal(I18n.t('missing.key'), 'missing.key');
   I18n.use('ja');
   assert.equal(I18n.t('delete.branchConfirm', 2), '子孫を含む2個を削除');
@@ -70,10 +75,18 @@ test('t fills in values, picks English plurals and returns unknown keys as is', 
 });
 
 test('apply sets the page language, text and attributes', () => {
-  const el = (dataset) => ({ dataset, attributes: {}, setAttribute(name, value) { this.attributes[name] = value; } });
-  const button = el({ i18n: 'prompt.send', i18nTitle: 'prompt.hide' }), input = el({ i18nAriaLabel: 'prompt.label', i18nPlaceholder: 'prompt.placeholder' });
+  const el = dataset => ({
+    dataset,
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+  });
+  const button = el({ i18n: 'prompt.send', i18nTitle: 'prompt.hide' }),
+    input = el({ i18nAriaLabel: 'prompt.label', i18nPlaceholder: 'prompt.placeholder' });
   const doc = { documentElement: {}, querySelectorAll: () => [button, input] };
-  I18n.use('ja'); I18n.apply(doc);
+  I18n.use('ja');
+  I18n.apply(doc);
   assert.equal(doc.documentElement.lang, 'ja');
   assert.equal(button.textContent, '送信');
   assert.equal(button.attributes.title, '指示欄を隠す');

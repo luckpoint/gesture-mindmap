@@ -1,7 +1,7 @@
 /* Hallmark · app-scope: mind-map canvas · genre: playful (soft) · theme: Coral-derived + JP faces */
 :root {
-  --font-display: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", sans-serif;
-  --font-ui: "BIZ UDPGothic", "Hiragino Sans", sans-serif;
+  --font-display: 'Zen Maru Gothic', 'Hiragino Maru Gothic ProN', sans-serif;
+  --font-ui: 'BIZ UDPGothic', 'Hiragino Sans', sans-serif;
 
   --color-paper: oklch(97.4% 0.009 85);
   --color-paper-2: oklch(94.6% 0.012 85);

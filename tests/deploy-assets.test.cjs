@@ -26,13 +26,19 @@ const pinned = { 'model.task': { sha256: sha256('model') } };
 
 test('complete static assets pass', async () => {
   const { verifyAssets } = await load();
-  assert.deepEqual(verifyAssets(tree({ ...base, '.DS_Store': 'x', 'a.js.map': 'x' }), pinned), { errors: [], files: 4 });
+  assert.deepEqual(verifyAssets(tree({ ...base, '.DS_Store': 'x', 'a.js.map': 'x' }), pinned), {
+    errors: [],
+    files: 4,
+  });
 });
 
 test('missing vendor bundle, hash mismatch and enabled instructions stop the deploy', async () => {
   const { verifyAssets } = await load();
   const { 'vendor/rxdb.js': _, ...rest } = base;
-  const { errors } = verifyAssets(tree({ ...rest, 'mediapipe/model.task': 'tampered', 'features.js': '({ instructions: true })' }), pinned);
+  const { errors } = verifyAssets(
+    tree({ ...rest, 'mediapipe/model.task': 'tampered', 'features.js': '({ instructions: true })' }),
+    pinned,
+  );
   assert.deepEqual(errors, [
     'vendor/rxdb.js: 見つかりません',
     'mediapipe/model.task: SHA-256が一致しません',

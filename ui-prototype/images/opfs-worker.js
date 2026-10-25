@@ -5,9 +5,17 @@ onmessage = async ({ data: { id, op, name, bytes } }) => {
     const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('images', { create: true });
     if (op === 'write') {
       const handle = await (await dir.getFileHandle(name, { create: true })).createSyncAccessHandle();
-      try { handle.truncate(0); handle.write(new Uint8Array(bytes), { at: 0 }); handle.flush(); } finally { handle.close(); }
+      try {
+        handle.truncate(0);
+        handle.write(new Uint8Array(bytes), { at: 0 });
+        handle.flush();
+      } finally {
+        handle.close();
+      }
     } else if (op === 'remove') await dir.removeEntry(name);
     else throw new Error('Unknown operation');
     postMessage({ id, ok: true });
-  } catch (error) { postMessage({ id, ok: false, error: error.message }); }
+  } catch (error) {
+    postMessage({ id, ok: false, error: error.message });
+  }
 };

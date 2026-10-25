@@ -16,7 +16,10 @@ function listFiles(dir, root = dir) {
 
 export function verifyAssets(root, pinned) {
   const errors = [];
-  const sha256 = path => createHash('sha256').update(readFileSync(join(root, path))).digest('hex');
+  const sha256 = path =>
+    createHash('sha256')
+      .update(readFileSync(join(root, path)))
+      .digest('hex');
   const files = listFiles(root).filter(path => !IGNORED.test(path));
   const present = new Set(files);
   for (const path of ['index.html', 'features.js', 'vendor/rxdb.js'])

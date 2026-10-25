@@ -1,6 +1,9 @@
 /* Turns a picked local file into a Blob the image store accepts. */
 (function (root, factory) {
-  const api = typeof module === 'object' && module.exports ? factory(require('./format.js'), require('../i18n.js'), require('./privacy.js')) : factory(root.NodeImageFormat, root.I18n, root.ImagePrivacy);
+  const api =
+    typeof module === 'object' && module.exports
+      ? factory(require('./format.js'), require('../i18n.js'), require('./privacy.js'))
+      : factory(root.NodeImageFormat, root.I18n, root.ImagePrivacy);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.NodeImageUpload = api;
 })(globalThis, (F, I18n, Privacy) => {

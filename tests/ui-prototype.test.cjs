@@ -10,13 +10,29 @@ const html = readFileSync(join(__dirname, '../ui-prototype/index.html'), 'utf8')
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 // Keeps maps in memory with the same contract as storage/library.js.
 function memoryLibrary() {
-  const docs = new Map(), clone = v => JSON.parse(JSON.stringify(v)), watchers = new Map();
-  let next = 0, clock = 1;
+  const docs = new Map(),
+    clone = v => JSON.parse(JSON.stringify(v)),
+    watchers = new Map();
+  let next = 0,
+    clock = 1;
   return {
-    docs, watchers, failSave: false, failCreate: false,
-    async create(map) { if (this.failCreate) throw new Error('作成できませんでした'); const id = 'm_' + ++next; docs.set(id, { map: clone(map), updatedAt: ++clock, cursor: 0, log: new Map() }); return id; },
-    async load(id) { return docs.has(id) ? clone(docs.get(id).map) : null; },
-    async log(id) { const d = docs.get(id); return { cursor: d?.cursor ?? 0, entries: d ? [...d.log.values()].map(clone) : [] }; },
+    docs,
+    watchers,
+    failSave: false,
+    failCreate: false,
+    async create(map) {
+      if (this.failCreate) throw new Error('作成できませんでした');
+      const id = 'm_' + ++next;
+      docs.set(id, { map: clone(map), updatedAt: ++clock, cursor: 0, log: new Map() });
+      return id;
+    },
+    async load(id) {
+      return docs.has(id) ? clone(docs.get(id).map) : null;
+    },
+    async log(id) {
+      const d = docs.get(id);
+      return { cursor: d?.cursor ?? 0, entries: d ? [...d.log.values()].map(clone) : [] };
+    },
     async save(id, map, { cursor, put = [], drop = [] } = {}) {
       if (this.failSave) throw new Error('保存できませんでした');
       const d = docs.get(id);
@@ -26,56 +42,177 @@ function memoryLibrary() {
       Object.assign(d, { map: clone(map), updatedAt: ++clock }, cursor === undefined ? {} : { cursor });
       watchers.get(id)?.(clone(map));
     },
-    async remove(id) { docs.delete(id); },
-    async stats(id) { const d = docs.get(id); return d ? { bytes: JSON.stringify(d.map).length, images: 0, assets: [] } : null; },
-    async list() { return [...docs].map(([id, d]) => ({ id, title: d.map.title, updatedAt: d.updatedAt })).sort((a, b) => b.updatedAt - a.updatedAt); },
-    watch(id, fn) { watchers.set(id, fn); return () => watchers.delete(id); },
-    watchList() { return () => {}; },
+    async remove(id) {
+      docs.delete(id);
+    },
+    async stats(id) {
+      const d = docs.get(id);
+      return d ? { bytes: JSON.stringify(d.map).length, images: 0, assets: [] } : null;
+    },
+    async list() {
+      return [...docs]
+        .map(([id, d]) => ({ id, title: d.map.title, updatedAt: d.updatedAt }))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+    },
+    watch(id, fn) {
+      watchers.set(id, fn);
+      return () => watchers.delete(id);
+    },
+    watchList() {
+      return () => {};
+    },
   };
 }
-function setup({ renderUI = false, handUI = false, stored = {}, instructions = true, lang = 'ja', paletteUI = false, compact = false } = {}) {
-  const elements = new Map(), storage = new Map(Object.entries(stored)), timers = new Map(), documentHandlers = new Map(), windowHandlers = new Map();
+function setup({
+  renderUI = false,
+  handUI = false,
+  stored = {},
+  instructions = true,
+  lang = 'ja',
+  paletteUI = false,
+  compact = false,
+} = {}) {
+  const elements = new Map(),
+    storage = new Map(Object.entries(stored)),
+    timers = new Map(),
+    documentHandlers = new Map(),
+    windowHandlers = new Map();
   let timerId = 0;
-  const frames = new Map(), intervals = new Map();
+  const frames = new Map(),
+    intervals = new Map();
   function element(key) {
-    if (!elements.has(key)) elements.set(key, {
-      dataset: {}, style: { setProperty(name, value) { this[name] = value; } }, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-      firstChild: { textContent: '', dataset: {}, focus() { context.document.activeElement = this; },
-        closest() { return this.contentEditable === 'plaintext-only' ? this : null; } }, attributes: {}, children: [], isConnected: false,
-      contains(el) { return el === this || this.children.includes(el); },
-      offsetWidth: 120, offsetHeight: 50,
-      getContext: () => ({ clearRect() {} }),
-      getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
-      append(...children) { for (const child of children) { this.children.push(child); child.isConnected = true; } },
-      replaceChildren(...children) { this.children = children; },
-      prepend(child) { this.children.unshift(child); this.firstChild = child; child.isConnected = true; },
-      remove() { this.isConnected = false; },
-      handlers: {}, hidden: false, value: '', disabled: false,
-      addEventListener(name, fn) { this.handlers[name] = fn; },
-      setPointerCapture() {}, focus() { context.document.activeElement = this; }, setAttribute(name, value) { this.attributes[name] = value; }, removeAttribute(name) { delete this.attributes[name]; },
-      showModal() { this.open = true; }, close() { this.open = false; },
-      click() { this.clicked = (this.clicked || 0) + 1; },
-      querySelector(selector) { return selector === '.node__text' ? this.firstChild : element(selector); },
-    });
+    if (!elements.has(key))
+      elements.set(key, {
+        dataset: {},
+        style: {
+          setProperty(name, value) {
+            this[name] = value;
+          },
+        },
+        classList: {
+          add() {},
+          remove() {},
+          toggle() {},
+          contains() {
+            return false;
+          },
+        },
+        firstChild: {
+          textContent: '',
+          dataset: {},
+          focus() {
+            context.document.activeElement = this;
+          },
+          closest() {
+            return this.contentEditable === 'plaintext-only' ? this : null;
+          },
+        },
+        attributes: {},
+        children: [],
+        isConnected: false,
+        contains(el) {
+          return el === this || this.children.includes(el);
+        },
+        offsetWidth: 120,
+        offsetHeight: 50,
+        getContext: () => ({ clearRect() {} }),
+        getBoundingClientRect: () => ({ left: 0, top: 0, right: 1200, bottom: 800 }),
+        append(...children) {
+          for (const child of children) {
+            this.children.push(child);
+            child.isConnected = true;
+          }
+        },
+        replaceChildren(...children) {
+          this.children = children;
+        },
+        prepend(child) {
+          this.children.unshift(child);
+          this.firstChild = child;
+          child.isConnected = true;
+        },
+        remove() {
+          this.isConnected = false;
+        },
+        handlers: {},
+        hidden: false,
+        value: '',
+        disabled: false,
+        addEventListener(name, fn) {
+          this.handlers[name] = fn;
+        },
+        setPointerCapture() {},
+        focus() {
+          context.document.activeElement = this;
+        },
+        setAttribute(name, value) {
+          this.attributes[name] = value;
+        },
+        removeAttribute(name) {
+          delete this.attributes[name];
+        },
+        showModal() {
+          this.open = true;
+        },
+        close() {
+          this.open = false;
+        },
+        click() {
+          this.clicked = (this.clicked || 0) + 1;
+        },
+        querySelector(selector) {
+          return selector === '.node__text' ? this.firstChild : element(selector);
+        },
+      });
     return elements.get(key);
   }
   const context = vm.createContext({
-    MindmapFeatures: { instructions }, navigator: { languages: [lang] },
-    console, TextEncoder, AbortSignal, AbortController, Blob, innerWidth: 1200, innerHeight: 800,
+    MindmapFeatures: { instructions },
+    navigator: { languages: [lang] },
+    console,
+    TextEncoder,
+    AbortSignal,
+    AbortController,
+    Blob,
+    innerWidth: 1200,
+    innerHeight: 800,
     matchMedia: query => ({ matches: !query.includes('max-width') || compact }),
-    document: { querySelector: element, createElement: () => element(Symbol()), createElementNS: () => element(Symbol()), createRange: () => ({ selectNodeContents() {} }), addEventListener: (name, fn) => documentHandlers.set(name, fn) },
+    document: {
+      querySelector: element,
+      createElement: () => element(Symbol()),
+      createElementNS: () => element(Symbol()),
+      createRange: () => ({ selectNodeContents() {} }),
+      addEventListener: (name, fn) => documentHandlers.set(name, fn),
+    },
     getSelection: () => ({ removeAllRanges() {}, addRange() {} }),
-    CameraSession: class { constructor(io) { this.io = io; } start() {} stop() { this.stopped = true; } },
+    CameraSession: class {
+      constructor(io) {
+        this.io = io;
+      }
+      start() {}
+      stop() {
+        this.stopped = true;
+      }
+    },
     localStorage: {
       getItem: key => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
       removeItem: key => storage.delete(key),
     },
-    setTimeout: fn => { timers.set(++timerId, fn); return timerId; },
+    setTimeout: fn => {
+      timers.set(++timerId, fn);
+      return timerId;
+    },
     clearTimeout: id => timers.delete(id),
-    setInterval: fn => { intervals.set(++timerId, fn); return timerId; },
+    setInterval: fn => {
+      intervals.set(++timerId, fn);
+      return timerId;
+    },
     clearInterval: id => intervals.delete(id),
-    requestAnimationFrame: fn => { frames.set(++timerId, fn); return timerId; },
+    requestAnimationFrame: fn => {
+      frames.set(++timerId, fn);
+      return timerId;
+    },
     cancelAnimationFrame: id => frames.delete(id),
     addEventListener: (name, fn) => windowHandlers.set(name, fn),
   });
@@ -85,38 +222,79 @@ function setup({ renderUI = false, handUI = false, stored = {}, instructions = t
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/i18n.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/controller.js'), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/gestures/debug.js'), 'utf8'), context);
-  for (const file of ['privacy.js', 'format.js', 'store.js', 'upload.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
-  for (const file of ['operations.js', 'client.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
-  for (const file of ['library.js', 'locks.js', 'history.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
+  for (const file of ['privacy.js', 'format.js', 'store.js', 'upload.js'])
+    vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/images', file), 'utf8'), context);
+  for (const file of ['operations.js', 'client.js'])
+    vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/instructions', file), 'utf8'), context);
+  for (const file of ['library.js', 'locks.js', 'history.js'])
+    vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/storage', file), 'utf8'), context);
   vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/print.js'), 'utf8'), context);
-  if (paletteUI) for (const file of ['catalog.js', 'palette.js']) vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/icons', file), 'utf8'), context);
-  vm.runInContext(script.slice(0, script.lastIndexOf("\n$('#title').value = map.title;")), context);
+  if (paletteUI)
+    for (const file of ['catalog.js', 'palette.js'])
+      vm.runInContext(readFileSync(join(__dirname, '../ui-prototype/icons', file), 'utf8'), context);
+  vm.runInContext(script.slice(0, script.lastIndexOf("$('#title').value = map.title;")), context);
   context.memoryLibrary = memoryLibrary;
-  vm.runInContext(`library = memoryLibrary(); library.docs.set('m_first', { map: sample(), updatedAt: 1, cursor: 0, log: new Map() });
-    mapId = 'm_first'; mapClaim = { editable: true, release() { this.released = true; } };`, context);
-  vm.runInContext(`
+  vm.runInContext(
+    `library = memoryLibrary(); library.docs.set('m_first', { map: sample(), updatedAt: 1, cursor: 0, log: new Map() });
+    mapId = 'm_first'; mapClaim = { editable: true, release() { this.released = true; } };`,
+    context,
+  );
+  vm.runInContext(
+    `
     ${renderUI ? '' : 'render = () => {};'} fitAll = () => {}; applyView = () => {};
     ${handUI ? '' : 'updateHand = () => {};'} const notices = []; toast = message => notices.push(message);
-  `, context);
+  `,
+    context,
+  );
   if (renderUI) vm.runInContext('render();', context);
-  return { context, elements, storage, timers, frames, intervals, documentHandlers, windowHandlers,
-    flushFrame() { const queued = [...frames.values()]; frames.clear(); queued.forEach(fn => fn()); },
-    run: code => vm.runInContext(code, context) };
+  return {
+    context,
+    elements,
+    storage,
+    timers,
+    frames,
+    intervals,
+    documentHandlers,
+    windowHandlers,
+    flushFrame() {
+      const queued = [...frames.values()];
+      frames.clear();
+      queued.forEach(fn => fn());
+    },
+    run: code => vm.runInContext(code, context),
+  };
 }
 
 test('validation accepts an exported map and rejects malformed data', () => {
   const { run } = setup();
   assert.equal(run('valid(JSON.parse(JSON.stringify(sample())))'), true);
   for (const mutation of [
-    'm = null', 'm = []', 'm.version = 3', 'delete m.title', 'm.nodes = []',
-    'm.root = "absent"', 'm.nodes.a = null', 'm.nodes.a.id = "absent"',
-    'm.nodes.a.id = "root"', 'm.nodes.a.x = null', 'm.nodes.a.x = "12"',
-    'm.nodes.a.y = Infinity', 'm.nodes.a.y = NaN', 'm.nodes.a.text = 1',
-    'delete m.nodes.root.parent', 'm.nodes.a.parent = null',
-    'm.nodes.a.parent = "missing"', 'm.nodes.a.parent = "toString"',
-    'm.nodes.a.parent = "a"', 'm.nodes.a.parent = "a1"',
-    'delete m.nodes.a.order', 'm.nodes.a.order = -1', 'm.nodes.a.order = 1.5',
-    'm.nodes.a.order = m.seq + 1', 'm.seq = "7"', 'm.seq = -1',
+    'm = null',
+    'm = []',
+    'm.version = 3',
+    'delete m.title',
+    'm.nodes = []',
+    'm.root = "absent"',
+    'm.nodes.a = null',
+    'm.nodes.a.id = "absent"',
+    'm.nodes.a.id = "root"',
+    'm.nodes.a.x = null',
+    'm.nodes.a.x = "12"',
+    'm.nodes.a.y = Infinity',
+    'm.nodes.a.y = NaN',
+    'm.nodes.a.text = 1',
+    'delete m.nodes.root.parent',
+    'm.nodes.a.parent = null',
+    'm.nodes.a.parent = "missing"',
+    'm.nodes.a.parent = "toString"',
+    'm.nodes.a.parent = "a"',
+    'm.nodes.a.parent = "a1"',
+    'delete m.nodes.a.order',
+    'm.nodes.a.order = -1',
+    'm.nodes.a.order = 1.5',
+    'm.nodes.a.order = m.seq + 1',
+    'm.seq = "7"',
+    'm.seq = -1',
     'm.seq = Number.MAX_SAFE_INTEGER',
   ]) {
     assert.equal(run(`{ let m = sample(); ${mutation}; valid(m); }`), false, mutation);
@@ -127,7 +305,10 @@ test('invalid imports add no map and keep the working map, history and pending s
   const { run, timers } = setup();
   run(`const original = map; sel = 'a'; history.push('undo'); future.push('redo'); scheduleSave();`);
   await assert.rejects(run(`{ const m = sample(); m.nodes.a.id = 'missing'; importMap(m); }`), /形式/);
-  assert.equal(run(`map === original && sel === 'a' && history[0] === 'undo' && future[0] === 'redo' && library.docs.size === 1`), true);
+  assert.equal(
+    run(`map === original && sel === 'a' && history[0] === 'undo' && future[0] === 'redo' && library.docs.size === 1`),
+    true,
+  );
   assert.equal(timers.size, 1);
 });
 
@@ -135,7 +316,12 @@ test('a failed save keeps the working map open and adds no map', async () => {
   const { run } = setup();
   run(`const original = map; commit(() => { map.nodes.a.text = '変更'; }); library.failSave = true;`);
   await assert.rejects(run('importMap(sample())'), /保存できませんでした/);
-  assert.equal(run(`map === original && mapId === 'm_first' && library.docs.size === 1 && $('#save').dataset.state === 'error' && history.length === 1`), true);
+  assert.equal(
+    run(
+      `map === original && mapId === 'm_first' && library.docs.size === 1 && $('#save').dataset.state === 'error' && history.length === 1`,
+    ),
+    true,
+  );
 });
 
 test('a failed import write reopens the original map and adds nothing', async () => {
@@ -150,7 +336,12 @@ test('valid import adds a new map, opens it and keeps the original', async () =>
   run(`commit(() => { map.nodes.a.text = '保存前'; }); const firstClaim = mapClaim;
     const imported = sample(); imported.title = 'imported';`);
   await run('importMap(imported)');
-  assert.equal(run(`map.title === 'imported' && mapId !== 'm_first' && sel === map.root && history.length === 0 && future.length === 0 && firstClaim.released`), true);
+  assert.equal(
+    run(
+      `map.title === 'imported' && mapId !== 'm_first' && sel === map.root && history.length === 0 && future.length === 0 && firstClaim.released`,
+    ),
+    true,
+  );
   assert.equal(run(`library.docs.size === 2 && library.docs.get('m_first').map.nodes.a.text === '保存前'`), true);
   assert.equal(storage.get('mindmap:last'), run('mapId'));
 });
@@ -171,11 +362,19 @@ test('switching saves first, restores each view, clears history and ends a waiti
     instruction = { state: 'awaiting_confirmation', text: '' }; $('#instructionDialog').open = true;`);
   const second = await t.run('library.create(blankMap())');
   await t.run(`switchMap('${second}')`);
-  assert.equal(t.run(`library.docs.get('m_first').map.nodes.a.text === '切替前' && mapId === '${second}' && history.length === 0 && $('#undo').disabled && instruction === null`), true);
+  assert.equal(
+    t.run(
+      `library.docs.get('m_first').map.nodes.a.text === '切替前' && mapId === '${second}' && history.length === 0 && $('#undo').disabled && instruction === null`,
+    ),
+    true,
+  );
   assert.match(t.elements.get('#instructionToast').textContent, /マップが変わった/);
   assert.equal(JSON.parse(t.storage.get('mindmap:view:m_first')).s, 1.5);
   await t.run(`switchMap('m_first')`);
-  assert.equal(t.run(`mapId === 'm_first' && view.x === 11 && view.y === 22 && view.s === 1.5 && map.nodes.a.text === '切替前'`), true);
+  assert.equal(
+    t.run(`mapId === 'm_first' && view.x === 11 && view.y === 22 && view.s === 1.5 && map.nodes.a.text === '切替前'`),
+    true,
+  );
 });
 
 test('compact screens open with no selection and refit instead of restoring a saved view', async () => {
@@ -191,9 +390,13 @@ test('holding fit resets to 100% without fitting; a tap fits', () => {
   const t = setup();
   t.run(`var fits = 0; fitAll = () => { fits++; }; view = { x: 0, y: 0, s: .5 };`);
   const fit = t.elements.get('#fitBtn');
-  fit.onpointerdown(); fit.onclick();
+  fit.onpointerdown();
+  fit.onclick();
   assert.equal(t.run('fits'), 1);
-  fit.onpointerdown(); [...t.timers.values()].at(-1)(); fit.onpointerup(); fit.onclick();
+  fit.onpointerdown();
+  [...t.timers.values()].at(-1)();
+  fit.onpointerup();
+  fit.onclick();
   assert.equal(t.run('fits === 1 && view.s === 1'), true);
 });
 test('deleting the open map opens the newest remaining one; the last map becomes the sample', async () => {
@@ -209,9 +412,17 @@ test('read-only tabs cannot edit, undo or instruct, and follow saves from the ed
   const t = setup();
   t.run(`commit(() => { map.nodes.a.text = '編集'; }); mapClaim = { editable: false, release() {} }; stopWatch = library.watch(mapId, showRemote); updateAccess();
     const before = JSON.stringify(map);`);
-  t.run(`startEdit('a'); addChildAndEdit('a'); removeNode('a'); startReparent('a'); undo(); commit(() => { map.nodes.a.text = 'x'; });`);
-  assert.equal(t.run(`JSON.stringify(map) === before && !editing && !deletion && !mode && history.length === 1 && $('#title').readOnly && $('#undo').disabled`), true);
-  t.run(`$('#promptInput').value = '変えて';`); await t.run('sendInstruction()');
+  t.run(
+    `startEdit('a'); addChildAndEdit('a'); removeNode('a'); startReparent('a'); undo(); commit(() => { map.nodes.a.text = 'x'; });`,
+  );
+  assert.equal(
+    t.run(
+      `JSON.stringify(map) === before && !editing && !deletion && !mode && history.length === 1 && $('#title').readOnly && $('#undo').disabled`,
+    ),
+    true,
+  );
+  t.run(`$('#promptInput').value = '変えて';`);
+  await t.run('sendInstruction()');
   assert.match(t.elements.get('#instructionToast').textContent, /別のタブで編集中/);
   t.run(`{ const m = sample(); m.nodes.a.text = '別のタブ'; library.watchers.get(mapId)(m); }`);
   assert.equal(t.run(`map.nodes.a.text === '別のタブ'`), true);
@@ -226,7 +437,14 @@ test('file handler rejects broken JSON and ignores an older async read', async (
   assert.equal(run('map === original'), true);
   assert.match(run('notices[0]'), /維持/);
   let resolveOld;
-  const oldRead = change(input(() => new Promise(resolve => { resolveOld = resolve; })));
+  const oldRead = change(
+    input(
+      () =>
+        new Promise(resolve => {
+          resolveOld = resolve;
+        }),
+    ),
+  );
   const latest = JSON.parse(run('JSON.stringify(sample())'));
   latest.title = 'latest';
   await change(input(async () => JSON.stringify(latest)));
@@ -240,7 +458,13 @@ for (const endEvent of ['pointerup', 'pointercancel']) {
   test(`pinch ends safely on ${endEvent} and the remaining finger cannot move the view`, () => {
     const { run, elements } = setup();
     const handlers = elements.get('#viewport').handlers;
-    const pointer = (id, x, y) => ({ pointerId: id, clientX: x, clientY: y, pointerType: 'touch', target: { closest: () => null } });
+    const pointer = (id, x, y) => ({
+      pointerId: id,
+      clientX: x,
+      clientY: y,
+      pointerType: 'touch',
+      target: { closest: () => null },
+    });
     handlers.pointerdown(pointer(1, 100, 100));
     handlers.pointerdown(pointer(2, 200, 200));
     handlers.pointermove(pointer(2, 250, 250));
@@ -260,7 +484,13 @@ for (const endEvent of ['pointerup', 'pointercancel']) {
 test('coincident touch points do not produce nonfinite view coordinates', () => {
   const { run, elements } = setup();
   const handlers = elements.get('#viewport').handlers;
-  const pointer = id => ({ pointerId: id, clientX: 100, clientY: 100, pointerType: 'touch', target: { closest: () => null } });
+  const pointer = id => ({
+    pointerId: id,
+    clientX: 100,
+    clientY: 100,
+    pointerType: 'touch',
+    target: { closest: () => null },
+  });
   handlers.pointerdown(pointer(1));
   handlers.pointerdown(pointer(2));
   handlers.pointermove(pointer(2));
@@ -273,20 +503,29 @@ test('tree metadata is reused for movement and refreshed for structural changes 
   run(`const initialTree = treeInfo(); map.nodes.a.x += 10;`);
   assert.equal(run('treeInfo() === initialTree'), true);
   run(`let added; commit(() => { added = addNode('a1', 'child', {x:0,y:0}); });`);
-  assert.equal(run(`treeInfo() !== initialTree && depth(added) === 3 && branchColor(added) === branchColor('a')`), true);
+  assert.equal(
+    run(`treeInfo() !== initialTree && depth(added) === 3 && branchColor(added) === branchColor('a')`),
+    true,
+  );
   run(`startReparent('a'); setCandidate('b1'); confirmReparent();`);
   assert.equal(run(`depth('a1') === 4 && branchColor('a1') === branchColor('b')`), true);
   run('undo();');
   assert.equal(run(`depth('a1') === 2 && branchColor('a1') !== branchColor('b')`), true);
   run(`removeNode('b'); chooseDeleteScope('branch'); confirmDelete();`);
-  assert.equal(run(`kids(map.root).map(n => n.id).join(',') === 'a,c' && branchColor('c1') === 'var(--branch-2)'`), true);
+  assert.equal(
+    run(`kids(map.root).map(n => n.id).join(',') === 'a,c' && branchColor('c1') === 'var(--branch-2)'`),
+    true,
+  );
   await run(`importMap(sample())`);
   assert.equal(run(`kids(map.root).length === 3 && branchColor('c1') === 'var(--branch-3)'`), true);
 });
 
 const mouse = (x, y, id = null) => ({
-  pointerId: 1, clientX: x, clientY: y, pointerType: 'mouse',
-  target: { closest: () => id ? { dataset: { id } } : null },
+  pointerId: 1,
+  clientX: x,
+  clientY: y,
+  pointerType: 'mouse',
+  target: { closest: () => (id ? { dataset: { id } } : null) },
 });
 
 test('reparent reuses its exclusion set across pointer moves and redraws', () => {
@@ -320,7 +559,8 @@ test('reparent reuses its exclusion set across pointer moves and redraws', () =>
 
 test('dropping a node on a sibling swaps their subtrees in one undo step', () => {
   const { run, elements } = setup();
-  const handlers = elements.get('#viewport').handlers, before = run('JSON.stringify(map)');
+  const handlers = elements.get('#viewport').handlers,
+    before = run('JSON.stringify(map)');
   handlers.pointerdown(mouse(310, -130, 'a'));
   handlers.pointermove(mouse(-320, -110));
   assert.equal(run('gesture.swap'), 'b');
@@ -337,18 +577,35 @@ test('dropping a node on a sibling swaps their subtrees in one undo step', () =>
 
 test('drags beyond the limit retain only the latest entries and support undo and redo', () => {
   const { run, elements } = setup();
-  const handlers = elements.get('#viewport').handlers, limit = run('HISTORY_LIMIT'), total = limit + 5;
+  const handlers = elements.get('#viewport').handlers,
+    limit = run('HISTORY_LIMIT'),
+    total = limit + 5;
   // Alternate x and y so the node never reaches the canvas bound.
-  const drag = i => { handlers.pointerdown(mouse(100, 100, 'a')); handlers.pointermove(i % 2 ? mouse(100, 110) : mouse(110, 100)); handlers.pointerup(mouse(100, 100)); };
+  const drag = i => {
+    handlers.pointerdown(mouse(100, 100, 'a'));
+    handlers.pointermove(i % 2 ? mouse(100, 110) : mouse(110, 100));
+    handlers.pointerup(mouse(100, 100));
+  };
   const at = k => [310 + 10 * Math.ceil(k / 2), -130 + 10 * Math.floor(k / 2)];
   for (let i = 0; i < total; i++) drag(i);
   assert.equal(run('history.length'), limit);
-  assert.deepEqual(JSON.parse(run('JSON.stringify([history[0].before.nodes.a.x, history[0].before.nodes.a.y])')), at(5));
+  assert.deepEqual(
+    JSON.parse(run('JSON.stringify([history[0].before.nodes.a.x, history[0].before.nodes.a.y])')),
+    at(5),
+  );
   assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y])')), at(total));
   run(`for (let i = 0; i < ${total}; i++) undo();`);
-  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y, history.length, future.length])')), [...at(5), 0, limit]);
+  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y, history.length, future.length])')), [
+    ...at(5),
+    0,
+    limit,
+  ]);
   run(`for (let i = 0; i < ${total}; i++) redo();`);
-  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y, history.length, future.length])')), [...at(total), limit, 0]);
+  assert.deepEqual(JSON.parse(run('JSON.stringify([map.nodes.a.x, map.nodes.a.y, history.length, future.length])')), [
+    ...at(total),
+    limit,
+    0,
+  ]);
   run(`commit(() => { map.nodes.a.text = 'changed'; });`);
   assert.equal(run('history.length'), limit);
   run('undo();');
@@ -367,14 +624,22 @@ test('history survives reopening: undo and redo continue from the saved cursor',
   await t.run(`switchMap('${other}')`);
   assert.equal(t.run('history.length + future.length'), 0);
   await t.run(`switchMap('m_first')`);
-  assert.equal(t.run(`history.length === 2 && future.length === 1 && map.nodes.a.text === '一' && !$('#undo').disabled && !$('#redo').disabled`), true);
+  assert.equal(
+    t.run(
+      `history.length === 2 && future.length === 1 && map.nodes.a.text === '一' && !$('#undo').disabled && !$('#redo').disabled`,
+    ),
+    true,
+  );
   t.run('redo();');
   assert.equal(t.run(`Object.values(map.nodes).some(n => n.text === '新しい子')`), true);
   t.run('undo(); undo(); undo();');
   assert.equal(t.run(`map.nodes.a.text === sample().nodes.a.text && map.nodes.b.x === sample().nodes.b.x`), true);
   t.run(`commit(() => { map.title = '別の道'; });`);
   await t.run('flushSave()');
-  assert.equal(t.run(`library.docs.get('m_first').log.size === 1 && library.docs.get('m_first').cursor === history[0].seq`), true);
+  assert.equal(
+    t.run(`library.docs.get('m_first').log.size === 1 && library.docs.get('m_first').cursor === history[0].seq`),
+    true,
+  );
 });
 
 test('an empty new node leaves no history entry, and a failed save keeps entries for the next try', async () => {
@@ -383,8 +648,12 @@ test('an empty new node leaves no history entry, and a failed save keeps entries
   assert.equal(t.run('history.length === 0 && unsaved.size === 0'), true);
   t.run(`library.failSave = true; commit(() => { map.nodes.a.text = '保存待ち'; });`);
   await assert.rejects(t.run('flushSave()'));
-  t.run('library.failSave = false;'); await t.run('scheduleSave(), flushSave()');
-  assert.equal(t.run(`library.docs.get('m_first').log.size === 1 && library.docs.get('m_first').cursor === history[0].seq`), true);
+  t.run('library.failSave = false;');
+  await t.run('scheduleSave(), flushSave()');
+  assert.equal(
+    t.run(`library.docs.get('m_first').log.size === 1 && library.docs.get('m_first').cursor === history[0].seq`),
+    true,
+  );
 });
 
 test('drag coalesces events and only updates the moved subtree and incident edges', () => {
@@ -405,7 +674,10 @@ test('drag coalesces events and only updates the moved subtree and incident edge
   flushFrame();
   assert.equal(run(`drawnNodes.join(',') === 'a,a1' && drawnEdges.join(',') === 'a,a1'`), true);
   assert.equal(run(`els.get('a').style['--x'] === '350px' && els.get('a1').style['--x'] === '580px'`), true);
-  assert.equal(run(`edgeEls.get('a').attributes.d === curve(map.nodes.root, map.nodes.a) && edgeEls.get('b1') === untouchedEdge`), true);
+  assert.equal(
+    run(`edgeEls.get('a').attributes.d === curve(map.nodes.root, map.nodes.a) && edgeEls.get('b1') === untouchedEdge`),
+    true,
+  );
   handlers.pointerup(mouse(140, 130));
   run('undo();');
   assert.equal(run(`map.nodes.a.x === 310 && els.get('a').style['--x'] === '310px'`), true);
@@ -436,7 +708,12 @@ test('SVG paths survive redraws and obsolete paths are removed', () => {
   run(`startReparent('a'); setCandidate('b1');`);
   assert.equal(run(`previewEdge.isConnected && previewEdge.attributes.d === curve(map.nodes.b1, map.nodes.a)`), true);
   run(`confirmReparent();`);
-  assert.equal(run(`previewEdge === null && edgeEls.get('a') === originalEdge && originalEdge.attributes.d === curve(map.nodes.b1, map.nodes.a)`), true);
+  assert.equal(
+    run(
+      `previewEdge === null && edgeEls.get('a') === originalEdge && originalEdge.attributes.d === curve(map.nodes.b1, map.nodes.a)`,
+    ),
+    true,
+  );
   run(`removeNode('a'); chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(run(`!originalEdge.isConnected && !edgeEls.has('a') && !edgeEls.has('a1')`), true);
 });
@@ -447,80 +724,151 @@ function mockInstruction(t, operations) {
     $('#promptInput').value = '指示';
   `);
   const pending = t.run('sendInstruction()');
-  return { pending, finish: () => t.run(`resolveInstruction(${JSON.stringify({status:'ok', message:'', operations})});`) };
+  return {
+    pending,
+    finish: () => t.run(`resolveInstruction(${JSON.stringify({ status: 'ok', message: '', operations })});`),
+  };
 }
 
 test('instructions apply multiple operations as one undo/redo entry and share export serialization', async () => {
-  const t = setup(); const before = t.run('JSON.stringify(serializeMap())');
-  const request = mockInstruction(t, [{type:'add_node',clientId:'new_1',parentId:'b',text:'本を借りる'}, {type:'add_node',clientId:'new_2',parentId:'new_1',text:'返却する'}]);
+  const t = setup();
+  const before = t.run('JSON.stringify(serializeMap())');
+  const request = mockInstruction(t, [
+    { type: 'add_node', clientId: 'new_1', parentId: 'b', text: '本を借りる' },
+    { type: 'add_node', clientId: 'new_2', parentId: 'new_1', text: '返却する' },
+  ]);
   assert.equal(t.run('Object.keys(map.nodes).length'), 7);
-  request.finish(); await request.pending;
+  request.finish();
+  await request.pending;
   assert.equal(t.run('Object.keys(map.nodes).length === 9 && history.length === 1 && instruction === null'), true);
   assert.equal(t.elements.get('#promptInput').value, '');
-  t.run('undo()'); assert.equal(t.run('JSON.stringify(map)'), before);
-  t.run('redo()'); assert.equal(t.run('Object.keys(map.nodes).length'), 9);
+  t.run('undo()');
+  assert.equal(t.run('JSON.stringify(map)'), before);
+  t.run('redo()');
+  assert.equal(t.run('Object.keys(map.nodes).length'), 9);
 });
 
 test('a bad later instruction leaves the map and history intact', async () => {
-  const t = setup(); const before = t.run('JSON.stringify(map)');
-  const request = mockInstruction(t, [{type:'add_node',clientId:'new_1',parentId:'b',text:'本'}, {type:'reparent_node',nodeId:'root',parentId:'new_1'}]);
-  request.finish(); await request.pending;
+  const t = setup();
+  const before = t.run('JSON.stringify(map)');
+  const request = mockInstruction(t, [
+    { type: 'add_node', clientId: 'new_1', parentId: 'b', text: '本' },
+    { type: 'reparent_node', nodeId: 'root', parentId: 'new_1' },
+  ]);
+  request.finish();
+  await request.pending;
   assert.equal(t.run('JSON.stringify(map)'), before);
   assert.equal(t.run('history.length'), 0);
   assert.equal(t.elements.get('#promptInput').value, '指示');
 });
 
 test('instructions reject edits, undo cycles, imports, and unfinished gestures while selection changes are allowed', async () => {
-  for (const action of ["commit(() => { map.nodes.a.text = '変更'; });", "commit(() => { map.nodes.a.text = '変更'; }); undo();", "importMap(sample());", "gesture = { type: 'node' };", "editing = { id: 'a' };"]) {
-    const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
-    await t.run(action); request.finish(); await request.pending;
-    assert.equal(t.run("map.nodes.b.text"), '図書館に行く', action);
+  for (const action of [
+    "commit(() => { map.nodes.a.text = '変更'; });",
+    "commit(() => { map.nodes.a.text = '変更'; }); undo();",
+    'importMap(sample());',
+    "gesture = { type: 'node' };",
+    "editing = { id: 'a' };",
+  ]) {
+    const t = setup();
+    const request = mockInstruction(t, [{ type: 'update_node', nodeId: 'b', text: '新しい本' }]);
+    await t.run(action);
+    request.finish();
+    await request.pending;
+    assert.equal(t.run('map.nodes.b.text'), '図書館に行く', action);
     assert.match(t.elements.get('#instructionToast').textContent, /マップが変わった/);
   }
-  const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
-  t.run("sel = 'a';"); request.finish(); await request.pending;
+  const t = setup();
+  const request = mockInstruction(t, [{ type: 'update_node', nodeId: 'b', text: '新しい本' }]);
+  t.run("sel = 'a';");
+  request.finish();
+  await request.pending;
   assert.equal(t.run("map.nodes.b.text === '新しい本' && sel === 'a'"), true);
 });
 
 test('mixed deletion stays atomic and can be cancelled or confirmed after changing scopes', async () => {
-  const t = setup(); const request = mockInstruction(t, [{type:'add_node',clientId:'new_1',parentId:'b',text:'本'}, {type:'delete_node',nodeId:'a',scope:'single'}]);
-  request.finish(); await request.pending;
-  assert.equal(t.run("instruction.state === 'awaiting_confirmation' && Object.keys(map.nodes).length === 7 && history.length === 0"), true);
+  const t = setup();
+  const request = mockInstruction(t, [
+    { type: 'add_node', clientId: 'new_1', parentId: 'b', text: '本' },
+    { type: 'delete_node', nodeId: 'a', scope: 'single' },
+  ]);
+  request.finish();
+  await request.pending;
+  assert.equal(
+    t.run(
+      "instruction.state === 'awaiting_confirmation' && Object.keys(map.nodes).length === 7 && history.length === 0",
+    ),
+    true,
+  );
   t.run("instruction.proposal.operations[1].scope = 'subtree'; updateInstructionPreview(); applyInstruction();");
-  assert.equal(t.run("!map.nodes.a && !map.nodes.a1 && Object.keys(map.nodes).length === 6 && history.length === 1"), true);
-  t.run('undo()'); assert.equal(t.run('Object.keys(map.nodes).length'), 7);
-  const second = mockInstruction(t, [{type:'delete_node',nodeId:'a',scope:'single'}]); second.finish(); await second.pending;
-  t.run('cancelInstruction()'); assert.equal(t.run("!!map.nodes.a && instruction === null && history.length === 0"), true);
+  assert.equal(
+    t.run('!map.nodes.a && !map.nodes.a1 && Object.keys(map.nodes).length === 6 && history.length === 1'),
+    true,
+  );
+  t.run('undo()');
+  assert.equal(t.run('Object.keys(map.nodes).length'), 7);
+  const second = mockInstruction(t, [{ type: 'delete_node', nodeId: 'a', scope: 'single' }]);
+  second.finish();
+  await second.pending;
+  t.run('cancelInstruction()');
+  assert.equal(t.run('!!map.nodes.a && instruction === null && history.length === 0'), true);
 });
 
 test('deletion scope validation can recover from an invalid combination', async () => {
-  const t = setup(); const request = mockInstruction(t, [{type:'delete_node',nodeId:'a',scope:'single'}, {type:'update_node',nodeId:'a1',text:'残す'}]);
-  request.finish(); await request.pending;
+  const t = setup();
+  const request = mockInstruction(t, [
+    { type: 'delete_node', nodeId: 'a', scope: 'single' },
+    { type: 'update_node', nodeId: 'a1', text: '残す' },
+  ]);
+  request.finish();
+  await request.pending;
   t.run("instruction.proposal.operations[0].scope = 'subtree'; updateInstructionPreview();");
   assert.equal(t.elements.get('#instructionConfirm').disabled, true);
   t.run("instruction.proposal.operations[0].scope = 'single'; updateInstructionPreview();");
   assert.equal(t.elements.get('#instructionConfirm').disabled, false);
-  t.run('applyInstruction()'); assert.equal(t.run("map.nodes.a1.text === '残す' && map.nodes.a1.parent === 'root'"), true);
+  t.run('applyInstruction()');
+  assert.equal(t.run("map.nodes.a1.text === '残す' && map.nodes.a1.parent === 'root'"), true);
 });
 
 test('late cancelled results cannot apply and an edited draft survives success', async () => {
-  const t = setup(); const request = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
-  t.run('cancelInstruction()'); request.finish(); await request.pending;
-  assert.equal(t.run("map.nodes.b.text"), '図書館に行く');
-  const next = mockInstruction(t, [{type:'update_node',nodeId:'b',text:'新しい本'}]);
-  t.run("$('#promptInput').value = '次の指示'; draftVersion++;"); next.finish(); await next.pending;
+  const t = setup();
+  const request = mockInstruction(t, [{ type: 'update_node', nodeId: 'b', text: '新しい本' }]);
+  t.run('cancelInstruction()');
+  request.finish();
+  await request.pending;
+  assert.equal(t.run('map.nodes.b.text'), '図書館に行く');
+  const next = mockInstruction(t, [{ type: 'update_node', nodeId: 'b', text: '新しい本' }]);
+  t.run("$('#promptInput').value = '次の指示'; draftVersion++;");
+  next.finish();
+  await next.pending;
   assert.equal(t.elements.get('#promptInput').value, '次の指示');
-  const button = t.run('instructionUndoButton'); assert.equal(button.disabled, false);
-  t.run("commit(() => { map.nodes.a.text = '編集'; }); undo();"); assert.equal(button.disabled, true);
+  const button = t.run('instructionUndoButton');
+  assert.equal(button.disabled, false);
+  t.run("commit(() => { map.nodes.a.text = '編集'; }); undo();");
+  assert.equal(button.disabled, true);
 });
 
 test('IME Enter does not submit, Shift Enter stays a newline, plain Enter submits', () => {
-  const t = setup(); t.run('let sends = 0; sendInstruction = () => { sends++; };');
+  const t = setup();
+  t.run('let sends = 0; sendInstruction = () => { sends++; };');
   const key = t.elements.get('#promptInput').onkeydown;
-  let prevented = 0; const press = opts => key({ key: 'Enter', preventDefault() { prevented++; }, ...opts });
-  press({isComposing:true}); press({keyCode:229}); press({shiftKey:true});
-  assert.equal(t.run('sends'), 0); assert.equal(prevented, 0);
-  press({}); assert.equal(t.run('sends'), 1); assert.equal(prevented, 1);
+  let prevented = 0;
+  const press = opts =>
+    key({
+      key: 'Enter',
+      preventDefault() {
+        prevented++;
+      },
+      ...opts,
+    });
+  press({ isComposing: true });
+  press({ keyCode: 229 });
+  press({ shiftKey: true });
+  assert.equal(t.run('sends'), 0);
+  assert.equal(prevented, 0);
+  press({});
+  assert.equal(t.run('sends'), 1);
+  assert.equal(prevented, 1);
 });
 
 function prepareHand(t) {
@@ -550,7 +898,11 @@ function radialBranch() {
   t.run(`Object.assign(map.nodes.root, { x: 527, y: 455 }); Object.assign(map.nodes.a, { x: 926, y: 438 });
     for (const [id, x, y] of [['math', 777, 306], ['study', 918, 238], ['social', 1064, 294], ['japanese', 1127, 437], ['science', 1054, 585]]) map.nodes[id] = { id, text: id, parent: 'a', x, y, order: ++map.seq };
     delete map.nodes.a1; invalidateTree();`);
-  const press = (key, from) => { if (from) t.run(`select('${from}')`); t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} }); return t.run('sel'); };
+  const press = (key, from) => {
+    if (from) t.run(`select('${from}')`);
+    t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {} });
+    return t.run('sel');
+  };
   return { t, press };
 }
 
@@ -559,8 +911,12 @@ test('Shift Left returns from every right-branch sibling to its actual parent wi
   t.run('const beforeParentNavigation = JSON.stringify(map);');
   for (const id of ['math', 'study', 'social', 'japanese', 'science', 'a']) {
     t.run(`select('${id}')`);
-    t.windowHandlers.get('keydown')({ key: 'ArrowLeft', shiftKey: true,
-      target: t.elements.get('#viewport'), preventDefault() {} });
+    t.windowHandlers.get('keydown')({
+      key: 'ArrowLeft',
+      shiftKey: true,
+      target: t.elements.get('#viewport'),
+      preventDefault() {},
+    });
     assert.equal(t.run('sel'), id === 'a' ? 'root' : 'a');
   }
   assert.equal(t.run('JSON.stringify(map) === beforeParentNavigation && history.length === 0 && !saveDirty'), true);
@@ -570,14 +926,23 @@ test('Shift Left returns from every right-branch sibling to its actual parent wi
 
 test('Alt Shift Left still moves nodes and Shift Left does not escape editing or reparent mode', () => {
   const { t } = radialBranch();
-  const key = options => t.windowHandlers.get('keydown')({ key: 'ArrowLeft', shiftKey: true,
-    target: t.elements.get('#viewport'), preventDefault() {}, ...options });
+  const key = options =>
+    t.windowHandlers.get('keydown')({
+      key: 'ArrowLeft',
+      shiftKey: true,
+      target: t.elements.get('#viewport'),
+      preventDefault() {},
+      ...options,
+    });
   t.run("select('math'); const originalX = map.nodes.math.x;");
   key({ altKey: true });
   assert.equal(t.run("sel === 'math' && map.nodes.math.x === originalX - 24 && history.length === 1"), true);
-  t.run("editing = { id: 'math' };"); key();
+  t.run("editing = { id: 'math' };");
+  key();
   assert.equal(t.run('sel'), 'math');
-  t.run("editing = null; mode = { id: 'math', candidate: null }; let candidateKey = null; navigate = k => { candidateKey = k; }; setCandidate = () => {};");
+  t.run(
+    "editing = null; mode = { id: 'math', candidate: null }; let candidateKey = null; navigate = k => { candidateKey = k; }; setCandidate = () => {};",
+  );
   key();
   assert.equal(t.run("candidateKey === 'ArrowLeft' && sel === 'math'"), true);
 });
@@ -585,17 +950,24 @@ test('Alt Shift Left still moves nodes and Shift Left does not escape editing or
 test('right branch enters the first child and walks siblings with Up/Down', () => {
   const { t, press } = radialBranch();
   t.run('const beforeNavigation = JSON.stringify(map);');
-  assert.deepEqual([press('ArrowRight', 'a'), ...Array.from({ length: 4 }, () => press('ArrowDown'))],
-    ['math', 'study', 'social', 'japanese', 'science']);
+  assert.deepEqual(
+    [press('ArrowRight', 'a'), ...Array.from({ length: 4 }, () => press('ArrowDown'))],
+    ['math', 'study', 'social', 'japanese', 'science'],
+  );
   assert.equal(press('ArrowDown'), 'science');
-  assert.deepEqual(Array.from({ length: 4 }, () => press('ArrowUp')),
-    ['japanese', 'social', 'study', 'math']);
+  assert.deepEqual(
+    Array.from({ length: 4 }, () => press('ArrowUp')),
+    ['japanese', 'social', 'study', 'math'],
+  );
   assert.equal(press('ArrowUp'), 'math');
   for (const id of ['math', 'study', 'social', 'japanese', 'science']) {
     assert.equal(press('ArrowLeft', id), 'a');
   }
   assert.equal(press('ArrowLeft', 'a'), 'root');
-  assert.equal(t.run('JSON.stringify(map) === beforeNavigation && history.length === 0 && future.length === 0 && !saveDirty'), true);
+  assert.equal(
+    t.run('JSON.stringify(map) === beforeNavigation && history.length === 0 && future.length === 0 && !saveDirty'),
+    true,
+  );
   assert.equal(t.timers.size, 0);
 });
 
@@ -634,11 +1006,16 @@ test('all four branch directions use one axis for hierarchy and the other for si
       }
       map.nodes.child = { id: 'child', text: 'child', parent: 'social', x: map.nodes.social.x, y: map.nodes.social.y };
       invalidateTree();`);
-    assert.deepEqual([press(out, 'a'), ...Array.from({ length: 4 }, () => press(next))],
-      ['math', 'study', 'social', 'japanese', 'science'], out);
+    assert.deepEqual(
+      [press(out, 'a'), ...Array.from({ length: 4 }, () => press(next))],
+      ['math', 'study', 'social', 'japanese', 'science'],
+      out,
+    );
     assert.equal(press(next), 'science');
-    assert.deepEqual(Array.from({ length: 4 }, () => press(previous)),
-      ['japanese', 'social', 'study', 'math']);
+    assert.deepEqual(
+      Array.from({ length: 4 }, () => press(previous)),
+      ['japanese', 'social', 'study', 'math'],
+    );
     assert.equal(press(previous), 'math');
     for (const child of ['math', 'study', 'social', 'japanese', 'science']) {
       assert.equal(press(inward, child), 'a');
@@ -667,8 +1044,10 @@ test('endpoint ordering follows coordinates with deterministic distance and ID t
   assert.equal(press('ArrowDown'), 'math');
   assert.equal(t.run("JSON.stringify(kids('a').map(n => [n.id, n.order])) === storedOrder"), true);
   t.run(`for (const n of kids('a')) Object.assign(n, { x: 926, y: 438 });`);
-  assert.deepEqual([press('ArrowRight', 'a'), ...Array.from({ length: 4 }, () => press('ArrowDown'))],
-    ['japanese', 'math', 'science', 'social', 'study']);
+  assert.deepEqual(
+    [press('ArrowRight', 'a'), ...Array.from({ length: 4 }, () => press('ArrowDown'))],
+    ['japanese', 'math', 'science', 'social', 'study'],
+  );
   assert.equal(press('ArrowDown'), 'study');
   t.run(`for (const n of kids('a')) Object.assign(n, { x: 1126, y: 438 });
     map.nodes.study.x = 1026;`);
@@ -676,26 +1055,40 @@ test('endpoint ordering follows coordinates with deterministic distance and ID t
 });
 
 test('normal pointer input takes priority and retains undoable subtree dragging', () => {
-  const t = setup(); prepareHand(t);
+  const t = setup();
+  prepareHand(t);
   const handlers = t.elements.get('#viewport').handlers;
   handlers.pointerdown(mouse(100, 100, 'a'));
   t.run(`stableHand(.1);`);
-  handlers.pointermove(mouse(140, 100)); handlers.pointerup(mouse(140, 100));
+  handlers.pointermove(mouse(140, 100));
+  handlers.pointerup(mouse(140, 100));
   assert.equal(t.run(`map.nodes.a.x === 240 && map.nodes.a1.x === 440 && history.length === 1`), true);
-  t.run('undo();'); assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
+  t.run('undo();');
+  assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
 });
 
-for (const event of ['blur', 'pagehide', 'visibilitychange']) test(`${event} stops camera and retains the active node`, () => {
-  const t = setup(); prepareHand(t);
-  t.run(`const session = cameraSession; handSample(.4);`);
-  if (event === 'visibilitychange') { t.run('document.hidden = true;'); t.documentHandlers.get(event)(); }
-  else t.windowHandlers.get(event)();
-  assert.equal(t.run(`session.stopped && !hand && !cameraSession && !gesture && sel === 'a' && JSON.stringify(map) === originalMap`), true);
-});
+for (const event of ['blur', 'pagehide', 'visibilitychange'])
+  test(`${event} stops camera and retains the active node`, () => {
+    const t = setup();
+    prepareHand(t);
+    t.run(`const session = cameraSession; handSample(.4);`);
+    if (event === 'visibilitychange') {
+      t.run('document.hidden = true;');
+      t.documentHandlers.get(event)();
+    } else t.windowHandlers.get(event)();
+    assert.equal(
+      t.run(
+        `session.stopped && !hand && !cameraSession && !gesture && sel === 'a' && JSON.stringify(map) === originalMap`,
+      ),
+      true,
+    );
+  });
 
 test('editing and reparent mode block palm selection and pinch', () => {
   for (const state of ["editing = { id: 'root' }", "startReparent('b')"]) {
-    const t = setup(); prepareHand(t); t.run(state);
+    const t = setup();
+    prepareHand(t);
+    t.run(state);
     const selected = t.run('sel');
     t.run(`stableHand(.1); stableHand(.1, .5, .1);`);
     assert.equal(t.run('sel'), selected);
@@ -704,8 +1097,15 @@ test('editing and reparent mode block palm selection and pinch', () => {
 });
 
 test('camera UI shows each message in one place with tips for the current state', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
-  const help = t.elements.get('#handHelp'), msg = t.elements.get('#camMsg'), tips = () => t.elements.get('#handTips').children.map(c => c.textContent).join();
+  const t = setup({ handUI: true });
+  prepareHand(t);
+  const help = t.elements.get('#handHelp'),
+    msg = t.elements.get('#camMsg'),
+    tips = () =>
+      t.elements
+        .get('#handTips')
+        .children.map(c => c.textContent)
+        .join();
   assert.match(help.textContent, /パーで近くのノードを選択/);
   assert.equal(msg.hidden, true);
   assert.equal(msg.textContent, '');
@@ -729,7 +1129,8 @@ test('camera UI shows each message in one place with tips for the current state'
 });
 
 test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/history intact', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   t.run(`
     const zoomSample = distance => { cameraSession.io.frame({ hands: 2, pose: 'bothFists', distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
     const centerBefore = { x: (W()/2-view.x)/view.s, y: (H()/2-view.y)/view.s };
@@ -737,7 +1138,12 @@ test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/histo
     zoomSample(.4); zoomSample(.4); zoomSample(.4); zoomSample(.5);
   `);
   assert.equal(t.run('view.s < scaleBefore'), true);
-  assert.equal(t.run('Math.abs((W()/2-view.x)/view.s-centerBefore.x) < 1e-8 && Math.abs((H()/2-view.y)/view.s-centerBefore.y) < 1e-8'), true);
+  assert.equal(
+    t.run(
+      'Math.abs((W()/2-view.x)/view.s-centerBefore.x) < 1e-8 && Math.abs((H()/2-view.y)/view.s-centerBefore.y) < 1e-8',
+    ),
+    true,
+  );
   assert.match(t.elements.get('#handHelp').textContent, /ズーム中/);
   assert.equal(t.elements.get('#camMsg').hidden, true);
   t.run('zoomSample(.4);');
@@ -749,7 +1155,8 @@ test('two-hand zoom anchors viewport center, clamps scale and leaves nodes/histo
 });
 
 test('pinching never moves nodes before zooming, and editing blocks zoom', () => {
-  const t = setup(); prepareHand(t);
+  const t = setup();
+  prepareHand(t);
   t.run(`stableHand(.5, .5, .1); handSample(.3, .5, .1);
     const zoomSample = distance => { cameraSession.io.frame({ hands: 2, pose: 'bothFists', distance, palms: [{ x: .5 - distance / 2, y: .5 }, { x: .5 + distance / 2, y: .5 }] }, handTime); handTime += 50; };
     zoomSample(.4); zoomSample(.4); zoomSample(.4); zoomSample(.5);`);
@@ -759,13 +1166,19 @@ test('pinching never moves nodes before zooming, and editing blocks zoom', () =>
 });
 
 test('single fist pans and opening a hand or pointing stops the view', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   t.run(`
     const poseSample = (pose, x = .5) => { cameraSession.io.frame({ pointer: { x, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
     const beforeSinglePan = { ...view };
     poseSample('fist'); poseSample('fist'); poseSample('fist'); poseSample('fist', .4);
   `);
-  assert.equal(t.run('view.x > beforeSinglePan.x && view.s === beforeSinglePan.s && history.length === 0 && JSON.stringify(map) === originalMap'), true);
+  assert.equal(
+    t.run(
+      'view.x > beforeSinglePan.x && view.s === beforeSinglePan.s && history.length === 0 && JSON.stringify(map) === originalMap',
+    ),
+    true,
+  );
   assert.match(t.elements.get('#handHelp').textContent, /マップを移動中/);
   t.run(`const afterSinglePan = { ...view }; for (let i = 0; i < 10; i++) poseSample(null, .2 + i * .03);`);
   assert.equal(t.run('JSON.stringify(view) === JSON.stringify(afterSinglePan) && hand.state === "neutral"'), true);
@@ -778,17 +1191,40 @@ test('single deletion promotes direct children in place, preserves descendants a
   t.run(`render(); let d, secondChild; commit(() => { d = addNode('a1', '孫', { x: 600, y: -200 }); secondChild = addNode('a', '二つ目', { x: 500, y: 20 }); });
     const beforeDelete = JSON.stringify(map), beforeHistory = history.length;
     removeNode('a');`);
-  assert.equal(t.run(`deletion.id === 'a' && deletion.scope === null && JSON.stringify(map) === beforeDelete && $('#deleteConfirm').disabled`), true);
+  assert.equal(
+    t.run(
+      `deletion.id === 'a' && deletion.scope === null && JSON.stringify(map) === beforeDelete && $('#deleteConfirm').disabled`,
+    ),
+    true,
+  );
   assert.equal(t.run(`document.activeElement === $('#deleteCancel')`), true);
-  t.run(`confirmDelete();`); assert.equal(t.run(`JSON.stringify(map) === beforeDelete`), true);
-  t.run(`chooseDeleteScope('single');`);
-  assert.equal(t.run(`edgeEls.get('a1').attributes.d === curve(map.nodes.root, map.nodes.a1) && map.nodes.a1.parent === 'a' && history.length === beforeHistory`), true);
   t.run(`confirmDelete();`);
-  assert.equal(t.run(`!deletion && !map.nodes.a && map.nodes.a1.parent === 'root' && map.nodes[d].parent === 'a1' && sel === 'root' && valid(map) && history.length === beforeHistory + 1`), true);
-  assert.equal(t.run(`kids('root').map(n => n.id).join(',') === ['a1', secondChild, 'b', 'c'].join(',') && map.nodes[secondChild].parent === 'root'`), true);
+  assert.equal(t.run(`JSON.stringify(map) === beforeDelete`), true);
+  t.run(`chooseDeleteScope('single');`);
+  assert.equal(
+    t.run(
+      `edgeEls.get('a1').attributes.d === curve(map.nodes.root, map.nodes.a1) && map.nodes.a1.parent === 'a' && history.length === beforeHistory`,
+    ),
+    true,
+  );
+  t.run(`confirmDelete();`);
+  assert.equal(
+    t.run(
+      `!deletion && !map.nodes.a && map.nodes.a1.parent === 'root' && map.nodes[d].parent === 'a1' && sel === 'root' && valid(map) && history.length === beforeHistory + 1`,
+    ),
+    true,
+  );
+  assert.equal(
+    t.run(
+      `kids('root').map(n => n.id).join(',') === ['a1', secondChild, 'b', 'c'].join(',') && map.nodes[secondChild].parent === 'root'`,
+    ),
+    true,
+  );
   assert.equal(t.run(`map.nodes.a1.x === 540 && map.nodes.a1.y === -220 && map.nodes[d].x === 600`), true);
-  t.run('undo();'); assert.equal(t.run('MapHistory.same(map, JSON.parse(beforeDelete))'), true);
-  t.run('redo();'); assert.equal(t.run(`!map.nodes.a && map.nodes[d].parent === 'a1' && valid(map)`), true);
+  t.run('undo();');
+  assert.equal(t.run('MapHistory.same(map, JSON.parse(beforeDelete))'), true);
+  t.run('redo();');
+  assert.equal(t.run(`!map.nodes.a && map.nodes[d].parent === 'a1' && valid(map)`), true);
 });
 
 test('branch deletion removes all descendants only after confirmation; cancellation leaves history and saves untouched', () => {
@@ -798,16 +1234,21 @@ test('branch deletion removes all descendants only after confirmation; cancellat
   assert.equal(t.timers.size, 0);
   t.run(`removeNode('a'); chooseDeleteScope('branch'); confirmDelete();`);
   assert.equal(t.run(`!map.nodes.a && !map.nodes.a1 && !!map.nodes.b && history.length === 1 && sel === 'root'`), true);
-  t.run('undo();'); assert.equal(t.run('MapHistory.same(map, JSON.parse(before))'), true);
+  t.run('undo();');
+  assert.equal(t.run('MapHistory.same(map, JSON.parse(before))'), true);
 });
 
 test('leaf deletion, root protection, stale confirmation and fixed target', async () => {
   const t = setup();
-  t.run(`removeNode('root');`); assert.equal(t.run('deletion'), null);
+  t.run(`removeNode('root');`);
+  assert.equal(t.run('deletion'), null);
   t.run(`removeNode('a1'); sel = 'b'; confirmDelete();`);
   assert.equal(t.run(`!map.nodes.a1 && !!map.nodes.b && sel === 'a'`), true);
   t.run(`undo(); removeNode('a'); chooseDeleteScope('branch'); map.nodes.a.text = '変更後'; confirmDelete();`);
-  assert.equal(t.run(`!!map.nodes.a && deletion.scope === null && $('#deleteTitle').textContent.includes('変更後')`), true);
+  assert.equal(
+    t.run(`!!map.nodes.a && deletion.scope === null && $('#deleteTitle').textContent.includes('変更後')`),
+    true,
+  );
   // A queued native close event from the old dialog must not dismiss the refreshed one.
   t.elements.get('#deleteDialog').handlers.close();
   assert.equal(t.run(`!!deletion && $('#deleteDialog').open`), true);
@@ -816,7 +1257,8 @@ test('leaf deletion, root protection, stale confirmation and fixed target', asyn
 });
 
 test('delete key opens the shared dialog; Escape cancels without deleting', () => {
-  const t = setup(); t.run(`sel = 'a';`);
+  const t = setup();
+  t.run(`sel = 'a';`);
   const target = t.elements.get('#viewport');
   t.windowHandlers.get('keydown')({ key: 'Delete', target, preventDefault() {} });
   assert.equal(t.run(`deletion.id === 'a' && !!map.nodes.a`), true);
@@ -825,28 +1267,39 @@ test('delete key opens the shared dialog; Escape cancels without deleting', () =
 });
 
 test('peace adds and edits one child per hold; empty edit cancels and committed text is undoable', () => {
-  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  const t = setup({ renderUI: true, handUI: true });
+  prepareHand(t);
   t.run(`
     const commandSample = pose => { cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
     for (let i = 0; i < 14; i++) commandSample('peace');
     const newId = editing.id;
   `);
-  assert.equal(t.run(`editing.isNew && map.nodes[newId].parent === 'root' && Object.keys(map.nodes).length === 8`), true);
+  assert.equal(
+    t.run(`editing.isNew && map.nodes[newId].parent === 'root' && Object.keys(map.nodes).length === 8`),
+    true,
+  );
   t.run(`for (let i = 0; i < 20; i++) commandSample('peace'); els.get(newId).nodeText.textContent = '新しい考え'; finishEdit();
     for (let i = 0; i < 14; i++) commandSample('peace');`);
   assert.equal(t.run(`!editing && history.length === 1 && map.nodes[newId].text === '新しい考え'`), true);
-  t.run(`undo();`); assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
+  t.run(`undo();`);
+  assert.equal(t.run('JSON.stringify(map) === originalMap'), true);
   t.run(`stableHand(); for (let i = 0; i < 14; i++) commandSample('peace'); cancelEdit();`);
   assert.equal(t.run('JSON.stringify(map) === originalMap && !editing && history.length === 0'), true);
 });
 
 test('thumb-down opens confirmation once, palm chooses scope and thumb-right confirms without pinch', () => {
-  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  const t = setup({ renderUI: true, handUI: true });
+  prepareHand(t);
   t.run(`sel = 'a';
     const dialogSample = (pose = null, ratio = .8, y = .5) => { cameraSession.io.frame({ pointer: { x: .5, y }, wrist: { x: .5, y: .7 }, ratio, pose }, handTime); handTime += 50; };
     for (let i = 0; i < 14; i++) dialogSample('thumbDown');
   `);
-  assert.equal(t.run(`deletion.id === 'a' && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`), true);
+  assert.equal(
+    t.run(
+      `deletion.id === 'a' && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`,
+    ),
+    true,
+  );
   t.run(`for (let i = 0; i < 20; i++) dialogSample('thumbDown');
     for (let i = 0; i < 3; i++) dialogSample('palm'); dialogSample('palm', .8, .4);
     for (let i = 0; i < 14; i++) dialogSample(null, .1, .4);`);
@@ -859,21 +1312,30 @@ test('thumb-down opens confirmation once, palm chooses scope and thumb-right con
   assert.equal(t.run(`!deletion && !map.nodes.a && !map.nodes.a1 && history.length === 1`), true);
 });
 
-for (const fistFrames of [1, 8]) for (const duringHold of [false, true]) test(`thumb-down opens confirmation after ${fistFrames} stationary fist frames ${duringHold ? 'during' : 'before'} its hold`, () => {
-  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
-  t.run(`sel = 'a';
+for (const fistFrames of [1, 8])
+  for (const duringHold of [false, true])
+    test(`thumb-down opens confirmation after ${fistFrames} stationary fist frames ${duringHold ? 'during' : 'before'} its hold`, () => {
+      const t = setup({ renderUI: true, handUI: true });
+      prepareHand(t);
+      t.run(`sel = 'a';
     const dialogSample = pose => { cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
     if (${duringHold}) for (let i = 0; i < 6; i++) dialogSample('thumbDown');
     for (let i = 0; i < ${fistFrames}; i++) dialogSample('fist');
     for (let i = 0; i < 12; i++) dialogSample('thumbDown');
   `);
-  assert.equal(t.run(`!deletion && sel === 'a' && JSON.stringify(map) === originalMap`), true);
-  t.run(`dialogSample('thumbDown');`);
-  assert.equal(t.run(`deletion.id === 'a' && $('#deleteDialog').open && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`), true);
-});
+      assert.equal(t.run(`!deletion && sel === 'a' && JSON.stringify(map) === originalMap`), true);
+      t.run(`dialogSample('thumbDown');`);
+      assert.equal(
+        t.run(
+          `deletion.id === 'a' && $('#deleteDialog').open && JSON.stringify(map) === originalMap && document.activeElement === $('#deleteCancel')`,
+        ),
+        true,
+      );
+    });
 
 test('thumb tilted left cancels the delete confirmation and tilted right confirms it', () => {
-  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
+  const t = setup({ renderUI: true, handUI: true });
+  prepareHand(t);
   t.run(`sel = 'b1';
     const dialogSample = pose => { cameraSession.io.frame({ pointer: { x: .5, y: .5 }, wrist: { x: .5, y: .7 }, ratio: .8, pose }, handTime); handTime += 50; };
     for (let i = 0; i < 14; i++) dialogSample('thumbDown');
@@ -885,10 +1347,17 @@ test('thumb tilted left cancels the delete confirmation and tilted right confirm
 });
 
 test('Space edits with all selected, Shift+Space and F2 edit at the end, Enter adds a sibling', () => {
-  const t = setup({ renderUI: true }); t.run(`sel = 'a';`);
-  const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
+  const t = setup({ renderUI: true });
+  t.run(`sel = 'a';`);
+  const press = (key, opts = {}) =>
+    t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
   const collapsed = [];
-  t.context.document.createRange = () => ({ selectNodeContents() {}, collapse(toStart) { collapsed.push(toStart); } });
+  t.context.document.createRange = () => ({
+    selectNodeContents() {},
+    collapse(toStart) {
+      collapsed.push(toStart);
+    },
+  });
   press(' ');
   assert.equal(t.run(`editing.id === 'a' && !editing.isNew`), true);
   assert.deepEqual(collapsed, []);
@@ -907,11 +1376,14 @@ test('Space edits with all selected, Shift+Space and F2 edit at the end, Enter a
 });
 
 test('view and screen shortcuts zoom, focus the prompt and open the key list', () => {
-  const t = setup(); t.run(`sel = 'a'; view = { x: 0, y: 0, s: 1 }; document.body = $('body');`);
-  const press = (key, opts = {}) => t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
+  const t = setup();
+  t.run(`sel = 'a'; view = { x: 0, y: 0, s: 1 }; document.body = $('body');`);
+  const press = (key, opts = {}) =>
+    t.windowHandlers.get('keydown')({ key, target: t.elements.get('#viewport'), preventDefault() {}, ...opts });
   press('=', { metaKey: true });
   assert.equal(t.run('view.s'), 1.25);
-  press('-', { ctrlKey: true }); press('-', { ctrlKey: true });
+  press('-', { ctrlKey: true });
+  press('-', { ctrlKey: true });
   assert.equal(t.run('view.s'), 0.8);
   press('0', { metaKey: true });
   assert.equal(t.run('view.s'), 1);
@@ -925,7 +1397,8 @@ test('view and screen shortcuts zoom, focus the prompt and open the key list', (
 
 test('Shift+H toggles hand input; plain h and typing in the prompt field do not', () => {
   const t = setup({ handUI: true });
-  const press = (target, opts = { key: 'H', code: 'KeyH', shiftKey: true }) => t.windowHandlers.get('keydown')({ target, preventDefault() {}, ...opts });
+  const press = (target, opts = { key: 'H', code: 'KeyH', shiftKey: true }) =>
+    t.windowHandlers.get('keydown')({ target, preventDefault() {}, ...opts });
   press(t.elements.get('#viewport'), { key: 'h', code: 'KeyH' });
   assert.equal(t.run('cameraSession'), null);
   press(t.elements.get('#viewport'));
@@ -937,10 +1410,16 @@ test('Shift+H toggles hand input; plain h and typing in the prompt field do not'
 });
 
 test('two fists with missing palm positions cannot move the view or change nodes, selection or history', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   t.run(`const beforeFists = JSON.stringify(view), beforeSelection = sel;
     for (let i = 0; i < 20; i++) cameraSession.io.frame({ hands: 2, pose: 'bothFists', pointer: { x: .2 + i * .02, y: .3 }, distance: .4 }, handTime += 50);`);
-  assert.equal(t.run('JSON.stringify(view) === beforeFists && sel === beforeSelection && !gesture && JSON.stringify(map) === originalMap && history.length === 0'), true);
+  assert.equal(
+    t.run(
+      'JSON.stringify(view) === beforeFists && sel === beforeSelection && !gesture && JSON.stringify(map) === originalMap && history.length === 0',
+    ),
+    true,
+  );
   assert.equal(t.elements.get('#handCursor').hidden, true);
 });
 
@@ -953,120 +1432,180 @@ function mockQuestions(t) {
   `);
   return t.run('sendInstruction()');
 }
-test('question UI accepts multiple replies and applies the final proposal as one history entry', async()=>{
-  const t=setup(); const pending=mockQuestions(t);
+test('question UI accepts multiple replies and applies the final proposal as one history entry', async () => {
+  const t = setup();
+  const pending = mockQuestions(t);
   t.run(`conversationState('awaiting_input', {questionId:'q1', message:'対象は？'});`);
-  assert.equal(t.run(`instruction.state === 'awaiting_input' && !$('#promptSend').disabled && $('#promptInput').value === '' && history.length === 0`),true);
-  assert.equal(t.elements.get('#promptQuestion').textContent,'対象は？');
-  t.run(`$('#promptInput').value = '図書館'; draftVersion++;`); await t.run('sendInstruction()');
-  assert.equal(t.run(`instruction.state === 'thinking' && $('#promptSend').disabled`),true);
-  t.run(`conversationState('awaiting_input', {questionId:'q2', message:'名前は？'}); $('#promptInput').value = '新しい本'; draftVersion++;`);
+  assert.equal(
+    t.run(
+      `instruction.state === 'awaiting_input' && !$('#promptSend').disabled && $('#promptInput').value === '' && history.length === 0`,
+    ),
+    true,
+  );
+  assert.equal(t.elements.get('#promptQuestion').textContent, '対象は？');
+  t.run(`$('#promptInput').value = '図書館'; draftVersion++;`);
   await t.run('sendInstruction()');
-  t.run(`resolveConversation({status:'ok',message:'',operations:[{type:'update_node',nodeId:'b',text:'新しい本'}]});`); await pending;
-  assert.equal(t.run(`instruction === null && map.nodes.b.text === '新しい本' && history.length === 1 && $('#promptInput').value === '' && $('#promptQuestion').hidden`),true);
-  t.run('undo()'); assert.equal(t.run('map.nodes.b.text'),'図書館に行く');
+  assert.equal(t.run(`instruction.state === 'thinking' && $('#promptSend').disabled`), true);
+  t.run(
+    `conversationState('awaiting_input', {questionId:'q2', message:'名前は？'}); $('#promptInput').value = '新しい本'; draftVersion++;`,
+  );
+  await t.run('sendInstruction()');
+  t.run(`resolveConversation({status:'ok',message:'',operations:[{type:'update_node',nodeId:'b',text:'新しい本'}]});`);
+  await pending;
+  assert.equal(
+    t.run(
+      `instruction === null && map.nodes.b.text === '新しい本' && history.length === 1 && $('#promptInput').value === '' && $('#promptQuestion').hidden`,
+    ),
+    true,
+  );
+  t.run('undo()');
+  assert.equal(t.run('map.nodes.b.text'), '図書館に行く');
 });
-test('question UI preserves an edited draft and ends continuation when the map changes',async()=>{
-  const t=setup(); const pending=mockQuestions(t);
-  t.run(`$('#promptInput').value = '下書き'; draftVersion++; conversationState('awaiting_input', {questionId:'q1',message:'対象は？'});`);
-  assert.equal(t.elements.get('#promptInput').value,'下書き');
+test('question UI preserves an edited draft and ends continuation when the map changes', async () => {
+  const t = setup();
+  const pending = mockQuestions(t);
+  t.run(
+    `$('#promptInput').value = '下書き'; draftVersion++; conversationState('awaiting_input', {questionId:'q1',message:'対象は？'});`,
+  );
+  assert.equal(t.elements.get('#promptInput').value, '下書き');
   t.run(`commit(() => { map.nodes.a.text = '変更'; });`);
-  assert.equal(t.run(`instruction === null && cancelledConversation === 1 && $('#promptQuestion').hidden`),true);
-  t.run(`resolveConversation({status:'ok',message:'',operations:[{type:'update_node',nodeId:'b',text:'不正な遅延結果'}]});`); await pending;
-  assert.equal(t.run('map.nodes.b.text'),'図書館に行く');
+  assert.equal(t.run(`instruction === null && cancelledConversation === 1 && $('#promptQuestion').hidden`), true);
+  t.run(
+    `resolveConversation({status:'ok',message:'',operations:[{type:'update_node',nodeId:'b',text:'不正な遅延結果'}]});`,
+  );
+  await pending;
+  assert.equal(t.run('map.nodes.b.text'), '図書館に行く');
 });
-test('answer POST failures keep the question and typed answer available',async()=>{
-  const t=setup(); const pending=mockQuestions(t);
-  t.run(`conversationState('awaiting_input', {questionId:'q1',message:'対象は？'}); instructionClient.answer = async () => { throw new Error('通信失敗'); }; $('#promptInput').value = '図書館'; draftVersion++;`);
+test('answer POST failures keep the question and typed answer available', async () => {
+  const t = setup();
+  const pending = mockQuestions(t);
+  t.run(
+    `conversationState('awaiting_input', {questionId:'q1',message:'対象は？'}); instructionClient.answer = async () => { throw new Error('通信失敗'); }; $('#promptInput').value = '図書館'; draftVersion++;`,
+  );
   await t.run('sendInstruction()');
-  assert.equal(t.run(`instruction.state === 'awaiting_input' && !$('#promptSend').disabled && !$('#promptQuestion').hidden && $('#promptInput').value === '図書館'`),true);
-  t.run(`cancelInstruction(); resolveConversation({status:'no_change',message:'',operations:[]});`); await pending;
+  assert.equal(
+    t.run(
+      `instruction.state === 'awaiting_input' && !$('#promptSend').disabled && !$('#promptQuestion').hidden && $('#promptInput').value === '図書館'`,
+    ),
+    true,
+  );
+  t.run(`cancelInstruction(); resolveConversation({status:'no_change',message:'',operations:[]});`);
+  await pending;
 });
 
 test('image adoption fixes the original target and commits once; removal and node deletion undo references', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`const imageRef = {assetId:'sha256:'+'a'.repeat(64),alt:'説明',width:1,height:1};
     imageStore.put = async () => imageRef;
     const imageTarget = {nodeId:'a',mapSessionId,revision}; sel='b';`);
   await t.run(`attachNodeImage(new Blob(['test']), imageTarget, '説明')`);
-  assert.equal(t.run(`!!map.nodes.a.image && !map.nodes.b.image && history.length === 1`),true);
-  t.run(`removeNodeImage('a'); undo();`);assert.equal(t.run(`map.nodes.a.image.assetId === imageRef.assetId && history.length === 1`),true);
-  t.run(`redo();`);assert.equal(t.run(`!map.nodes.a.image`),true);
+  assert.equal(t.run(`!!map.nodes.a.image && !map.nodes.b.image && history.length === 1`), true);
+  t.run(`removeNodeImage('a'); undo();`);
+  assert.equal(t.run(`map.nodes.a.image.assetId === imageRef.assetId && history.length === 1`), true);
+  t.run(`redo();`);
+  assert.equal(t.run(`!map.nodes.a.image`), true);
   t.run(`undo(); removeNode('a'); chooseDeleteScope('branch'); confirmDelete(); undo();`);
-  assert.equal(t.run(`map.nodes.a.image.assetId === imageRef.assetId`),true);
+  assert.equal(t.run(`map.nodes.a.image.assetId === imageRef.assetId`), true);
 });
 test('adoption after a storage await rejects edits, undo, import, deletion and active gestures without adding history', async () => {
-  for(const change of ["commit(()=>map.nodes.a.text='変更')",'undo()', 'importMap(sample())', "commit(()=>delete map.nodes.a1)", 'gesture={type:"node"}', 'hand={grab:"a1"}']) {
-    const t=setup();
+  for (const change of [
+    "commit(()=>map.nodes.a.text='変更')",
+    'undo()',
+    'importMap(sample())',
+    'commit(()=>delete map.nodes.a1)',
+    'gesture={type:"node"}',
+    'hand={grab:"a1"}',
+  ]) {
+    const t = setup();
     t.run(`commit(()=>map.nodes.b.text='編集'); let saved;
       imageStore.put = () => new Promise(resolve=>saved=resolve);
       const target={nodeId:'a1',mapSessionId,revision};`);
-    const pending=t.run(`attachNodeImage(new Blob(['test']),target,'説明')`);
+    const pending = t.run(`attachNodeImage(new Blob(['test']),target,'説明')`);
     await t.run(change);
     t.run(`var historyAfterChange=history.length; saved({assetId:'sha256:'+'a'.repeat(64),width:1,height:1});`);
-    await assert.rejects(pending,/保存中/);
-    assert.equal(t.run(`!map.nodes.a1?.image && history.length === historyAfterChange`),true);
+    await assert.rejects(pending, /保存中/);
+    assert.equal(t.run(`!map.nodes.a1?.image && history.length === historyAfterChange`), true);
   }
 });
 test('image adoption captures its target before storage and replacement is one undoable change', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`const oldImage={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
     const newImage={assetId:'sha256:'+'b'.repeat(64),width:2,height:3};
     map.nodes.a.image=oldImage; let saved;
     imageStore.put=()=>new Promise(resolve=>saved=resolve);
     const target={nodeId:'a',mapSessionId,revision};`);
-  const pending=t.run(`attachNodeImage(new Blob(['test']),target,'新画像')`);
-  assert.equal(t.run(`map.nodes.a.image === oldImage && history.length === 0`),true);
+  const pending = t.run(`attachNodeImage(new Blob(['test']),target,'新画像')`);
+  assert.equal(t.run(`map.nodes.a.image === oldImage && history.length === 0`), true);
   t.run(`target.nodeId='b'; target.revision=-1; target.mapSessionId='other'; saved(newImage);`);
   await pending;
-  assert.equal(t.run(`map.nodes.a.image.assetId === newImage.assetId && !map.nodes.b.image && history.length === 1`),true);
-  t.run('undo()');assert.equal(t.run(`map.nodes.a.image.assetId === oldImage.assetId && map.nodes.a.image.alt === '旧画像'`),true);
-  t.run('redo()');assert.equal(t.run(`map.nodes.a.image.assetId === newImage.assetId && map.nodes.a.image.alt === '新画像'`),true);
+  assert.equal(
+    t.run(`map.nodes.a.image.assetId === newImage.assetId && !map.nodes.b.image && history.length === 1`),
+    true,
+  );
+  t.run('undo()');
+  assert.equal(t.run(`map.nodes.a.image.assetId === oldImage.assetId && map.nodes.a.image.alt === '旧画像'`), true);
+  t.run('redo()');
+  assert.equal(t.run(`map.nodes.a.image.assetId === newImage.assetId && map.nodes.a.image.alt === '新画像'`), true);
 });
 test('an active hand grab blocks image adoption and removal before changing storage or history', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
     const beforeGrab=JSON.stringify(map); let imageWrites=0;
     imageStore.put=async()=>{imageWrites++;}; hand={grab:'a'};`);
-  await assert.rejects(t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`),/操作中/);
+  await assert.rejects(
+    t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`),
+    /操作中/,
+  );
   t.run(`removeNodeImage('a')`);
-  assert.equal(t.run(`JSON.stringify(map) === beforeGrab && imageWrites === 0 && history.length === 0`),true);
+  assert.equal(t.run(`JSON.stringify(map) === beforeGrab && imageWrites === 0 && history.length === 0`), true);
 });
 test('failed image storage never changes map, history or existing reference', async () => {
-  const t=setup();t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
+  const t = setup();
+  t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'旧画像',width:1,height:1};
     const beforeImageSave=JSON.stringify(map); imageStore.put=async()=>{throw Error('quota');};`);
-  await assert.rejects(t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`),/quota/);
-  assert.equal(t.run(`JSON.stringify(map) === beforeImageSave && history.length === 0`),true);
+  await assert.rejects(t.run(`attachNodeImage(new Blob(['test']),{nodeId:'a',mapSessionId,revision},'説明')`), /quota/);
+  assert.equal(t.run(`JSON.stringify(map) === beforeImageSave && history.length === 0`), true);
 });
 
 test('double-clicking a node image opens it large; text and failed images still edit', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`map.nodes.a.image={assetId:'sha256:'+'a'.repeat(64),alt:'海',width:4,height:3};
     const acquired=[], released=[]; imageStore.acquire=async id=>(acquired.push(id),'blob:big'); imageStore.release=id=>released.push(id); nodeEl('a');
     const at=part=>(document.elementFromPoint=()=>({closest:s=>s==='.node'?{dataset:{id:'a'}}:s===part?{}:null}),{target:vp});`);
   await t.run(`$('#viewport').handlers.dblclick(at('.node__image'))`);
-  assert.equal(t.run(`$('#imageDialog').open && $('#imageViewerImg').src==='blob:big' && $('#imageViewerImg').alt==='海' && !editing && acquired.length===1`),true);
+  assert.equal(
+    t.run(
+      `$('#imageDialog').open && $('#imageViewerImg').src==='blob:big' && $('#imageViewerImg').alt==='海' && !editing && acquired.length===1`,
+    ),
+    true,
+  );
   t.run(`$('#imageDialog').close(); $('#imageDialog').handlers.close();`);
-  assert.equal(t.run(`released.length===1 && released[0]===acquired[0]`),true);
+  assert.equal(t.run(`released.length===1 && released[0]===acquired[0]`), true);
   t.run(`$('#viewport').handlers.dblclick(at('.node__text'))`);
-  assert.equal(t.run(`editing?.id==='a' && !$('#imageDialog').open`),true);
+  assert.equal(t.run(`editing?.id==='a' && !$('#imageDialog').open`), true);
   t.run(`cancelEdit(); els.get('a').imageState={failed:true}; $('#viewport').handlers.dblclick(at('.node__image'))`);
-  assert.equal(t.run(`editing?.id==='a' && !$('#imageDialog').open`),true);
+  assert.equal(t.run(`editing?.id==='a' && !$('#imageDialog').open`), true);
 });
 test('uploading as a child adds one named image node in a single undo and selects it', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`const ref={assetId:'sha256:'+'c'.repeat(64),width:4,height:3};
     let prepared; NodeImageUpload.prepare=async f=>(prepared=f,f); imageStore.put=async()=>ref;
     const before=Object.keys(map.nodes).length; sel='a'; pickImage('a', true);`);
-  assert.equal(t.run(`$('#imageInput').clicked`),1);
+  assert.equal(t.run(`$('#imageInput').clicked`), 1);
   await t.run(`$('#imageInput').onchange({target:{files:[new Blob(['x'],{type:'image/png'})], value:'x'}})`);
   t.run(`const file=Object.assign(new Blob(['x'],{type:'image/png'}),{name:'海辺の電車.png'}); pickImage('a', true);`);
   await t.run(`$('#imageInput').onchange({target:{files:[file], value:'x'}})`);
-  assert.equal(t.run(`const added=map.nodes[sel]; added.parent==='a' && added.text==='海辺の電車' && added.image.alt==='海辺の電車' && added.image.assetId===ref.assetId && prepared===file && Object.keys(map.nodes).length===before+2`),true);
-  t.run('undo()');assert.equal(t.run(`Object.keys(map.nodes).length===before+1`),true);
+  assert.equal(
+    t.run(
+      `const added=map.nodes[sel]; added.parent==='a' && added.text==='海辺の電車' && added.image.alt==='海辺の電車' && added.image.assetId===ref.assetId && prepared===file && Object.keys(map.nodes).length===before+2`,
+    ),
+    true,
+  );
+  t.run('undo()');
+  assert.equal(t.run(`Object.keys(map.nodes).length===before+1`), true);
 });
 test('dropping an image file onto a node turns it into an image node; off-node or non-image drops do nothing', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`const ref={assetId:'sha256:'+'e'.repeat(64),width:4,height:3};
     NodeImageUpload.prepare=async f=>f; imageStore.put=async()=>ref;
     let hitId='b'; document.elementFromPoint=()=>({closest:s=>s==='.node'&&hitId?{dataset:{id:hitId}}:null});
@@ -1074,42 +1613,61 @@ test('dropping an image file onto a node turns it into an image node; off-node o
     const drag=files=>({preventDefault(){}, clientX:0, clientY:0, dataTransfer:{types:['Files'], files}});
     const before=Object.keys(map.nodes).length, text=map.nodes.b.text;`);
   t.run(`$('#viewport').handlers.dragover(drag([png]))`);
-  assert.equal(t.run(`dropTarget`),'b');
+  assert.equal(t.run(`dropTarget`), 'b');
   await t.run(`$('#viewport').handlers.drop(drag([new Blob(['x'],{type:'text/plain'})]))`);
-  assert.equal(t.run(`!map.nodes.b.image && dropTarget===null && history.length===0`),true);
+  assert.equal(t.run(`!map.nodes.b.image && dropTarget===null && history.length===0`), true);
   await t.run(`hitId=null; $('#viewport').handlers.drop(drag([png]))`);
-  assert.equal(t.run(`history.length`),0);
+  assert.equal(t.run(`history.length`), 0);
   await t.run(`hitId='b'; $('#viewport').handlers.drop(drag([png]))`);
-  assert.equal(t.run(`map.nodes.b.image.assetId===ref.assetId && map.nodes.b.image.alt===text && map.nodes.b.text===text && Object.keys(map.nodes).length===before && history.length===1`),true);
+  assert.equal(
+    t.run(
+      `map.nodes.b.image.assetId===ref.assetId && map.nodes.b.image.alt===text && map.nodes.b.text===text && Object.keys(map.nodes).length===before && history.length===1`,
+    ),
+    true,
+  );
 });
 test('uploading onto a node keeps its text, and failures leave the map untouched', async () => {
-  const t=setup();
+  const t = setup();
   t.run(`const ref={assetId:'sha256:'+'d'.repeat(64),width:4,height:3};
     NodeImageUpload.prepare=async f=>f; imageStore.put=async()=>ref; pickImage('b', false);`);
   await t.run(`$('#imageInput').onchange({target:{files:[Object.assign(new Blob(['x']),{name:'p.jpg'})], value:'x'}})`);
-  assert.equal(t.run(`map.nodes.b.text==='図書館に行く' && map.nodes.b.image.alt==='図書館に行く' && history.length===1`),true);
-  t.run(`const beforeFail=JSON.stringify(map); NodeImageUpload.prepare=async()=>{throw Error('画像をデコードできません');}; pickImage('a', true);`);
+  assert.equal(
+    t.run(`map.nodes.b.text==='図書館に行く' && map.nodes.b.image.alt==='図書館に行く' && history.length===1`),
+    true,
+  );
+  t.run(
+    `const beforeFail=JSON.stringify(map); NodeImageUpload.prepare=async()=>{throw Error('画像をデコードできません');}; pickImage('a', true);`,
+  );
   await t.run(`$('#imageInput').onchange({target:{files:[new Blob(['x'])], value:'x'}})`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeFail && history.length===1 && notices.at(-1)==='画像をデコードできません'`),true);
+  assert.equal(
+    t.run(`JSON.stringify(map)===beforeFail && history.length===1 && notices.at(-1)==='画像をデコードできません'`),
+    true,
+  );
 });
 
 test('bundle import retries a missing image even when node and asset IDs are unchanged', async () => {
-  const t=setup({renderUI:true});
+  const t = setup({ renderUI: true });
   t.run(`const restoredImage={assetId:'sha256:'+'a'.repeat(64),alt:'復元する画像',width:1,height:1};
     const releasedImages=[]; imageStore.release=id=>releasedImages.push(id);
     let imageReads=0; imageStore.acquire=async()=>{imageReads++;throw Error('missing');};
     map.nodes.a.image=restoredImage; render();`);
   await Promise.resolve();
-  assert.equal(t.run(`els.get('a').imageState.failed`),true);
+  assert.equal(t.run(`els.get('a').imageState.failed`), true);
   t.run(`const brokenImageState=els.get('a').imageState;
     imageStore.acquire=async()=>{imageReads++;return 'blob:restored';};
     `);
-  await t.run('importMap(serializeMap())'); await Promise.resolve();
-  assert.equal(t.run(`els.get('a').imageState !== brokenImageState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:restored' && releasedImages[0] === restoredImage.assetId && imageReads === 2`),true);
+  await t.run('importMap(serializeMap())');
+  await Promise.resolve();
+  assert.equal(
+    t.run(
+      `els.get('a').imageState !== brokenImageState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:restored' && releasedImages[0] === restoredImage.assetId && imageReads === 2`,
+    ),
+    true,
+  );
 });
 
 test('bundle restoration ignores a late failure from an earlier image read with the same ID', async () => {
-  const t=setup({renderUI:true});
+  const t = setup({ renderUI: true });
   t.run(`const restoredImage={assetId:'sha256:'+'a'.repeat(64),alt:'復元する画像',width:1,height:1};
     let failOldRead; const releases=[];
     imageStore.release=id=>releases.push(id);
@@ -1117,37 +1675,61 @@ test('bundle restoration ignores a late failure from an earlier image read with 
     map.nodes.a.image=restoredImage; render();
     const pendingState=els.get('a').imageState;
     imageStore.acquire=async()=> 'blob:repaired';`);
-  await t.run('importMap(serializeMap())'); await Promise.resolve();
+  await t.run('importMap(serializeMap())');
+  await Promise.resolve();
   t.run(`failOldRead(new Error('old missing bytes'));`);
   await Promise.resolve();
-  assert.equal(t.run(`els.get('a').imageState !== pendingState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:repaired' && releases.length === 1`),true);
+  assert.equal(
+    t.run(
+      `els.get('a').imageState !== pendingState && !els.get('a').imageState.failed && els.get('a').imageState.img.src === 'blob:repaired' && releases.length === 1`,
+    ),
+    true,
+  );
 });
 
 test('image-first DOM keeps editing the text; cached URLs release on removal, replacement and pagehide', async () => {
-  const t=setup({renderUI:true});
+  const t = setup({ renderUI: true });
   t.run(`const released=[];imageStore.release=id=>released.push(id); imageStore.acquire=async id=>'blob:'+id;
     const firstImage={assetId:'sha256:'+'a'.repeat(64),alt:'最初の絵',width:1,height:1};
     map.nodes.a.image=firstImage;render();startEdit('a');
     const frame=els.get('a').firstChild;
     els.get('a').nodeText.textContent='画像の下の文字';finishEdit();`);
-  assert.equal(t.run(`map.nodes.a.text === '画像の下の文字' && els.get('a').firstChild === frame && !!map.nodes.a.image`),true);
+  assert.equal(
+    t.run(`map.nodes.a.text === '画像の下の文字' && els.get('a').firstChild === frame && !!map.nodes.a.image`),
+    true,
+  );
   t.run(`map.nodes.a.image={...firstImage,assetId:'sha256:'+'b'.repeat(64)};render();`);
-  assert.equal(t.run(`released.length === 1 && released[0] === firstImage.assetId`),true);
-  t.run(`removeNodeImage('a');`);assert.equal(t.run('released.length'),2);
-  t.run(`undo();`);t.windowHandlers.get('pagehide')();assert.equal(t.run('released.length'),3);
-  t.windowHandlers.get('pageshow')();assert.equal(t.run(`!!els.get('a').imageState`),true);
+  assert.equal(t.run(`released.length === 1 && released[0] === firstImage.assetId`), true);
+  t.run(`removeNodeImage('a');`);
+  assert.equal(t.run('released.length'), 2);
+  t.run(`undo();`);
+  t.windowHandlers.get('pagehide')();
+  assert.equal(t.run('released.length'), 3);
+  t.windowHandlers.get('pageshow')();
+  assert.equal(t.run(`!!els.get('a').imageState`), true);
 });
 
 test('instruction field toggles from the dock and remembers its state', () => {
   const t = setup();
   t.elements.get('#promptHide').onclick();
-  assert.equal(t.run(`$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'false'`), true);
+  assert.equal(
+    t.run(`$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'false'`),
+    true,
+  );
   assert.equal(t.storage.get('mindmap-proto:prompt-hidden'), '1');
   t.elements.get('#promptToggle').onclick();
-  assert.equal(t.run(`!$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'true' && document.activeElement === $('#promptInput')`), true);
+  assert.equal(
+    t.run(
+      `!$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'true' && document.activeElement === $('#promptInput')`,
+    ),
+    true,
+  );
   assert.equal(t.storage.get('mindmap-proto:prompt-hidden'), '');
   t.elements.get('#promptToggle').onclick();
-  assert.equal(t.run(`$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'false'`), true);
+  assert.equal(
+    t.run(`$('#prompt').hidden && String($('#promptToggle').attributes['aria-expanded']) === 'false'`),
+    true,
+  );
 
   const reloaded = setup({ stored: { 'mindmap-proto:prompt-hidden': '1' } });
   assert.equal(reloaded.run(`$('#prompt').hidden`), true);
@@ -1158,7 +1740,8 @@ test('cmd K and a Codex question reopen a hidden instruction field', async () =>
   t.run('setPromptHidden(true)');
   t.windowHandlers.get('keydown')({ key: 'k', metaKey: true, preventDefault() {}, target: t.context.document.body });
   assert.equal(t.run(`!$('#prompt').hidden && document.activeElement === $('#promptInput')`), true);
-  mockQuestions(t); t.run('setPromptHidden(true)');
+  mockQuestions(t);
+  t.run('setPromptHidden(true)');
   t.run(`conversationState('awaiting_input', {questionId:'q1', message:'対象は？'});`);
   assert.equal(t.run(`!$('#prompt').hidden`), true);
 });
@@ -1171,9 +1754,16 @@ test('the map menu shows each map size with its images and the total image usage
     MapLocks.busy = async () => new Set();
     mapList = [{ id: 'm_first', title: 'A', updatedAt: Date.now() }, { id: 'm_other', title: 'B', updatedAt: Date.now() - 3 * 3600000 }];`);
   await t.run('refreshMapsMenu()');
-  const rows = t.elements.get('#mapsList').children, cell = (row, i) => row.children[0].children[i].textContent;
-  assert.deepEqual(rows.map(r => cell(r, 1)), ['1.0 MB', '3 KB']);
-  assert.deepEqual(rows.map(r => cell(r, 2)), ['たった今 · 画像 2枚', '3時間前']);
+  const rows = t.elements.get('#mapsList').children,
+    cell = (row, i) => row.children[0].children[i].textContent;
+  assert.deepEqual(
+    rows.map(r => cell(r, 1)),
+    ['1.0 MB', '3 KB'],
+  );
+  assert.deepEqual(
+    rows.map(r => cell(r, 2)),
+    ['たった今 · 画像 2枚', '3時間前'],
+  );
   assert.equal(rows[0].className.includes('maps__row--current'), true);
   assert.equal(t.run(`$('#mapsUsageText').textContent`), '1.0 MB / 50.0 MB');
   assert.equal(t.run(`$('#mapsUsage').hidden`), false);
@@ -1186,11 +1776,18 @@ test('the map menu shows each map size with its images and the total image usage
 
 test('bytes and update times read in short units', () => {
   const t = setup();
-  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([0, 1023, 1024, 1536 * 1024].map(formatBytes))`)), ['0 B', '1023 B', '1 KB', '1.5 MB']);
+  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([0, 1023, 1024, 1536 * 1024].map(formatBytes))`)), [
+    '0 B',
+    '1023 B',
+    '1 KB',
+    '1.5 MB',
+  ]);
   const now = Date.UTC(2026, 9, 24, 12);
-  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 3 * 86400e3].map(d => ago(${now} - d, ${now})))`)), ['たった今', '5分前', '2時間前', '3日前']);
+  assert.deepEqual(
+    JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 3 * 86400e3].map(d => ago(${now} - d, ${now})))`)),
+    ['たった今', '5分前', '2時間前', '3日前'],
+  );
 });
-
 
 test('disabled instructions hide controls, ignore saved visibility, shortcut and submission without a transport', async () => {
   const t = setup({ instructions: false, stored: { 'mindmap-proto:prompt-hidden': '' } });
@@ -1202,7 +1799,18 @@ test('disabled instructions hide controls, ignore saved visibility, shortcut and
   t.run('setPromptHidden(false)');
   assert.equal(t.elements.get('#prompt').hidden, true);
   let prevented = false;
-  t.windowHandlers.get('keydown')({ key: 'k', metaKey: true, target: { closest() { return null; } }, preventDefault() { prevented = true; } });
+  t.windowHandlers.get('keydown')({
+    key: 'k',
+    metaKey: true,
+    target: {
+      closest() {
+        return null;
+      },
+    },
+    preventDefault() {
+      prevented = true;
+    },
+  });
   assert.equal(prevented, false);
   await t.run("sendInstruction('変更してください')");
   await t.run('checkCodexStatus()');
@@ -1220,26 +1828,33 @@ test('static feature configuration disables instructions by default', () => {
 
 test('node menu flips below the selection when it would cover a node above', () => {
   const t = setup({ renderUI: true });
-  const menuY = () => { t.run(`positionMenu()`); return Number(t.elements.get('#nodeMenu').style.transform.match(/, (-?[\d.]+)px/)[1]); };
-  t.run(`view = { x: 0, y: 0, s: 1 }; Object.assign(map.nodes.a, { x: 600, y: 400 }); Object.assign(map.nodes.a1, { x: 1000, y: 100 }); select('a');`);
+  const menuY = () => {
+    t.run(`positionMenu()`);
+    return Number(t.elements.get('#nodeMenu').style.transform.match(/, (-?[\d.]+)px/)[1]);
+  };
+  t.run(
+    `view = { x: 0, y: 0, s: 1 }; Object.assign(map.nodes.a, { x: 600, y: 400 }); Object.assign(map.nodes.a1, { x: 1000, y: 100 }); select('a');`,
+  );
   assert.equal(menuY(), 400 - 25 - 50 - 40);
   t.run(`Object.assign(map.nodes.a1, { x: 600, y: 300 });`);
   assert.equal(menuY(), 400 + 25 + 16);
 });
-for (const narrow of [false, true]) test(`node menu ${narrow ? 'stays docked' : 'hides'} while panning or dragging on ${narrow ? 'narrow' : 'wide'} canvases`, () => {
-  const t = setup({ renderUI: true });
-  t.context.document.body.classList.contains = name => narrow && name === 'canvas-narrow';
-  const menu = t.elements.get('#nodeMenu');
-  for (const type of ['pan', 'node']) {
-    t.run(`select('a'); gesture = { type: '${type}', moved: true }; positionMenu();`);
-    assert.equal(menu.hidden, !narrow);
-    t.run(`gesture = null; positionMenu();`);
-    assert.equal(menu.hidden, false);
-  }
-});
+for (const narrow of [false, true])
+  test(`node menu ${narrow ? 'stays docked' : 'hides'} while panning or dragging on ${narrow ? 'narrow' : 'wide'} canvases`, () => {
+    const t = setup({ renderUI: true });
+    t.context.document.body.classList.contains = name => narrow && name === 'canvas-narrow';
+    const menu = t.elements.get('#nodeMenu');
+    for (const type of ['pan', 'node']) {
+      t.run(`select('a'); gesture = { type: '${type}', moved: true }; positionMenu();`);
+      assert.equal(menu.hidden, !narrow);
+      t.run(`gesture = null; positionMenu();`);
+      assert.equal(menu.hidden, false);
+    }
+  });
 test('the image action switches both its full and short labels once the node has an image', () => {
   const t = setup({ renderUI: true });
-  const labels = () => ['long', 'short'].map(kind => t.elements.get(`[data-act=image] .btn__label--${kind}`).textContent);
+  const labels = () =>
+    ['long', 'short'].map(kind => t.elements.get(`[data-act=image] .btn__label--${kind}`).textContent);
   t.run(`select('a'); positionMenu();`);
   assert.deepEqual(labels(), ['画像にする', '画像']);
   t.run(`map.nodes.a.image = 'img_1'; positionMenu();`);
@@ -1255,12 +1870,14 @@ test('an English browser gets English samples, dialogs and notices', () => {
   assert.equal(t.run(`$('#deleteConfirm').textContent`), 'Delete 2 nodes');
   t.run(`confirmDelete();`);
   assert.equal(t.run('notices.at(-1)'), 'Deleted');
-  assert.deepEqual(JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 86400e3].map(d => ago(1e9 - d, 1e9)))`)), ['just now', '5 min ago', '2 hr ago', '1 day ago']);
+  assert.deepEqual(
+    JSON.parse(t.run(`JSON.stringify([30e3, 5 * 60e3, 2 * 3600e3, 86400e3].map(d => ago(1e9 - d, 1e9)))`)),
+    ['just now', '5 min ago', '2 hr ago', '1 day ago'],
+  );
 });
 
-
 test('palette initializes before the first render; actual apply uses one image history entry with Undo/Redo', async () => {
-  const { run, elements, context } = setup({ renderUI:true, paletteUI:true });
+  const { run, elements, context } = setup({ renderUI: true, paletteUI: true });
   const el = key => elements.get(key);
   assert.equal(el('#paletteToggle').hidden, false);
   assert.equal(el('#paletteDockToggle').hidden, false);
@@ -1272,99 +1889,160 @@ test('palette initializes before the first render; actual apply uses one image h
   assert.equal(el('#paletteList').children.length, 1);
   el('#paletteList').children[0].onclick();
   assert.equal(el('#paletteChild').disabled, false);
-  context.fetch = async () => ({ok:true,blob:async()=>new Blob(['original PNG'])});
+  context.fetch = async () => ({ ok: true, blob: async () => new Blob(['original PNG']) });
   run("imageStore.put = async () => ({assetId:'sha256:'+'a'.repeat(64),width:128,height:112})");
   const before = run('Object.keys(map.nodes).length');
   run("$('#paletteChild').onclick()");
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(run('Object.keys(map.nodes).length'), before+1);
+  assert.equal(run('Object.keys(map.nodes).length'), before + 1);
   assert.equal(run('map.nodes[sel].text'), 'ご飯');
   assert.equal(run('history.length'), 1);
-  run('undo()');assert.equal(run('Object.keys(map.nodes).length'),before);
+  run('undo()');
+  assert.equal(run('Object.keys(map.nodes).length'), before);
   run('redo(); select(map.root)');
-  const rootText=run('map.nodes[map.root].text');
-  run("$('#paletteApply').onclick()");await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(run('map.nodes[map.root].image.alt'),'ご飯');assert.equal(run('map.nodes[map.root].text'),rootText);
-  assert.equal(el('#paletteApply').textContent,'画像を置き換える');
-  run('undo()');assert.equal(run('!!map.nodes[map.root].image'),false);
-  run('redo()');assert.equal(run('!!map.nodes[map.root].image'),true);
-  run("$('#paletteClose').onclick()");assert.equal(el('#iconPalette').attributes['aria-hidden'],'true');
-  assert.equal(el('#paletteDockToggle').attributes['aria-expanded'],'false');
+  const rootText = run('map.nodes[map.root].text');
+  run("$('#paletteApply').onclick()");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(run('map.nodes[map.root].image.alt'), 'ご飯');
+  assert.equal(run('map.nodes[map.root].text'), rootText);
+  assert.equal(el('#paletteApply').textContent, '画像を置き換える');
+  run('undo()');
+  assert.equal(run('!!map.nodes[map.root].image'), false);
+  run('redo()');
+  assert.equal(run('!!map.nodes[map.root].image'), true);
+  run("$('#paletteClose').onclick()");
+  assert.equal(el('#iconPalette').attributes['aria-hidden'], 'true');
+  assert.equal(el('#paletteDockToggle').attributes['aria-expanded'], 'false');
 });
 
 test('palette cancels a pending PNG on selection change or map switch, and clears icon selection on switching maps', async () => {
-  for (const action of ["select('b')", "mapSessionId = 'other'; render()", "mapClaim.editable=false; updateAccess()", "$('#paletteClose').onclick()", "$('#palette-daily').onclick()"] ) {
-    const {run,context,elements}=setup({renderUI:true,paletteUI:true});
-    run("$('#paletteToggle').onclick()");elements.get('#paletteList').children[0].onclick();
-    let finish;context.fetch=()=>new Promise(r=>{finish=r;});
-    run("$('#paletteChild').onclick()");run(action);
-    finish({ok:true,blob:async()=>new Blob(['png'])});await new Promise(r=>setImmediate(r));
-    assert.equal(run('history.length'),0,action);
+  for (const action of [
+    "select('b')",
+    "mapSessionId = 'other'; render()",
+    'mapClaim.editable=false; updateAccess()',
+    "$('#paletteClose').onclick()",
+    "$('#palette-daily').onclick()",
+  ]) {
+    const { run, context, elements } = setup({ renderUI: true, paletteUI: true });
+    run("$('#paletteToggle').onclick()");
+    elements.get('#paletteList').children[0].onclick();
+    let finish;
+    context.fetch = () =>
+      new Promise(r => {
+        finish = r;
+      });
+    run("$('#paletteChild').onclick()");
+    run(action);
+    finish({ ok: true, blob: async () => new Blob(['png']) });
+    await new Promise(r => setImmediate(r));
+    assert.equal(run('history.length'), 0, action);
   }
 });
 
 test('palette drag applies to an unselected node, replaces its image, and supports Undo/Redo', async () => {
-  const {run,context,elements}=setup({renderUI:true,paletteUI:true});
+  const { run, context, elements } = setup({ renderUI: true, paletteUI: true });
   run("$('#paletteToggle').onclick(); select('a')");
-  const data = new Map(), transfer = {types:[],setData(type,value){data.set(type,value);this.types.push(type);},getData:type=>data.get(type)};
-  context.document.elementFromPoint = () => ({closest:()=>({dataset:{id:'root'}})});
-  context.fetch = async () => ({ok:true,blob:async()=>new Blob(['png'])});
-  run("let imageNumber = 0; imageStore.put = async () => ({assetId:'sha256:'+(++imageNumber).toString().repeat(64),width:128,height:112})");
-  const event = {dataTransfer:transfer,clientX:100,clientY:100,preventDefault(){}};
+  const data = new Map(),
+    transfer = {
+      types: [],
+      setData(type, value) {
+        data.set(type, value);
+        this.types.push(type);
+      },
+      getData: type => data.get(type),
+    };
+  context.document.elementFromPoint = () => ({ closest: () => ({ dataset: { id: 'root' } }) });
+  context.fetch = async () => ({ ok: true, blob: async () => new Blob(['png']) });
+  run(
+    "let imageNumber = 0; imageStore.put = async () => ({assetId:'sha256:'+(++imageNumber).toString().repeat(64),width:128,height:112})",
+  );
+  const event = { dataTransfer: transfer, clientX: 100, clientY: 100, preventDefault() {} };
   const viewport = elements.get('#viewport');
   const before = run('Object.keys(map.nodes).length');
-  for (const i of [0,1]) {
+  for (const i of [0, 1]) {
     elements.get('#paletteList').children[i].ondragstart(event);
     viewport.handlers.dragover(event);
-    assert.equal(transfer.dropEffect,'copy');
-    assert.equal(run('dropTarget'),'root');
+    assert.equal(transfer.dropEffect, 'copy');
+    assert.equal(run('dropTarget'), 'root');
     await viewport.handlers.drop(event);
     elements.get('#paletteList').children[i].ondragend();
-    assert.equal(run('dropTarget'),null);
-    assert.equal(run('sel'),'a');
-    assert.equal(run('Object.keys(map.nodes).length'),before);
-    assert.equal(run('history.length'),i+1);
-    assert.equal(run('map.nodes.root.image.assetId'),'sha256:'+String(i+1).repeat(64));
+    assert.equal(run('dropTarget'), null);
+    assert.equal(run('sel'), 'a');
+    assert.equal(run('Object.keys(map.nodes).length'), before);
+    assert.equal(run('history.length'), i + 1);
+    assert.equal(run('map.nodes.root.image.assetId'), 'sha256:' + String(i + 1).repeat(64));
   }
-  run('undo()');assert.equal(run('map.nodes.root.image.assetId'),'sha256:'+'1'.repeat(64));
-  run('undo()');assert.equal(run('!!map.nodes.root.image'),false);
-  run('redo(); redo()');assert.equal(run('map.nodes.root.image.assetId'),'sha256:'+'2'.repeat(64));
+  run('undo()');
+  assert.equal(run('map.nodes.root.image.assetId'), 'sha256:' + '1'.repeat(64));
+  run('undo()');
+  assert.equal(run('!!map.nodes.root.image'), false);
+  run('redo(); redo()');
+  assert.equal(run('map.nodes.root.image.assetId'), 'sha256:' + '2'.repeat(64));
 });
 
 test('palette drag rejects stale, blocked, cancelled and forged drops without fetching', async () => {
-  for (const action of ["revision++", "mapSessionId='other'", "mapClaim.editable=false", "$('#paletteClose').onclick()", "mode='connect'", 'cancel', 'forge', 'outside']) {
-    const {run,context,elements}=setup({renderUI:true,paletteUI:true});
+  for (const action of [
+    'revision++',
+    "mapSessionId='other'",
+    'mapClaim.editable=false',
+    "$('#paletteClose').onclick()",
+    "mode='connect'",
+    'cancel',
+    'forge',
+    'outside',
+  ]) {
+    const { run, context, elements } = setup({ renderUI: true, paletteUI: true });
     run("$('#paletteToggle').onclick()");
-    const data = new Map(), transfer = {types:[],setData(type,value){data.set(type,value);this.types.push(type);},getData:type=>data.get(type)};
-    const event = {dataTransfer:transfer,clientX:100,clientY:100,preventDefault(){}};
-    let fetched=0;
-    context.fetch=async()=>{fetched++;throw Error('unexpected fetch');};
-    context.document.elementFromPoint=()=>({closest:()=>action==='outside'?null:{dataset:{id:'root'}}});
-    const button=elements.get('#paletteList').children[0];
+    const data = new Map(),
+      transfer = {
+        types: [],
+        setData(type, value) {
+          data.set(type, value);
+          this.types.push(type);
+        },
+        getData: type => data.get(type),
+      };
+    const event = { dataTransfer: transfer, clientX: 100, clientY: 100, preventDefault() {} };
+    let fetched = 0;
+    context.fetch = async () => {
+      fetched++;
+      throw Error('unexpected fetch');
+    };
+    context.document.elementFromPoint = () => ({
+      closest: () => (action === 'outside' ? null : { dataset: { id: 'root' } }),
+    });
+    const button = elements.get('#paletteList').children[0];
     button.ondragstart(event);
-    if(action==='cancel') button.ondragend();
-    else if(action==='forge') data.set(run('IconPalette.DRAG_TYPE'),'people-02');
-    else if(action!=='outside') run(action);
+    if (action === 'cancel') button.ondragend();
+    else if (action === 'forge') data.set(run('IconPalette.DRAG_TYPE'), 'people-02');
+    else if (action !== 'outside') run(action);
     await elements.get('#viewport').handlers.drop(event);
     button.ondragend();
-    assert.equal(fetched,0,action);
-    assert.equal(run('history.length'),0,action);
-    assert.equal(run('dropTarget'),null,action);
+    assert.equal(fetched, 0, action);
+    assert.equal(run('history.length'), 0, action);
+    assert.equal(run('dropTarget'), null, action);
   }
 });
 
 test('beforeprint fits the whole map on A4 without touching the view; afterprint restores the title', () => {
   const t = setup({ renderUI: true });
   t.run(`view = { x: 5, y: 6, s: 2 }; document.title = 'App'; map.title = 'Plan'; world.style.transform = 'screen';`);
-  const timers = t.timers.size, stored = [...t.storage];
+  const timers = t.timers.size,
+    stored = [...t.storage];
   t.windowHandlers.get('beforeprint')();
   assert.match(t.run(`$('#pageStyle').textContent`), /size: A4 landscape/);
   assert.match(t.run(`vp.style['--print-transform']`), /^translate\(.+px, .+px\) scale\(0\.\d+\)$/);
-  assert.equal(t.run(`view.x === 5 && view.y === 6 && view.s === 2 && world.style.transform === 'screen' && document.title === 'Plan'`), true);
+  assert.equal(
+    t.run(
+      `view.x === 5 && view.y === 6 && view.s === 2 && world.style.transform === 'screen' && document.title === 'Plan'`,
+    ),
+    true,
+  );
   assert.equal(t.timers.size, timers);
   assert.deepEqual([...t.storage], stored);
-  const p = t.run('PrintLayout.fit(mapBounds(0))'), b = t.run('mapBounds(0)');
-  assert.ok(Math.abs((b.y0 * p.scale + p.y) - (p.height - (b.y1 * p.scale + p.y))) < 1e-6);
+  const p = t.run('PrintLayout.fit(mapBounds(0))'),
+    b = t.run('mapBounds(0)');
+  assert.ok(Math.abs(b.y0 * p.scale + p.y - (p.height - (b.y1 * p.scale + p.y))) < 1e-6);
   assert.equal(t.run(`vp.style['--print-transform']`), `translate(${p.x}px, ${p.y}px) scale(${p.scale})`);
   t.windowHandlers.get('afterprint')();
   assert.equal(t.run(`document.title === 'App'`), true);
@@ -1372,33 +2050,50 @@ test('beforeprint fits the whole map on A4 without touching the view; afterprint
 
 test('cmd P prints once, even while deleting, and ignores a second request while waiting', async () => {
   const t = setup();
-  let printed = 0, prevented = 0;
-  t.context.print = () => { printed++; };
+  let printed = 0,
+    prevented = 0;
+  t.context.print = () => {
+    printed++;
+  };
   t.run(`deletion = {};`);
-  const press = () => t.windowHandlers.get('keydown')({ key: 'p', metaKey: true, target: t.context.document.body, preventDefault() { prevented++; } });
-  press(); press();
+  const press = () =>
+    t.windowHandlers.get('keydown')({
+      key: 'p',
+      metaKey: true,
+      target: t.context.document.body,
+      preventDefault() {
+        prevented++;
+      },
+    });
+  press();
+  press();
   await new Promise(setImmediate);
   assert.equal(prevented, 2);
   assert.equal(printed, 1);
-  press(); await new Promise(setImmediate);
+  press();
+  await new Promise(setImmediate);
   assert.equal(printed, 2);
 });
 
 test('printing waits for loading images and gives up after three seconds', async () => {
   const t = setup({ renderUI: true });
   let printed = 0;
-  t.context.print = () => { printed++; };
+  t.context.print = () => {
+    printed++;
+  };
   t.run(`imageStore.acquire = () => new Promise(() => {});
     map.nodes.a.image = { assetId: 'sha256:' + 'a'.repeat(64), alt: '', width: 1, height: 1 };
     map.nodes.b.image = { assetId: 'sha256:' + 'b'.repeat(64), alt: '', width: 1, height: 1 }; render();`);
-  t.run('printMap()'); await new Promise(setImmediate);
+  t.run('printMap()');
+  await new Promise(setImmediate);
   assert.equal(printed, 0);
   t.run(`els.get('a').imageState.img.onload(); els.get('b').imageState.img.onerror();`);
   await new Promise(setImmediate);
   assert.equal(printed, 1);
 
   t.run(`clearNodeImage(els.get('a')); render();`);
-  t.run('printMap()'); await new Promise(setImmediate);
+  t.run('printMap()');
+  await new Promise(setImmediate);
   assert.equal(printed, 1);
   t.timers.get(Math.max(...t.timers.keys()))();
   await new Promise(setImmediate);
@@ -1408,14 +2103,18 @@ test('printing waits for loading images and gives up after three seconds', async
 test('read-only tabs can print without changing the map or history', async () => {
   const t = setup();
   let printed = 0;
-  t.context.print = () => { printed++; };
-  t.run(`commit(() => { map.nodes.a.text = 'x'; }); mapClaim = { editable: false, release() {} }; updateAccess(); const before = JSON.stringify(map);`);
+  t.context.print = () => {
+    printed++;
+  };
+  t.run(
+    `commit(() => { map.nodes.a.text = 'x'; }); mapClaim = { editable: false, release() {} }; updateAccess(); const before = JSON.stringify(map);`,
+  );
   await t.run('printMap()');
-  t.windowHandlers.get('beforeprint')(); t.windowHandlers.get('afterprint')();
+  t.windowHandlers.get('beforeprint')();
+  t.windowHandlers.get('afterprint')();
   assert.equal(printed, 1);
   assert.equal(t.run(`JSON.stringify(map) === before && history.length === 1 && future.length === 0`), true);
 });
-
 
 test('debug panel toggle exposes and hides the camera skeleton and values', () => {
   const t = setup();
@@ -1423,7 +2122,7 @@ test('debug panel toggle exposes and hides the camera skeleton and values', () =
   assert.equal(t.elements.get('#handSkeleton').hidden, false);
   assert.equal(t.elements.get('#handDebugValues').hidden, false);
   assert.equal(t.elements.get('#handDebugToggle').attributes['aria-pressed'], 'true');
-  t.run("toggleHand(); cameraSession.io.debug(null);");
+  t.run('toggleHand(); cameraSession.io.debug(null);');
   assert.equal(t.elements.get('#handDebugValues').textContent, '手を検出していません');
   t.elements.get('#handDebugToggle').onclick();
   assert.equal(t.elements.get('#handSkeleton').hidden, true);
@@ -1440,7 +2139,8 @@ function mockSpeech(app) {
   };`);
 }
 test('hand add starts voice by default and left thumb confirms after speech with one Undo/Redo', () => {
-  const app = setup({ renderUI: true, instructions: false }); mockSpeech(app);
+  const app = setup({ renderUI: true, instructions: false });
+  mockSpeech(app);
   app.run(`toggleHand(); handController.io.command('add');
     globalThis.voiceNode = editing.id;
     recognizer.onresult({ resultIndex: 0, results: [Object.assign([{transcript: 'Voice child'}], {isFinal: true})] });`);
@@ -1456,37 +2156,50 @@ test('hand add starts voice by default and left thumb confirms after speech with
   assert.equal(app.run('editing'), null);
   assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
   assert.equal(app.run('history.length'), 1);
-  app.run('undo();'); assert.equal(app.run('!!map.nodes[voiceNode]'), false);
-  app.run('redo();'); assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
+  app.run('undo();');
+  assert.equal(app.run('!!map.nodes[voiceNode]'), false);
+  app.run('redo();');
+  assert.equal(app.run('map.nodes[voiceNode].text'), 'Voice child');
 });
 test('hand left confirmation stops recognition and waits for final text before committing', () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
+  const app = setup({ renderUI: true });
+  mockSpeech(app);
   app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
     for (let i = 0; i < 14; i++) cameraSession.io.frame({pointer:{x:.5,y:.5}, wrist:{x:.5,y:.7}, ratio:.8, pose:'thumbLeft'}, i * 50);`);
   assert.equal(app.run('recognizer.stopped && editing.pendingDone && speech.state === "stopping"'), true);
-  app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'Final words'}], {isFinal:true})]}); recognizer.onend();`);
+  app.run(
+    `recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'Final words'}], {isFinal:true})]}); recognizer.onend();`,
+  );
   assert.equal(app.run('editing'), null);
   assert.equal(app.run('map.nodes[voiceNode].text'), 'Final words');
   assert.equal(app.run('history.length'), 1);
 });
-for (const ended of [false, true]) test(`hand right thumb cancels ${ended ? 'after speech' : 'while listening'} and ignores late results`, () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
-  app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
+for (const ended of [false, true])
+  test(`hand right thumb cancels ${ended ? 'after speech' : 'while listening'} and ignores late results`, () => {
+    const app = setup({ renderUI: true });
+    mockSpeech(app);
+    app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
     recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'Discard'}], {isFinal:true})]});`);
-  if (ended) app.run('recognizer.onend();');
-  app.run(`for (let i = 0; i < 14; i++) cameraSession.io.frame({pointer:{x:.5,y:.5}, wrist:{x:.5,y:.7}, ratio:.8, pose:'thumbRight'}, i * 50);
+    if (ended) app.run('recognizer.onend();');
+    app.run(`for (let i = 0; i < 14; i++) cameraSession.io.frame({pointer:{x:.5,y:.5}, wrist:{x:.5,y:.7}, ratio:.8, pose:'thumbRight'}, i * 50);
     recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'late'}], {isFinal:true})]}); recognizer.onend();`);
-  assert.equal(app.run('editing'), null);
-  assert.equal(app.run('speech.active || !!map.nodes[voiceNode]'), false);
-  assert.equal(app.run('history.length'), 0);
-});
+    assert.equal(app.run('editing'), null);
+    assert.equal(app.run('speech.active || !!map.nodes[voiceNode]'), false);
+    assert.equal(app.run('history.length'), 0);
+  });
 test('hand voice editing suppresses navigation and focusout; failed confirmation stays recoverable', () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
+  const app = setup({ renderUI: true });
+  mockSpeech(app);
   app.run(`toggleHand(); handController.io.command('add'); globalThis.voiceNode = editing.id;
     const voiceX = map.nodes[voiceNode].x, voiceY = map.nodes[voiceNode].y;
     for (let i = 0; i < 20; i++) cameraSession.io.frame({pointer:{x:.5 - i * .01,y:.5}, wrist:{x:.5,y:.7}, ratio:.8}, i * 50);`);
-  assert.equal(app.run('sel === voiceNode && map.nodes[voiceNode].x === voiceX && map.nodes[voiceNode].y === voiceY'), true);
-  app.elements.get('#nodes').handlers.focusout({ target: app.run('els.get(editing.id).nodeText'), relatedTarget: app.elements.get('#title') });
+  assert.equal(
+    app.run('sel === voiceNode && map.nodes[voiceNode].x === voiceX && map.nodes[voiceNode].y === voiceY'),
+    true,
+  );
+  app.elements
+    .get('#nodes')
+    .handlers.focusout({ target: app.run('els.get(editing.id).nodeText'), relatedTarget: app.elements.get('#title') });
   assert.equal(app.run('!!editing'), true);
   app.run(`confirmNodeSpeech(); recognizer.onerror({error:'network'});`);
   assert.equal(app.run('!!editing && !editing.pendingDone && !speech.active'), true);
@@ -1495,99 +2208,131 @@ test('hand voice editing suppresses navigation and focusout; failed confirmation
   assert.equal(app.run('!!editing'), true);
 });
 test('voice failures retain editable nodes; cancel discards new nodes and ignores late results', () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
+  const app = setup({ renderUI: true });
+  mockSpeech(app);
   app.run(`addChildAndEdit(map.root, true); recognizer.onerror({ error: 'not-allowed' });`);
   assert.equal(app.run('!!editing && !speech.active'), true);
   assert.equal(app.run('els.get(editing.id).nodeText.contentEditable'), 'plaintext-only');
   app.run(`startNodeSpeech(true); globalThis.late = recognizer; cancelEdit();
     late.onresult({ resultIndex: 0, results: [Object.assign([{transcript:'late'}], {isFinal:true})] }); late.onend();`);
-  assert.equal(app.run('Object.keys(map.nodes).length'), 7); assert.equal(app.run('history.length'), 0);
+  assert.equal(app.run('Object.keys(map.nodes).length'), 7);
+  assert.equal(app.run('history.length'), 0);
 });
 test('node speech controls keep editing on Tab and focusout; outside focus commits only final results', () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
+  const app = setup({ renderUI: true });
+  mockSpeech(app);
   app.run('startEdit(map.root);');
-  const event = { target: app.run('els.get(editing.id).nodeText'), key: 'Tab', preventDefault() {}, stopPropagation() {} };
+  const event = {
+    target: app.run('els.get(editing.id).nodeText'),
+    key: 'Tab',
+    preventDefault() {},
+    stopPropagation() {},
+  };
   event.target.isContentEditable = true;
   app.elements.get('#nodes').handlers.keydown(event);
   assert.equal(app.run('document.activeElement === $("#nodeSpeechToggle")'), true);
   app.elements.get('#nodeSpeech').children.push(app.elements.get('#nodeSpeechToggle'));
-  app.elements.get('#nodes').handlers.focusout({ target: event.target, relatedTarget: app.elements.get('#nodeSpeechToggle') });
+  app.elements
+    .get('#nodes')
+    .handlers.focusout({ target: event.target, relatedTarget: app.elements.get('#nodeSpeechToggle') });
   assert.equal(app.run('!!editing'), true);
-  app.run(`startNodeSpeech(); recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:' appended'}], {isFinal:true})]});`);
+  app.run(
+    `startNodeSpeech(); recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:' appended'}], {isFinal:true})]});`,
+  );
   app.elements.get('#nodes').handlers.focusout({ target: event.target, relatedTarget: app.elements.get('#title') });
-  assert.equal(app.run('editing'), null); assert.match(app.run('map.nodes[map.root].text'), /appended$/);
-});
-for (const pointerType of ['mouse', 'touch']) test(`Safari ${pointerType} speech controls focus before blur and remain clickable`, () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
-  const panel = app.elements.get('#nodeSpeech');
-  const toggle = app.elements.get('#nodeSpeechToggle');
-  const done = app.elements.get('#nodeSpeechDone');
-  const cancel = app.elements.get('#nodeSpeechCancel');
-  panel.children.push(toggle, done, cancel);
-  function press(button) {
-    let prevented = false;
-    const previous = app.context.document.activeElement;
-    button.handlers.pointerdown({ currentTarget: button, pointerType, button: 0, isPrimary: true,
-      preventDefault() { prevented = true; } });
-    // Model Safari: the native pointer default blurs without focusing a button.
-    const relatedTarget = prevented ? app.context.document.activeElement : null;
-    app.elements.get('#nodes').handlers.focusout({ target: previous, relatedTarget });
-    assert.equal(prevented, true);
-    assert.equal(app.context.document.activeElement, button);
-    assert.equal(app.run('!!editing'), true);
-    button.onclick();
-  }
-  app.run('startEdit(map.root);');
-  press(toggle);
-  assert.equal(app.run('speech.active && speech.state === "listening"'), true);
-  assert.equal(panel.hidden, false);
-  press(toggle);
-  assert.equal(app.run('recognizer.stopped'), true);
-  app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:' Safari'}], {isFinal:true})]}); recognizer.onend();`);
-  press(done);
   assert.equal(app.run('editing'), null);
-  assert.match(app.run('map.nodes[map.root].text'), / Safari$/);
-  app.run('startEdit(map.root);');
-  press(cancel);
-  assert.equal(app.run('editing'), null);
+  assert.match(app.run('map.nodes[map.root].text'), /appended$/);
 });
+for (const pointerType of ['mouse', 'touch'])
+  test(`Safari ${pointerType} speech controls focus before blur and remain clickable`, () => {
+    const app = setup({ renderUI: true });
+    mockSpeech(app);
+    const panel = app.elements.get('#nodeSpeech');
+    const toggle = app.elements.get('#nodeSpeechToggle');
+    const done = app.elements.get('#nodeSpeechDone');
+    const cancel = app.elements.get('#nodeSpeechCancel');
+    panel.children.push(toggle, done, cancel);
+    function press(button) {
+      let prevented = false;
+      const previous = app.context.document.activeElement;
+      button.handlers.pointerdown({
+        currentTarget: button,
+        pointerType,
+        button: 0,
+        isPrimary: true,
+        preventDefault() {
+          prevented = true;
+        },
+      });
+      // Model Safari: the native pointer default blurs without focusing a button.
+      const relatedTarget = prevented ? app.context.document.activeElement : null;
+      app.elements.get('#nodes').handlers.focusout({ target: previous, relatedTarget });
+      assert.equal(prevented, true);
+      assert.equal(app.context.document.activeElement, button);
+      assert.equal(app.run('!!editing'), true);
+      button.onclick();
+    }
+    app.run('startEdit(map.root);');
+    press(toggle);
+    assert.equal(app.run('speech.active && speech.state === "listening"'), true);
+    assert.equal(panel.hidden, false);
+    press(toggle);
+    assert.equal(app.run('recognizer.stopped'), true);
+    app.run(
+      `recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:' Safari'}], {isFinal:true})]}); recognizer.onend();`,
+    );
+    press(done);
+    assert.equal(app.run('editing'), null);
+    assert.match(app.run('map.nodes[map.root].text'), / Safari$/);
+    app.run('startEdit(map.root);');
+    press(cancel);
+    assert.equal(app.run('editing'), null);
+  });
 
 test('tab hiding aborts voice, restores typing and rejects delayed results', () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
+  const app = setup({ renderUI: true });
+  mockSpeech(app);
   app.run('addChildAndEdit(map.root, true); confirmNodeSpeech(); document.hidden = true;');
   app.documentHandlers.get('visibilitychange')();
   assert.equal(app.run('speech.active'), false);
   assert.equal(app.run('editing.pendingDone'), false);
   assert.equal(app.elements.get('#nodeSpeechDone').disabled, false);
   assert.equal(app.run('els.get(editing.id).nodeText.contentEditable'), 'plaintext-only');
-  app.run(`recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'late'}], {isFinal:true})]}); recognizer.onend();`);
+  app.run(
+    `recognizer.onresult({resultIndex:0, results:[Object.assign([{transcript:'late'}], {isFinal:true})]}); recognizer.onend();`,
+  );
   assert.equal(app.run('els.get(editing.id).nodeText.textContent'), '');
 });
 test('Escape cancels while speech has made the node non-editable', () => {
-  const app = setup({ renderUI: true }); mockSpeech(app);
+  const app = setup({ renderUI: true });
+  mockSpeech(app);
   app.run('addChildAndEdit(map.root, true);');
   app.windowHandlers.get('keydown')({ key: 'Escape', preventDefault() {} });
-  assert.equal(app.run('editing'), null); assert.equal(app.run('speech.active'), false);
+  assert.equal(app.run('editing'), null);
+  assert.equal(app.run('speech.active'), false);
   assert.equal(app.run('history.length'), 0);
 });
 test('editing Tab skips unsupported speech and reaches Done; reediting an empty child keeps it alive', () => {
   const app = setup({ renderUI: true });
   app.run('addChildAndEdit(map.root); startEdit(editing.id);');
-  const target = app.run('els.get(editing.id).nodeText'); target.isContentEditable = true;
+  const target = app.run('els.get(editing.id).nodeText');
+  target.isContentEditable = true;
   app.elements.get('#nodes').handlers.keydown({ target, key: 'Tab', stopPropagation() {}, preventDefault() {} });
   assert.equal(app.run('document.activeElement === $("#nodeSpeechDone")'), true);
   assert.equal(app.run('!!map.nodes[editing.id]'), true);
 });
 
-
 test('palm selects actual screen rectangles after pan/zoom and clears selection beyond node size', () => {
-  const t = setup({ renderUI: true, handUI: true }); prepareHand(t);
-  t.run(`handSample(1 - 800/1200);`); assert.equal(t.run('sel'), 'a');
+  const t = setup({ renderUI: true, handUI: true });
+  prepareHand(t);
+  t.run(`handSample(1 - 800/1200);`);
+  assert.equal(t.run('sel'), 'a');
   assert.equal(t.elements.get('#handCursor').hidden, false);
   assert.equal(t.elements.get('#handCursor').dataset.state, 'hover');
   t.run(`view = { x: 200, y: 100, s: 2 }; handSample(.5, 100/680);`);
   assert.equal(t.run('sel'), 'a');
-  t.run(`handSample(.01, .95);`); assert.equal(t.run('sel'), null);
+  t.run(`handSample(.01, .95);`);
+  assert.equal(t.run('sel'), null);
   assert.equal(t.run('hand.hover'), null);
   assert.equal(t.elements.get('#handCursor').dataset.state, 'ready');
   t.run(`stableHand(.5, .5, .1); handSample(.2, .2, .1);`);
@@ -1595,23 +2340,36 @@ test('palm selects actual screen rectangles after pan/zoom and clears selection 
 });
 
 test('pointing retains selection and never pans, zooms or moves nodes', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
-  t.run(`const beforePoint = JSON.stringify(view); for (let i = 0; i < 20; i++) handSample(.1 + i * .03, .2, .8, 'point');`);
-  assert.equal(t.run('sel === map.root && JSON.stringify(view) === beforePoint && JSON.stringify(map) === originalMap && !gesture && history.length === 0'), true);
+  const t = setup({ handUI: true });
+  prepareHand(t);
+  t.run(
+    `const beforePoint = JSON.stringify(view); for (let i = 0; i < 20; i++) handSample(.1 + i * .03, .2, .8, 'point');`,
+  );
+  assert.equal(
+    t.run(
+      'sel === map.root && JSON.stringify(view) === beforePoint && JSON.stringify(map) === originalMap && !gesture && history.length === 0',
+    ),
+    true,
+  );
   assert.equal(t.elements.get('#handCursor').hidden, true);
 });
 
 test('hand commands do nothing when the pointer has cleared the selection', () => {
-  const t = setup(); prepareHand(t);
+  const t = setup();
+  prepareHand(t);
   t.run(`handSample(.01, .95); for (const pose of ['peace', 'thumbDown']) {
     for (let i = 0; i < 14; i++) handSample(.5, .5, .8, pose);
     for (let i = 0; i < 3; i++) handSample(.5, .5, .8, 'point');
   }`);
-  assert.equal(t.run('sel === null && !editing && !deletion && JSON.stringify(map) === originalMap && history.length === 0'), true);
+  assert.equal(
+    t.run('sel === null && !editing && !deletion && JSON.stringify(map) === originalMap && history.length === 0'),
+    true,
+  );
 });
 
 test('palm cursor remains visible without a target, during dialogs and during two-hand zoom', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   t.run(`handSample(.01, .95);`);
   assert.equal(t.elements.get('#handCursor').hidden, false);
   t.run(`sel = 'a'; removeNode('a'); handSample(.2, .3);`);
@@ -1625,14 +2383,18 @@ test('palm cursor remains visible without a target, during dialogs and during tw
 });
 
 test('crossed index fingers stop the camera and clear Hand control until enabled again', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   t.run(`const crossSession = cameraSession;
     const crossSample = () => { crossSession.io.frame({ hands: 2, pose: 'cross' }, handTime); handTime += 50; };
     crossSample(); crossSample();`);
   assert.equal(t.run('cameraSession === crossSession'), true);
   assert.match(t.elements.get('#handHelp').textContent, /人差し指の×/);
   t.run('for (let i = 0; i < 6; i++) crossSample();');
-  assert.equal(t.run('crossSession.stopped && cameraSession === null && handController === null && hand === null'), true);
+  assert.equal(
+    t.run('crossSession.stopped && cameraSession === null && handController === null && hand === null'),
+    true,
+  );
   assert.equal(t.elements.get('#handBtn').attributes['aria-pressed'], 'false');
   assert.equal(t.elements.get('#cam').hidden, true);
   assert.equal(t.elements.get('#handCursor').hidden, true);
@@ -1641,18 +2403,25 @@ test('crossed index fingers stop the camera and clear Hand control until enabled
   assert.equal(t.run('!!cameraSession && !handController.disabled'), true);
 });
 
-
 test('palm selection then pinch centers that node at the same scale without changing the map or history', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   t.run(`view.s = 1.5; stableHand(.25, .425); const centeredId = sel; const centeredScale = view.s;
     handSample(.05, .1, .1);`);
   assert.equal(t.run("centeredId === 'a' && sel === centeredId && hand.hover === centeredId"), true);
-  assert.equal(t.run('map.nodes[sel].x * view.s + view.x === W()/2 && map.nodes[sel].y * view.s + view.y === H()/2 && view.s === centeredScale'), true);
+  assert.equal(
+    t.run(
+      'map.nodes[sel].x * view.s + view.x === W()/2 && map.nodes[sel].y * view.s + view.y === H()/2 && view.s === centeredScale',
+    ),
+    true,
+  );
   assert.match(t.elements.get('#handHelp').textContent, /中央に移動しました/);
   t.run('const centerAnim = animId; stableHand(.1, .1, .1);');
-  assert.equal(t.run('animId === centerAnim && !gesture && history.length === 0 && JSON.stringify(map) === originalMap'), true);
+  assert.equal(
+    t.run('animId === centerAnim && !gesture && history.length === 0 && JSON.stringify(map) === originalMap'),
+    true,
+  );
 });
-
 
 test('camera video starts hidden, toggles and persists while the panel stays visible', () => {
   const t = setup({ handUI: true });
@@ -1670,39 +2439,54 @@ test('camera video starts hidden, toggles and persists while the panel stays vis
 });
 
 test('the current hand pose is shown large and cleared when the hand is lost', () => {
-  const t = setup({ handUI: true }); prepareHand(t);
+  const t = setup({ handUI: true });
+  prepareHand(t);
   const pose = () => t.elements.get('#handPose').textContent;
   assert.equal(pose(), '✋ パー');
-  t.run('handSample(.5, .5, .1);'); assert.equal(pose(), '🤏 つまみ');
-  t.run("handSample(.5, .5, .8, 'peace');"); assert.equal(pose(), '✌️ ピース');
-  t.run("cameraSession.io.frame({ pointer: { x: .5, y: .5 }, ratio: .4, pose: 'neutral', hands: 2 }, handTime);"); assert.equal(pose(), '❔ 判定なし');
-  t.run('cameraSession.io.frame(null, handTime);'); assert.equal(pose(), '');
+  t.run('handSample(.5, .5, .1);');
+  assert.equal(pose(), '🤏 つまみ');
+  t.run("handSample(.5, .5, .8, 'peace');");
+  assert.equal(pose(), '✌️ ピース');
+  t.run("cameraSession.io.frame({ pointer: { x: .5, y: .5 }, ratio: .4, pose: 'neutral', hands: 2 }, handTime);");
+  assert.equal(pose(), '❔ 判定なし');
+  t.run('cameraSession.io.frame(null, handTime);');
+  assert.equal(pose(), '');
 });
 
-test('node limits reject new children and image children atomically without recording edits',async()=>{
-  const t=setup();
-  t.run(`map=blankMap();map.seq=2048;for(let i=1;i<2048;i++)map.nodes['limit'+i]={id:'limit'+i,text:'n',parent:'root',x:0,y:0,order:i};invalidateTree();const beforeLimit=JSON.stringify(map);`);
+test('node limits reject new children and image children atomically without recording edits', async () => {
+  const t = setup();
+  t.run(
+    `map=blankMap();map.seq=2048;for(let i=1;i<2048;i++)map.nodes['limit'+i]={id:'limit'+i,text:'n',parent:'root',x:0,y:0,order:i};invalidateTree();const beforeLimit=JSON.stringify(map);`,
+  );
   t.run(`addChildAndEdit('root');`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && editing===null && !saveDirty`),true);
-  assert.match(t.run('notices.at(-1)'),/2,048/);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && editing===null && !saveDirty`), true);
+  assert.match(t.run('notices.at(-1)'), /2,048/);
   t.run(`imageStore.put=async()=>({assetId:'sha256:'+'a'.repeat(64),width:1,height:1});`);
   await t.run(`attachNodeImage(new Blob(['test']),{nodeId:'root',child:true,mapSessionId,revision},'image')`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && !saveDirty`),true);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && !saveDirty`), true);
 });
-test('oversized text cannot be saved by either existing-node edits or new-node edits',()=>{
-  const t=setup({renderUI:true});t.run(`const beforeLimit=JSON.stringify(map);startEdit('a');els.get('a').nodeText.textContent='x'.repeat(4001);finishEdit();`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && !saveDirty`),true);
+test('oversized text cannot be saved by either existing-node edits or new-node edits', () => {
+  const t = setup({ renderUI: true });
+  t.run(
+    `const beforeLimit=JSON.stringify(map);startEdit('a');els.get('a').nodeText.textContent='x'.repeat(4001);finishEdit();`,
+  );
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0 && !saveDirty`), true);
   t.run(`addChildAndEdit('root');els.get(editing.id).nodeText.textContent='x'.repeat(4001);finishEdit();`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0`),true);
-  assert.match(t.run('notices.at(-1)'),/4,000/);
+  assert.equal(t.run(`JSON.stringify(map)===beforeLimit && history.length===0`), true);
+  assert.match(t.run('notices.at(-1)'), /4,000/);
 });
 
-test('depth and title limits keep the previous map and history unchanged',()=>{
-  const t=setup();
-  t.run(`map=blankMap();map.seq=64;for(let i=1;i<=64;i++)map.nodes['d'+i]={id:'d'+i,text:'n',parent:i===1?'root':'d'+(i-1),x:0,y:0,order:i};invalidateTree();const beforeDepth=JSON.stringify(map);addChildAndEdit('d64');`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeDepth && history.length===0 && editing===null && !saveDirty`),true);
-  assert.match(t.run('notices.at(-1)'),/64/);
+test('depth and title limits keep the previous map and history unchanged', () => {
+  const t = setup();
+  t.run(
+    `map=blankMap();map.seq=64;for(let i=1;i<=64;i++)map.nodes['d'+i]={id:'d'+i,text:'n',parent:i===1?'root':'d'+(i-1),x:0,y:0,order:i};invalidateTree();const beforeDepth=JSON.stringify(map);addChildAndEdit('d64');`,
+  );
+  assert.equal(t.run(`JSON.stringify(map)===beforeDepth && history.length===0 && editing===null && !saveDirty`), true);
+  assert.match(t.run('notices.at(-1)'), /64/);
   t.run(`$('#title').oninput({target:{value:'x'.repeat(1001)}});`);
-  assert.equal(t.run(`JSON.stringify(map)===beforeDepth && history.length===0 && $('#title').value===map.title && !saveDirty`),true);
-  assert.match(t.run('notices.at(-1)'),/1,000/);
+  assert.equal(
+    t.run(`JSON.stringify(map)===beforeDepth && history.length===0 && $('#title').value===map.title && !saveDirty`),
+    true,
+  );
+  assert.match(t.run('notices.at(-1)'), /1,000/);
 });
