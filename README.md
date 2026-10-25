@@ -41,10 +41,17 @@ Instruction input is disabled when served statically. See the [local development
 
 ```sh
 npm test
+npm run build:static
 npm run verify:assets
 ```
 
 Tests mock Codex and do not make billable generation requests. HTTP tests require a local listening socket. See the [deployment guide](docs/guides/cloudflare-workers-deployment-design.md) for the preparation required before validating assets.
+
+## Static deployment
+
+`npm run build:static` prepares vendor and MediaPipe assets, then generates `dist/`. HTML and inline JS/CSS are minified with `@minify-html/node`; external JS/CSS use esbuild. Third-party assets retain their original bytes.
+
+After asset preparation, `npm run dev:cf` previews the minified build. `npm run deploy:staging` and `npm run deploy:production` each rebuild and validate `dist/` before uploading. `npm run build:deploy` rebuilds using existing local assets without downloading MediaPipe again. Source files in `ui-prototype/` remain the local development input.
 
 ## Documentation
 

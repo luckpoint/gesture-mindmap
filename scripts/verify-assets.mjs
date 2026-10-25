@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 20000;
@@ -32,14 +33,22 @@ export function verifyAssets(root, pinned) {
   for (const path of files)
     if (statSync(join(root, path)).size > MAX_FILE_BYTES) errors.push(`${path}: 25 MiBを超えています`);
   if (files.length > MAX_FILES) errors.push(`ファイル数が${MAX_FILES}件を超えています`);
-  if (present.has('features.js') && !/instructions:\s*false/.test(readFileSync(join(root, 'features.js'), 'utf8')))
-    errors.push('features.js: instructions が false ではありません');
+  if (present.has('features.js')) {
+    const context = Object.create(null);
+    try {
+      runInNewContext(readFileSync(join(root, 'features.js'), 'utf8'), context, { timeout: 1000 });
+    } catch {
+      errors.push('features.js: 実行できません');
+    }
+    if (context.MindmapFeatures?.instructions !== false)
+      errors.push('features.js: instructions が false ではありません');
+  }
   return { errors, files: files.length };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const pinned = JSON.parse(readFileSync(new URL('./mediapipe-assets.json', import.meta.url)));
-  const { errors, files } = verifyAssets(fileURLToPath(new URL('../ui-prototype', import.meta.url)), pinned);
+  const { errors, files } = verifyAssets(process.argv[2] || fileURLToPath(new URL('../dist', import.meta.url)), pinned);
   if (errors.length) {
     console.error(errors.join('\n'));
     process.exit(1);

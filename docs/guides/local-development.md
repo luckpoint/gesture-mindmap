@@ -22,7 +22,7 @@ ENABLE_CODEX_INSTRUCTIONS=true npm start
 
 `ENABLE_CODEX_INSTRUCTIONS` は文字列 `true` の場合だけONになり、未指定・`false`・その他の値はOFFです。OFFでは指示欄・開閉ボタンを表示せず、⌘K / Ctrl+Kも無効です。Codexプロセスと指示サービスを起動せず、`/api/codex/*` と `/api/instructions` 以下は404を返します。通常のマップ編集・保存・画像の読み込み／表示はそのまま使えます。
 
-Cloudflare Workersで公開する際は、`ui-prototype/` を静的アセットとして配信し、同梱の `features.js`（`instructions: false`）を使用します。Node.jsの中継サーバーは公開構成に含めません。ローカル中継では環境変数から同じURLの設定を返すため、ONで使った後も静的ファイルの設定はOFFのままです。機能フラグはブラウザの保存設定やURLパラメータでは切り替えません。
+Cloudflare Workersで公開する際は、`npm run build:static` で生成した `dist/` を静的アセットとして配信し、同梱の `features.js`（`instructions: false`）を使用します。Node.jsの中継サーバーは公開構成に含めません。ローカル中継では環境変数から同じURLの設定を返すため、ONで使った後も静的ファイルの設定はOFFのままです。機能フラグはブラウザの保存設定やURLパラメータでは切り替えません。
 
 最新仕様・料金の調査と、ビルド・配信・データ移行・公開前の確認項目は [Cloudflare Workersデプロイ設計](cloudflare-workers-deployment-design.md) を参照してください（2026年10月24日調査、未デプロイ）。
 

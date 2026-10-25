@@ -39,10 +39,17 @@ ENABLE_CODEX_INSTRUCTIONS=true npm start
 
 ```sh
 npm test
+npm run build:static
 npm run verify:assets
 ```
 
 テストではCodexを模擬し、課金を伴う生成は行いません。HTTPテストにはlocalhostの待受が必要です。アセット検証の前に必要な準備は [デプロイガイド](docs/guides/cloudflare-workers-deployment-design.md) を参照してください。
+
+## 静的デプロイ
+
+`npm run build:static` はvendor・MediaPipe資産を準備し、配信用の `dist/` を生成します。HTMLとインラインJS・CSSは `@minify-html/node`、外部JS・CSSはesbuildでminifyします。サードパーティ資産は元のバイト列を維持します。
+
+資産準備後は `npm run dev:cf` で圧縮済みビルドを確認できます。`npm run deploy:staging` と `npm run deploy:production` は、毎回 `dist/` を再生成・検証してからアップロードします。`npm run build:deploy` はMediaPipeを再取得せず、準備済みの資産から再生成します。`ui-prototype/` はローカル開発用のソースとして保持します。
 
 ## ドキュメント
 

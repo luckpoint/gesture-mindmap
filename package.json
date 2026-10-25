@@ -10,14 +10,16 @@
     "start": "node server/index.mjs",
     "test": "node --test tests/*.test.cjs",
     "verify:assets": "node scripts/verify-assets.mjs",
-    "build:static": "npm run setup && python3 scripts/setup-gesture-assets.py && npm run verify:assets",
-    "dev:cf": "wrangler dev --env staging",
-    "deploy:staging": "npm run verify:assets && wrangler deploy --env staging",
-    "deploy:production": "npm run verify:assets && wrangler deploy --env production",
+    "build:static": "npm run setup && python3 scripts/setup-gesture-assets.py && npm run build:deploy",
+    "dev:cf": "npm run build:deploy && wrangler dev --env staging",
+    "deploy:staging": "npm run build:deploy && wrangler deploy --env staging",
+    "deploy:production": "npm run build:deploy && wrangler deploy --env production",
     "format": "prettier --write \"**/*.{js,mjs,cjs,html,css}\"",
-    "format:check": "prettier --check \"**/*.{js,mjs,cjs,html,css}\""
+    "format:check": "prettier --check \"**/*.{js,mjs,cjs,html,css}\"",
+    "build:deploy": "node scripts/build-static.mjs"
   },
   "devDependencies": {
+    "@minify-html/node": "0.18.1",
     "esbuild": "0.28.2",
     "prettier": "3.9.10",
     "rxdb": "17.6.0",
