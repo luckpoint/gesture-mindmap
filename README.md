@@ -1,6 +1,6 @@
 ![Mind Map app preview](ui-prototype/landing/map.webp)
 
-# Mind Map Prototype
+# Gesture Mindmap
 
 English | [日本語](README.ja.md)
 
