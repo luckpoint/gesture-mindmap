@@ -1,4 +1,4 @@
-# マインドマップ試作
+# Gesture Mindmap
 
 [English](README.md) | 日本語
 
